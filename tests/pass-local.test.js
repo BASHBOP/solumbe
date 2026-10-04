@@ -1090,7 +1090,7 @@ test("secretCheck passes an env template and still fails a credential inside one
   const empty = secretCheck(files, () => "# Paystack BVN check\nPAYSTACK_BVN_ENFORCEMENT_DATE=\n");
   assert.equal(empty.status, "PASS");
 
-  const leaked = secretCheck(files, () => "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLQ\n");
+  const leaked = secretCheck(files, () => `AWS_ACCESS_KEY_ID=${FIXTURE_AWS_KEY}\n`);
   assert.equal(leaked.status, "FAIL");
   assert.match(leaked.summary, /credential value/);
 });
