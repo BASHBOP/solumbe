@@ -145,3 +145,25 @@ function packageFixture(scripts, files = {}) {
   }
   return root;
 }
+
+// Regression (dogfood, bashbop-go): a Go module with tests and a CI workflow
+// reported "No validation scripts detected" and no entrypoints.
+test("generateHarness gives a Go module its toolchain validation and cmd entrypoints", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "harness-go-"));
+  const files = {
+    "go.mod": "module example.com/fees\n\ngo 1.22\n",
+    "cmd/fees/main.go": "package main\n\nfunc main() {}\n",
+    "internal/fees/fees.go": "package fees\n\nfunc Calculate() int { return 1 }\n",
+    "internal/fees/fees_test.go": 'package fees\n\nimport "testing"\n\nfunc TestCalculate(t *testing.T) {}\n',
+  };
+  for (const [relative, content] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(root, relative)), { recursive: true });
+    fs.writeFileSync(path.join(root, relative), content);
+  }
+
+  const { data } = generateHarness(root);
+  const validate = data.commands.validate.map((entry) => entry.command);
+  assert.ok(validate.includes("go vet ./..."), validate.join(", "));
+  assert.ok(validate.includes("go test ./..."), validate.join(", "));
+  assert.ok(data.repo.entrypoints.includes("cmd/fees/main.go"), JSON.stringify(data.repo.entrypoints));
+});

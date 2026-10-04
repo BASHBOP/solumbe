@@ -7,7 +7,7 @@
 /// <reference types="node" />
 import path from "node:path";
 import { getCachedCodeMap } from "./index-cache.js";
-import { conceptsFromQuery, classifyPath, CONCEPT_SYNONYMS, RISK_FLAGS, glyphFor, isDocPath, singularizeToken } from "./risk-paths.js";
+import { conceptsFromQuery, classifyPath, CONCEPT_SYNONYMS, RISK_FLAGS, glyphFor, isDocPath, isTestDataPath, singularizeToken } from "./risk-paths.js";
 import { isRunnableTestPath, isTestFilePath } from "./code-map/classify.js";
 import { collapseLocaleSiblings, formatLocales, isCopyRequest, resolveNamedFiles, stripFileExtensions, TRANSLATION_DEMOTION } from "./ranking-rules.js";
 import { estimateTokens, estimateTokenSections } from "./tokens.js";
@@ -62,6 +62,7 @@ const defaultTop = 10;
 const STOP_WORDS = new Set([
   "a",
   "add",
+  "also",
   "an",
   "and",
   "are",
@@ -72,6 +73,7 @@ const STOP_WORDS = new Set([
   "can",
   "change",
   "do",
+  "drop",
   "fix",
   "for",
   "from",
@@ -83,14 +85,18 @@ const STOP_WORDS = new Set([
   "into",
   "is",
   "it",
+  "just",
   "make",
   "need",
   "new",
   "of",
   "on",
+  "only",
   "or",
   "our",
   "please",
+  "remove",
+  "rename",
   "should",
   "that",
   "the",
@@ -98,6 +104,7 @@ const STOP_WORDS = new Set([
   "to",
   "update",
   "use",
+  "via",
   "want",
   "we",
   "when",
@@ -383,7 +390,9 @@ function scoreFiles(files, weightedQuery, concepts, flags, stats) {
  * @returns {ScoreResult}
  */
 function scoreFile(file, weightedQuery, concepts, { wantsTests, wantsDocs, wantsCopy }, stats) {
-  const pathTokens = tokenize(file.path);
+  // The extension names the language, not the change: "port it to Go" must
+  // not path-match every `.go` file.
+  const pathTokens = tokenize(file.path.replace(/\.[A-Za-z0-9]+$/, ""));
   const pathCounts = countTokens(pathTokens);
   const symbolTokens = tokenize(file.symbols.map((symbol) => symbol.name ?? "").join(" "));
   const symbolCounts = countTokens(symbolTokens);
@@ -742,8 +751,12 @@ function applyDependencyBoosts(allFiles, scored, pinned = new Map()) {
     }
   }
 
+  // Keep the eight most relevant neighbours, not the first eight imports: a
+  // controller that imports forty services listed affiliates and analytics
+  // ahead of its own service, and they became "supporting" fan-out.
+  const relevance = (/** @type {string} */ related) => scored.get(related)?.score ?? 0;
   for (const entry of scored.values()) {
-    entry.relatedFiles = [...new Set(entry.relatedFiles)].slice(0, 8);
+    entry.relatedFiles = [...new Set(entry.relatedFiles)].sort((a, b) => relevance(b) - relevance(a)).slice(0, 8);
   }
   return scored;
 }
@@ -843,6 +856,9 @@ function suggestTests(files, ranked, repo) {
 function identifyRisks(query, ranked, concepts) {
   const flags = new Set(concepts);
   for (const entry of ranked) {
+    // A plan that mentions Stripe or a golden fixture of fee answers is not a
+    // money-flow change; the code they describe is.
+    if (isDocPath(entry.file.path) || isTestDataPath(entry.file.path)) continue;
     for (const flag of classifyPath(entry.file.path, { kind: entry.file.kind })) {
       flags.add(flag);
     }
@@ -1009,7 +1025,10 @@ function mergeDiffEvidence(evidence, heuristic) {
     const exact = changed.get(entry.file.path);
     if (exact && entry.siblings?.length) exact.siblings = [...entry.siblings];
   }
-  return [...evidence, ...heuristic.filter((entry) => !changed.has(entry.file.path))];
+  // Changed files lead, ranked by their own score: the diff decides which files
+  // surface, not their order, so a score-0 dotfile cannot head the list.
+  const byScore = [...evidence].sort((a, b) => b.score - a.score || a.file.path.localeCompare(b.file.path));
+  return [...byScore, ...heuristic.filter((entry) => !changed.has(entry.file.path))];
 }
 
 /**

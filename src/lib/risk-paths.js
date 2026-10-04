@@ -64,7 +64,22 @@ export const RISK_PATTERNS = [
   {
     flag: RISK_FLAGS.moneyFlow,
     kinds: [],
-    pathParts: ["payment", "billing", "checkout", "webhook", "stripe", "refund", "invoice", "subscription", "chargeback"],
+    pathParts: [
+      "payment",
+      "billing",
+      "checkout",
+      "webhook",
+      "stripe",
+      "paystack",
+      "refund",
+      "invoice",
+      "subscription",
+      "chargeback",
+      "payout",
+      "fee",
+      "pricing",
+      "settlement",
+    ],
   },
   {
     flag: RISK_FLAGS.configuration,
@@ -155,6 +170,10 @@ export const SECRET_BASENAME_PATTERNS = [
   /^secrets?\.json$/, // secret.json / secrets.json
   /^secrets?\.ya?ml$/, // secret.yaml / secrets.yml
 ];
+
+// Committed env templates (`.env.example`, `.env.sample`, `.env.template`,
+// `.env.dist`): the documented shape of `.env`, checked in by design.
+const ENV_TEMPLATE_BASENAME = /^\.env\.(example|sample|template|dist)$/;
 
 // Whole path segments (directories) that signal a credential store. Matched
 // segment-wise so `secrets/aws.json` flags but `docs/secrets-management.md`
@@ -253,6 +272,10 @@ export const CONCEPT_SYNONYMS = {
     "cart",
     "payout",
     "payouts",
+    "paystack",
+    "fee",
+    "fees",
+    "pricing",
   ],
   [RISK_FLAGS.dataModel]: ["prisma", "migration", "migrations", "schema", "database", "db", "sql", "model", "models"],
   [RISK_FLAGS.requestSurface]: ["route", "routes", "endpoint", "endpoints", "controller", "controllers", "api", "dto", "handler", "handlers"],
@@ -473,6 +496,9 @@ export function isSecretPath(filePath) {
   if (isDocPath(normalized)) return false;
   const segments = normalized.split("/").filter(Boolean);
   const basename = segments[segments.length - 1] ?? "";
+  // A committed env template names variables, it does not hold them; the
+  // content scan still fails one that carries a real credential value.
+  if (ENV_TEMPLATE_BASENAME.test(basename)) return false;
   if (SECRET_BASENAME_PATTERNS.some((pattern) => pattern.test(basename))) return true;
   return segments.slice(0, -1).some((segment) => SECRET_SEGMENTS.has(segment));
 }
