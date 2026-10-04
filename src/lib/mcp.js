@@ -194,7 +194,7 @@ export const tools = [
       "Ranks the files most likely to own a plain-English change request, with risk flags and suggested tests. A diff base adds exact changed-file evidence beside the heuristic.",
     title: "Change Impact",
     description:
-      "Given a plain-English change request, rank the files most likely to own the change, with risk flags, suggested tests, and an implementation plan. Optional diff base surfaces exact changed-file evidence alongside the heuristic. Uses a per-user external cache and leaves the target repository unchanged.",
+      "Given a plain-English change request, rank the files most likely to own the change, with risk flags, suggested tests, and an implementation plan. Optional diff base surfaces exact changed-file evidence alongside the heuristic. When the repository's .solumberc.json lists companions, companions also carries the top few files each companion repository would own for the same request. Uses a per-user external cache and leaves the target repository unchanged.",
     annotations: { readOnlyHint: true },
     inputSchema: {
       type: "object",
@@ -341,7 +341,7 @@ export const tools = [
       "change_impact plus review_context plus review_gate in one call, with a derived confidence score and a schemaVersion the attestation ledger records.",
     title: "Review Verdict",
     description:
-      "Run the full review pipeline in one shot: change_impact plus review_context plus review_gate, returning a unified verdict with a derived confidence score. Use review_verdict when you want the complete picture of a change in a single call. Use review_context instead for diff metadata only (no verdict), or review_gate for the gate verdict alone.",
+      "Run the full review pipeline in one shot: change_impact plus review_context plus review_gate, returning a unified verdict with a derived confidence score. When the repository's .solumberc.json lists companions and a request is given, impactSummary.companions names the top few files each companion repository would own for that request. Use review_verdict when you want the complete picture of a change in a single call. Use review_context instead for diff metadata only (no verdict), or review_gate for the gate verdict alone.",
     annotations: { readOnlyHint: true },
     inputSchema: {
       type: "object",
@@ -741,6 +741,7 @@ async function dispatchTool(name, args) {
         top: args.top,
         diffBase: args.diffBase,
         includeUntracked: args.includeUntracked,
+        companions: true,
       });
       return args.includeMarkdown ? result : result.data;
     }

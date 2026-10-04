@@ -11,6 +11,11 @@ Fixes from running Solumbe's review tools on three bashbop repositories and chec
 ### Added
 
 - **The gate reads what a migration does to existing data.** A new `Migration safety` check warns when a changed SQL migration rewrites rows (`UPDATE … SET`), deletes them, truncates or drops a table, or drops columns, and names the table and whether the statement has no `WHERE`. A migration that reset every verified organiser to unverified passed the gate as an ordinary schema file; the check now points at it. Comments are ignored, additive migrations pass, and the check runs in both the local and the GitHub PR gate.
+- **`review_verdict` and `change_impact` point into companion repositories.** When a repository's `.solumberc.json` lists `companions` (`"companions": ["../api"]`), both rank the same request in each companion, without a diff, and name its top three files with their scores and risk flags: under `impactSummary.companions` in the verdict and `companions` in the impact report, with a line in `solumbe review` and a section in `solumbe impact`. A review of a web change whose rule the API also decides now names the API file. A dogfood review of bashbop-event-web, which decides "BVN required" from the user's location while bashbop-api decides from the profile country, never surfaced `src/paystack/paystack.service.ts`. The verdict carries the field only when companions are configured and a request is given. The leads do not change the verdict, its confidence, or what an attestation record stores.
+
+### Changed
+
+- **The verdict `schemaVersion` is now 2**, for the added `impactSummary.companions`. Attestation records written from now on carry `verdictSchemaVersion: 2`; earlier records verify unchanged.
 
 ### Fixed
 

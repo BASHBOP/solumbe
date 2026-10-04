@@ -6,6 +6,7 @@
 
 /// <reference types="node" />
 import path from "node:path";
+import { companionRepos } from "./config.js";
 import { getCachedCodeMap } from "./index-cache.js";
 import { conceptsFromQuery, classifyPath, CONCEPT_SYNONYMS, RISK_FLAGS, glyphFor, isDocPath, isTestDataPath, singularizeToken } from "./risk-paths.js";
 import { isRunnableTestPath, isTestFilePath } from "./code-map/classify.js";
@@ -29,6 +30,15 @@ export const DIFF_RENAME_LIMIT = 1000;
  * @property {string[]} [diffFiles]
  * @property {any} [codeMap]
  * @property {boolean} [includeUntracked] count untracked files as changed against diffBase (default true)
+ * @property {boolean} [companions] also rank the companion repositories in the repo's .solumberc.json (see companionLeads)
+ */
+
+/**
+ * The few files a companion repository would own for the same request.
+ * @typedef {object} CompanionLead
+ * @property {string} repo
+ * @property {string} root
+ * @property {{ path: string, score: number, riskFlags: string[] }[]} topFiles
  */
 
 /**
@@ -58,6 +68,7 @@ export const DIFF_RENAME_LIMIT = 1000;
 // share one entry (`siblings`), and a named file's extension no longer scores.
 const impactEngineVersion = 4;
 const defaultTop = 10;
+const companionTop = 3;
 
 const STOP_WORDS = new Set([
   "a",
@@ -339,6 +350,10 @@ export function generateImpact(query, options = {}) {
     },
     validation,
   });
+  if (options.companions) {
+    const companions = companionLeads(normalized, repoPath);
+    if (companions.length) data.companions = companions;
+  }
 
   data.tokenEstimate = {
     ...estimateTokenSections([
@@ -355,6 +370,36 @@ export function generateImpact(query, options = {}) {
   data.tokenEstimate.markdown = estimateTokens(markdown);
 
   return { data, markdown };
+}
+
+/**
+ * Leads in the repository's companions (`companions` in its .solumberc.json):
+ * the top few files each one would own for the same request, ranked by the
+ * heuristic alone since a companion has no diff here. A web change whose rule
+ * the API also decides then points at the API file, which a single-repo impact
+ * never sees. A companion with no file scoring above zero is kept with no
+ * files, so the report shows it was looked at.
+ * @param {string} query
+ * @param {string} repoPath
+ * @param {{ top?: number }} [options]
+ * @returns {CompanionLead[]}
+ */
+export function companionLeads(query, repoPath, options = {}) {
+  const root = path.resolve(repoPath);
+  const top = options.top ?? companionTop;
+  return companionRepos(root)
+    .filter((dir) => dir !== root)
+    .map((dir) => {
+      const { data } = generateImpact(query, { path: dir, top });
+      return {
+        repo: data.repo.name,
+        root: data.repo.root,
+        topFiles: data.topFiles
+          .filter((/** @type {any} */ file) => file.score > 0)
+          .slice(0, top)
+          .map((/** @type {any} */ file) => ({ path: file.path, score: file.score, riskFlags: file.riskFlags })),
+      };
+    });
 }
 
 /**
@@ -1328,6 +1373,10 @@ export function formatImpactMarkdown(data) {
   for (const suggestion of data.testSuggestions) lines.push(`- ${suggestion}`);
   lines.push("", "## Risks To Check", "");
   for (const risk of data.risks) lines.push(`- ${risk}`);
+  if (data.companions) {
+    lines.push("", "## Companion Repository Leads", "");
+    for (const companion of data.companions) lines.push(`- ${companion.repo}: ${formatCompanionFiles(companion)}`);
+  }
   if (data.validation) {
     lines.push("", "## Validation Against Diff", "");
     lines.push(`- Base: ${data.validation.base}`);
@@ -1350,6 +1399,15 @@ export function formatImpactMarkdown(data) {
  */
 function formatList(items) {
   return items.length ? items.map((item) => `\`${item}\``).join(", ") : "none";
+}
+
+/**
+ * @param {CompanionLead} companion
+ * @returns {string}
+ */
+function formatCompanionFiles(companion) {
+  if (!companion.topFiles.length) return "no matching files";
+  return companion.topFiles.map((file) => `\`${file.path}\` (score ${file.score}${file.riskFlags.length ? `, ${file.riskFlags.join(", ")}` : ""})`).join(", ");
 }
 
 // Tokenize a string into lowercased path/identifier tokens. Mirrors
@@ -1555,6 +1613,17 @@ export function formatImpactTerminal(data, rendererFactory) {
       data.risks.slice(0, 6).map((/** @type {string} */ r) => `${renderer.paint(renderer.glyphs.item, "dim")} ${r}`),
     ),
   );
+  if (data.companions) {
+    lines.push("");
+    lines.push(
+      renderer.section(
+        `${decor("🔗")}Companion repository leads`,
+        data.companions.map(
+          (/** @type {CompanionLead} */ companion) => `${renderer.paint(renderer.glyphs.item, "dim")} ${companion.repo}: ${formatCompanionFiles(companion)}`,
+        ),
+      ),
+    );
+  }
   if (data.validation) {
     lines.push("");
     const v = data.validation;

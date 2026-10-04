@@ -66,10 +66,12 @@ function git(cwd, args) {
 
 // gate-node/base plus one change set, committed on top, the way the gate
 // effectiveness eval builds its cases (minus the allow-secret markers).
-function gateRepo(changeSet) {
-  const dir = path.join(WORK, "git", `gate-node-${changeSet}`);
+// `files` join the baseline, so they are not part of the change.
+function gateRepo(changeSet, { name = `gate-node-${changeSet}`, files = {} } = {}) {
+  const dir = path.join(WORK, "git", name);
   const source = path.join(fixturesRoot, "gate-node");
   copyContents(path.join(source, "base"), dir);
+  for (const [relative, content] of Object.entries(files)) fs.writeFileSync(path.join(dir, relative), content);
   git(dir, ["init", "--quiet", "--initial-branch=main"]);
   git(dir, ["config", "user.email", "golden@solumbe.local"]);
   git(dir, ["config", "user.name", "solumbe golden"]);
@@ -108,6 +110,12 @@ const sampleApi = copyFixture("sample-api");
 const initTarget = copyFixture("harness-node");
 const gateWarn = gateRepo("scope-drift");
 const gateFail = gateRepo("secret-content");
+// A repository whose .solumberc.json names shop-api as its companion, for the
+// companion repository leads in impact and review.
+const gateCompanion = gateRepo("scope-drift", {
+  name: "gate-node-companion",
+  files: { ".solumberc.json": JSON.stringify({ companions: ["../../fixtures/shop-api"] }) },
+});
 const catalog = path.join(WORK, "home", "catalog.json");
 
 // ---------------------------------------------------------------------------
@@ -286,6 +294,7 @@ async function add(name, formatter, build) {
 
 await add("context", "context", () => generateContextPack(TASK, { path: shopApi }).data);
 await add("impact", "impact", () => generateImpact(TASK, { path: shopApi }).data);
+await add("impact-companions", "impact", () => generateImpact(TASK, { path: gateCompanion, companions: true }).data);
 await add("pass-warn", "pass", () => evaluateLocal(gateWarn, { base: "HEAD~1", policy: "standard", governance: "team" }));
 await add("pass-fail", "pass", () => evaluateLocal(gateFail, { base: "HEAD~1", policy: "standard", governance: "team" }));
 await add("pass-pr-open", "pass-pr", () => passPrOpen);
@@ -299,6 +308,11 @@ await add(
   "review-fail",
   "review",
   async () => (await generateReview(gateFail, { request: "rotate the webhook secret", base: "HEAD~1", policy: "standard", governance: "team" })).data,
+);
+await add(
+  "review-companions",
+  "review",
+  async () => (await generateReview(gateCompanion, { request: TASK, base: "HEAD~1", policy: "standard", governance: "team" })).data,
 );
 await add("route", "route", () => generateRoute(TASK, { path: shopApi, offline: true }));
 await add("doctor", "doctor", () => ({ ok: false, tools: doctorTools }));
