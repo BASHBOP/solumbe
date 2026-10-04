@@ -1404,9 +1404,12 @@ function inferConflicts(maps) {
   /** @type {string[]} */
   const conflicts = [];
   for (const map of maps) {
-    const git = /** @type {{ available?: boolean, clean?: boolean, changes?: number }} */ (map.repo.git);
+    const git = /** @type {{ available?: boolean, clean?: boolean, changes?: number, upstream?: string, behind?: number }} */ (map.repo.git);
     if (git?.available && !git.clean) {
       conflicts.push(`${map.repo.name} has ${git.changes} uncommitted git change(s); inspect the working tree before editing.`);
+    }
+    if (git?.available && git.behind) {
+      conflicts.push(`${map.repo.name} is ${git.behind} commit(s) behind ${git.upstream} as of the last fetch; this context describes the older checkout.`);
     }
   }
   return conflicts;

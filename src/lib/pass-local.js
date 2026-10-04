@@ -94,7 +94,7 @@ export function evaluateLocal(repoPath, options = {}) {
     changedFilesCheck(files),
     ...(scope !== "working-tree" ? [changeSubjectCheck(scope, subject, subjectError)] : []),
     secretCheck(files, subjectContent),
-    riskCheck(files),
+    riskCheck(files, scope),
     checkRelease(root, files, { baseContent, governance }),
     validationCommandsCheck(root),
     ...(validationExecution ? [{ name: "Validation execution", ...validationExecution }] : []),
@@ -615,22 +615,29 @@ function readWorkingTreeFile(root, file) {
 
 /**
  * @param {string[]} files
+ * @param {"staged" | "commit" | "working-tree"} [scope]
  * @returns {Check}
  */
-function riskCheck(files) {
+function riskCheck(files, scope = "working-tree") {
   // Gate mode: ignore test files and documentation. A `checkout.spec.ts` test
   // or a `git-checkout-guide.md` doc is risk-adjacent for ranking purposes but
   // must not, on its own, force an explicit-review warning at merge time.
   const matches = matchRiskPaths(files, { gate: true });
   if (matches.length > 0) {
+    // Unstaging only applies to the index; a committed range or working tree
+    // has nothing staged, so the advice there is the review itself.
+    const staged = scope === "staged";
     const productionConfig = matches.filter(isProductionConfigurationPath);
-    const actions = productionConfig.map(
-      (file) =>
-        `Maintainer action: explicitly approve the production configuration scope for ${file}, or remove it from this staged change: git restore --staged -- ${shellQuote(file)}`,
+    const actions = productionConfig.map((file) =>
+      staged
+        ? `Maintainer action: explicitly approve the production configuration scope for ${file}, or remove it from this staged change: git restore --staged -- ${shellQuote(file)}`
+        : `Maintainer action: explicitly approve the production configuration scope for ${file} before merge.`,
     );
     if (actions.length === 0) {
       actions.push(
-        `Maintainer action: record explicit review of this risk-sensitive scope, or remove unintended staged files: ${matches.map((file) => `git restore --staged -- ${shellQuote(file)}`).join(" ; ")}`,
+        staged
+          ? `Maintainer action: record explicit review of this risk-sensitive scope, or remove unintended staged files: ${matches.map((file) => `git restore --staged -- ${shellQuote(file)}`).join(" ; ")}`
+          : "Maintainer action: record explicit review of this risk-sensitive scope before merge.",
       );
     }
     return {

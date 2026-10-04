@@ -308,6 +308,24 @@ test("generateImpact surfaces exact diff evidence without concealing unexplained
   assert.deepEqual(result.data.validation.heuristic.missedChangedFiles, exactFiles);
 });
 
+// Regression (dogfood, bashbop-event-web): changed files were listed in path
+// order, so a dotfile README at score 0 led a review over the real owner.
+test("generateImpact ranks changed files by score, not by path", () => {
+  const root = gitFixture("diff-order", {
+    "package.json": JSON.stringify({ name: "diff-order-fixture" }),
+    ".notes/README.md": "# notes\n",
+    "src/paystack/bvn-verification.service.ts": "export const verifyBvn = () => false;\n",
+  });
+  fs.writeFileSync(path.join(root, ".notes/README.md"), "# notes, edited\n");
+  fs.writeFileSync(path.join(root, "src/paystack/bvn-verification.service.ts"), "export const verifyBvn = () => true;\n");
+
+  const result = generateImpact("verify the paystack bvn", { path: root, diffBase: "HEAD" });
+  const top = result.data.topFiles.map((file) => file.path);
+
+  assert.equal(top[0], "src/paystack/bvn-verification.service.ts");
+  assert.ok(top.indexOf(".notes/README.md") > 0, `expected the unrelated note after the owner: ${top.join(", ")}`);
+});
+
 test("generateImpact reports a clean validation error for a bad diff base instead of throwing", () => {
   const root = gitFixture("validate-bad", {
     "package.json": JSON.stringify({ name: "validate-bad-fixture", scripts: { test: "node --test" } }),
@@ -644,4 +662,43 @@ test("generateImpact raises no risk from a domain only an advisory lead touches"
     !result.data.risks.some((r) => r.startsWith("Money-flow")),
     `payment page (advisory: ${advisory.includes("app/rsvp-payment-success/page.tsx")}) must not raise money flow: ${result.data.risks.join(" | ")}`,
   );
+});
+
+// Regression (dogfood, bashbop-api): the Prisma schema and the migration that
+// reset every verified profile were "unmapped", so impact could not rank the
+// most dangerous file in the change.
+test("generateImpact maps a Prisma schema and SQL migration by their models and columns", () => {
+  const root = gitFixture("prisma-map", {
+    "package.json": JSON.stringify({ name: "prisma-fixture" }),
+    "prisma/schema.prisma": "model Profile {\n  id Int @id\n  paystackKycStatus String?\n}\n",
+    "src/profile/profile.service.ts": "export class ProfileService {}\n",
+    "seeds/dump.sql": 'INSERT INTO "Profile" VALUES (1);\n',
+  });
+  fs.mkdirSync(path.join(root, "prisma/migrations/20261004_bvn"), { recursive: true });
+  fs.writeFileSync(path.join(root, "prisma/migrations/20261004_bvn/migration.sql"), 'UPDATE "Profile" SET "paystackKycStatus" = \'INCOMPLETE\';\n');
+  fs.writeFileSync(path.join(root, "prisma/schema.prisma"), "model Profile {\n  id Int @id\n  paystackKycStatus String?\n  paystackKycName String?\n}\n");
+
+  const result = generateImpact("reset the paystack kyc status on the profile", { path: root, diffBase: "HEAD" });
+  const byPath = new Map(result.data.topFiles.map((file) => [file.path, file]));
+
+  assert.deepEqual(result.data.diffEvidence.unmappedFiles, []);
+  assert.equal(byPath.get("prisma/schema.prisma")?.kind, "schema");
+  assert.equal(byPath.get("prisma/migrations/20261004_bvn/migration.sql")?.kind, "migration");
+  assert.ok(byPath.get("prisma/migrations/20261004_bvn/migration.sql")?.riskFlags.includes("data model"));
+  assert.ok(byPath.get("prisma/schema.prisma")?.score > 0, "expected the schema to match on its fields");
+  assert.ok(!byPath.has("seeds/dump.sql"), "a seed dump is not indexed as a change owner");
+});
+
+// Regression (dogfood, bashbop-go): "port ... to Go" path-matched every `.go`
+// file on its extension.
+test("generateImpact does not path-match a file on its extension", () => {
+  const root = writeFixture("go-extension", {
+    "go.mod": "module example.com/fees\n",
+    "internal/pricing/pricing.go": "package pricing\n\nfunc PromoDiscount() int { return 1 }\n",
+    "internal/jsmath/round.go": "package jsmath\n\nfunc Round() int { return 1 }\n",
+  });
+  const result = generateImpact("port promo discounts to Go", { path: root });
+  const round = result.data.topFiles.find((file) => file.path === "internal/jsmath/round.go");
+  assert.ok(!round?.reasons.some((reason) => reason.startsWith("path matches") && reason.includes("go")), JSON.stringify(round?.reasons));
+  assert.equal(result.data.topFiles[0].path, "internal/pricing/pricing.go");
 });

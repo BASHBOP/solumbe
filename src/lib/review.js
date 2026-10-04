@@ -43,15 +43,36 @@ export const VERDICT_SCHEMA_VERSION = 1;
 export async function generateReview(repoPath, options = {}) {
   const request = String(options.request ?? "").trim() || "review this change";
   const wantsPr = Boolean(options.prSelector || options.pr);
-
-  /** @type {any} */
-  const impact = generateImpact(request, { path: repoPath, top: options.impactTop ?? 8, diffBase: options.base }).data;
-  const prReview = generatePrReview(repoPath, { base: options.base, head: options.head, number: options.prSelector, github: wantsPr });
-  /** @type {any} */
-  const prData = prReview.data;
+  const head = String(options.head ?? "").trim();
 
   /** @type {any} */
   let passReport;
+  if (!wantsPr) {
+    passReport = evaluateLocal(repoPath, {
+      base: options.base,
+      head: head || undefined,
+      policy: options.policy,
+      governance: options.governance,
+      request,
+      minConvergence: options.minConvergence,
+      receipt: options.receipt,
+    });
+  }
+
+  // With a head, impact scores the gate's exact base..head file set, so the
+  // working tree's uncommitted and untracked files play no part, as in the gate.
+  const exactFiles = passReport?.scope === "commit" ? passReport.changedFiles : undefined;
+  /** @type {any} */
+  const impact = generateImpact(request, {
+    path: repoPath,
+    top: options.impactTop ?? 8,
+    diffBase: exactFiles ? passReport.base : options.base,
+    diffFiles: exactFiles,
+  }).data;
+  const prReview = generatePrReview(repoPath, { base: options.base, head: head || undefined, number: options.prSelector, github: wantsPr });
+  /** @type {any} */
+  const prData = prReview.data;
+
   if (wantsPr) {
     passReport = await evaluatePR(repoPath, options.prSelector ?? "", {
       policy: options.policy,
@@ -60,15 +81,6 @@ export async function generateReview(repoPath, options = {}) {
       minConvergence: options.minConvergence,
       receipt: options.receipt,
       runner: options.runner,
-    });
-  } else {
-    passReport = evaluateLocal(repoPath, {
-      base: options.base,
-      policy: options.policy,
-      governance: options.governance,
-      request,
-      minConvergence: options.minConvergence,
-      receipt: options.receipt,
     });
   }
 

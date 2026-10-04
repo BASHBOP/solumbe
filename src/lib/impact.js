@@ -383,7 +383,9 @@ function scoreFiles(files, weightedQuery, concepts, flags, stats) {
  * @returns {ScoreResult}
  */
 function scoreFile(file, weightedQuery, concepts, { wantsTests, wantsDocs, wantsCopy }, stats) {
-  const pathTokens = tokenize(file.path);
+  // The extension names the language, not the change: "port it to Go" must
+  // not path-match every `.go` file.
+  const pathTokens = tokenize(file.path.replace(/\.[A-Za-z0-9]+$/, ""));
   const pathCounts = countTokens(pathTokens);
   const symbolTokens = tokenize(file.symbols.map((symbol) => symbol.name ?? "").join(" "));
   const symbolCounts = countTokens(symbolTokens);
@@ -1009,7 +1011,10 @@ function mergeDiffEvidence(evidence, heuristic) {
     const exact = changed.get(entry.file.path);
     if (exact && entry.siblings?.length) exact.siblings = [...entry.siblings];
   }
-  return [...evidence, ...heuristic.filter((entry) => !changed.has(entry.file.path))];
+  // Changed files lead, ranked by their own score: the diff decides which files
+  // surface, not their order, so a score-0 dotfile cannot head the list.
+  const byScore = [...evidence].sort((a, b) => b.score - a.score || a.file.path.localeCompare(b.file.path));
+  return [...byScore, ...heuristic.filter((entry) => !changed.has(entry.file.path))];
 }
 
 /**

@@ -1,7 +1,7 @@
 import { getDoctorReport } from "./doctor.js";
 import { getToolMatrix } from "./matrix.js";
 import { createRenderer } from "./render/fancy.js";
-import { inspectRepo } from "./repo.js";
+import { formatGitSummary, inspectRepo } from "./repo.js";
 import { estimateTokens, estimateTokenSections } from "./tokens.js";
 
 /** @typedef {import('./doctor.js').DoctorTool} DoctorTool */
@@ -119,7 +119,7 @@ function formatReportMarkdown(data) {
     "",
     `- Root: ${repo.root}`,
     `- Files scanned: ${repo.fileCount}`,
-    `- Git: ${formatGit(repo.git)}`,
+    `- Git: ${formatGitSummary(repo.git)}`,
     `- Languages: ${repo.languages.map((item) => `${item.language} (${item.count})`).join(", ") || "unknown"}`,
     `- Package managers: ${repo.packageManagers.join(", ") || "none detected"}`,
     `- Entrypoints: ${repo.entrypoints.join(", ") || "none detected"}`,
@@ -183,7 +183,7 @@ export function formatReportTerminal(data, options = {}) {
       [
         ["Root", repo.root],
         ["Files scanned", String(repo.fileCount)],
-        ["Git", formatGit(repo.git)],
+        ["Git", formatGitSummary(repo.git)],
         ["Languages", repo.languages.map((item) => `${item.language} (${item.count})`).join(", ") || "unknown"],
         ["Package managers", repo.packageManagers.join(", ") || "none detected"],
         ["Entrypoints", repo.entrypoints.join(", ") || "none detected"],
@@ -238,19 +238,6 @@ export function formatReportTerminal(data, options = {}) {
   lines.push(...formatTokenSummary(data, layout));
 
   return lines.join("\n");
-}
-
-/**
- * @param {GitInfo} git
- * @returns {string}
- */
-function formatGit(git) {
-  if (!git.available) {
-    return "not detected";
-  }
-
-  const dirty = git.clean ? "clean" : `${git.changes} change(s)`;
-  return `${git.branch ?? "unknown"} @ ${git.commit ?? "unknown"} (${dirty})`;
 }
 
 /**

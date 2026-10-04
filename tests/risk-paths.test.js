@@ -52,6 +52,14 @@ test("isSecretPath matches .env and credential paths", () => {
   assert.equal(isSecretPath("src/index.ts"), false);
 });
 
+test("isSecretPath leaves committed env templates to the content scan", () => {
+  for (const file of [".env.example", ".env.sample", ".env.template", "apps/api/.env.dist"]) {
+    assert.equal(isSecretPath(file), false, file);
+  }
+  assert.equal(isSecretPath(".env.production"), true);
+  assert.equal(isSecretPath(".env.example.local"), true);
+});
+
 test("matchSecretPaths and matchRiskPaths filter cleanly", () => {
   const paths = [".env", "src/payment/stripe.ts", "src/util/date.ts", "prisma/schema.prisma"];
   assert.deepEqual(matchSecretPaths(paths), [".env"]);

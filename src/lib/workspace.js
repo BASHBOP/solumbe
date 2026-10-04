@@ -1,7 +1,7 @@
 import path from "node:path";
 import { generateCodeMap } from "./code-map.js";
 import { getDoctorReport } from "./doctor.js";
-import { inspectRepo } from "./repo.js";
+import { formatGitSummary, inspectRepo } from "./repo.js";
 
 const keyScriptNames = ["dev", "start", "build", "lint", "tsc:check", "check:type", "test", "test:e2e"];
 
@@ -105,7 +105,7 @@ function formatWorkspaceReport(data) {
   ];
 
   for (const repo of data.repos) {
-    const git = formatGit(repo.git);
+    const git = formatGitSummary(repo.git);
     lines.push(
       `| ${repo.name} | ${repo.fileCount} | ${git} | ${repo.languages.map((/** @type {{ language: string, count: number }} */ item) => `${item.language} ${item.count}`).join(", ") || "unknown"} | ${repo.entrypoints.join(", ") || "none detected"} |`,
     );
@@ -235,19 +235,6 @@ function countByDomain(files) {
  */
 function scoreIntegration(item) {
   return Math.min(item.frontendApiClients, 1) * 10 + item.backendControllers * 2 + item.backendServices;
-}
-
-/**
- * @param {GitInfo} git
- * @returns {string}
- */
-function formatGit(git) {
-  if (!git.available) {
-    return "not detected";
-  }
-
-  const dirty = git.clean ? "clean" : `${git.changes} change(s)`;
-  return `${git.branch ?? "unknown"} @ ${git.commit ?? "unknown"} (${dirty})`;
 }
 
 /**

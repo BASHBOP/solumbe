@@ -6,6 +6,18 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+Fixes from running Solumbe's review tools on three bashbop repositories and checking every answer against the code.
+
+### Fixed
+
+- **Changed files are ranked by score.** With a diff base, `change_impact` listed changed files in path order, so a review of bashbop-event-web opened on an untracked dotfile README at score 0 and `review_verdict`'s top five were all unrelated. Changed files still lead the list, now highest score first.
+- **`review_verdict --head` reviews exactly base..head.** `head` reached review context but not impact or the gate, which counted the working tree: a merged 51-file PR was reported as 88 files, untracked scratch output included. Impact and the gate now read the head commit's file set, and the MCP tool takes `head`. `change_impact` takes `includeUntracked` (default true) to review tracked changes only.
+- **`.env.example` no longer fails the secret check on its name.** Committed env templates (`.env.example`, `.sample`, `.template`, `.dist`) name variables; removing two from one hard-failed a gate. They are still scanned, and a credential value inside one still fails.
+- **A head-bound gate no longer tells you to unstage committed files.** Risk-review advice to run `git restore --staged` now appears only for a staged gate.
+- **Prisma schemas and SQL migrations are mapped.** Both were outside the code map, so a migration that rewrote existing rows was "unmapped" in the change it belonged to. `schema.prisma` is a `schema` file indexed by its models, enums and fields; `.sql` under `migrations/` is a `migration` file indexed by its tables and columns. Other SQL, such as dumps and seeds, stays unindexed.
+- **Go modules have validation commands, entrypoints and test guardrails.** `harness` lists `gofmt`, `go vet`, `go build` and `go test` for a module with `go.mod`, `main.go` and `cmd/<name>/main.go` are entrypoints, and AX counts `_test.go` files as tests. A file's extension no longer path-matches a request, so "port it to Go" stops matching every `.go` file.
+- **A checkout behind its upstream says so.** Reports show `main @ ccbba9f (clean, 10 behind origin/main)`, as of the last fetch, and the context pack lists it as a conflict. The four copies of the git one-liner are now one.
+
 ## [4.1.0] - 2026-10-01
 
 One command connects Solumbe to every agent host on the machine, and host configs now start under GUI hosts. No command, field or schema was removed.
