@@ -702,3 +702,39 @@ test("generateImpact does not path-match a file on its extension", () => {
   assert.ok(!round?.reasons.some((reason) => reason.startsWith("path matches") && reason.includes("go")), JSON.stringify(round?.reasons));
   assert.equal(result.data.topFiles[0].path, "internal/pricing/pricing.go");
 });
+
+test("generateImpact does not raise a money-flow risk from docs or test data alone", () => {
+  const root = gitFixture("risk-docs", {
+    "go.mod": "module example.com/x\n",
+    "docs/plans/stripe-cutover.md": "# Cutover plan\n",
+    "internal/fees/testdata/stripe.json": JSON.stringify({ cutover: 1 }),
+  });
+  fs.writeFileSync(path.join(root, "docs/plans/stripe-cutover.md"), "# Cutover plan\n\nUpdated.\n");
+  fs.writeFileSync(path.join(root, "internal/fees/testdata/stripe.json"), JSON.stringify({ cutover: 2 }));
+
+  const result = generateImpact("update the cutover plan", { path: root, diffBase: "HEAD" });
+  assert.ok(!result.data.risks.some((risk) => risk.startsWith("Money-flow")), result.data.risks.join(" | "));
+});
+
+// Regression (dogfood, bashbop-api): paystack.controller.ts imports dozens of
+// services; the first eight in import order (affiliates, analytics, ...) were
+// labelled "predictable supporting fan-out" for a Paystack identity change.
+test("generateImpact keeps a controller's most relevant imports as supporting fan-out", () => {
+  const unrelated = ["affiliates", "analytics", "audit", "banners", "blog", "booking", "branding", "calendar", "campaigns"];
+  const files = {
+    "package.json": JSON.stringify({ name: "fanout-fixture" }),
+    "src/paystack/paystack.service.ts": "export class PaystackService { verifyBvn() { return true; } }\n",
+    "src/paystack/paystack.controller.ts": [
+      ...unrelated.map((name) => `import { ${name}Service } from "../${name}/${name}.service";`),
+      'import { PaystackService } from "./paystack.service";',
+      "export class PaystackController { verifyBvn() { return new PaystackService(); } }",
+      "",
+    ].join("\n"),
+  };
+  for (const name of unrelated) files[`src/${name}/${name}.service.ts`] = `export class ${name}Service {}\n`;
+  const root = writeFixture("fanout", files);
+
+  const result = generateImpact("verify the paystack bvn in the controller", { path: root });
+  const controller = result.data.topFiles.find((file) => file.path === "src/paystack/paystack.controller.ts");
+  assert.equal(controller?.relatedFiles[0], "src/paystack/paystack.service.ts", JSON.stringify(controller?.relatedFiles));
+});

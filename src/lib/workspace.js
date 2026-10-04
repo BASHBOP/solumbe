@@ -37,6 +37,24 @@ export function generateWorkspaceReport(repoPaths) {
 }
 
 /**
+ * Notes drawn from the repositories in this report, not from one product's
+ * stack: a Go service beside a Next app and a Nest API is named as such.
+ * @param {any[]} repos
+ * @returns {string[]}
+ */
+function productNotes(repos) {
+  const stacks = repos.map((repo) => `${repo.name} (${repo.languages[0]?.language ?? "unknown"})`);
+  const notes = [
+    `- Treat these ${repos.length} repositories as one product: ${stacks.join(", ")}.`,
+    "- Use repo-level reports for detailed file lists, and this workspace report for cross-repo orientation.",
+  ];
+  for (const repo of repos) {
+    if (repo.git?.behind) notes.push(`- ${repo.name} is ${repo.git.behind} commit(s) behind ${repo.git.upstream}; pull before relying on this report for it.`);
+  }
+  return notes;
+}
+
+/**
  * @param {RepoInspection} repo
  * @param {CodeMap} codeMap
  * @returns {object}
@@ -154,16 +172,7 @@ function formatWorkspaceReport(data) {
     lines.push("| none detected | 0 | 0 | 0 |");
   }
 
-  lines.push(
-    "",
-    "## Product-Level Notes",
-    "",
-    "- Treat these as one product workspace: Next frontend plus Nest/Prisma API.",
-    "- Use repo-level reports for detailed file lists, and this workspace report for cross-repo orientation.",
-    "- Avoid full-repo `code-structure` on this workspace; prefer narrowed scopes like `app/**/*.tsx` or `src/**/*.ts`.",
-    "- Add MCP tooling around `workspace` next so agents can understand both repos before editing either one.",
-    "",
-  );
+  lines.push("", "## Product-Level Notes", "", ...productNotes(data.repos), "");
 
   return lines.join("\n");
 }

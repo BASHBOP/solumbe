@@ -329,3 +329,12 @@ test("scoring paths still gate, including real configuration", () => {
 test("a manifest alongside a scoring path still gates via that path", () => {
   assert.equal(matchRiskPaths(["package-lock.json", "src/auth/session.ts"], { gate: true }).length, 1);
 });
+
+// Regression (dogfood, bashbop-go): `internal/pricing/pricing.go` carried no
+// money-flow flag while a plan document about Stripe did.
+test("classifyPath flags fee, pricing and payout code as money flow", () => {
+  for (const file of ["internal/pricing/pricing.go", "internal/fees/fees.go", "src/paystack/paystack.service.ts", "src/payouts/payout.service.ts"]) {
+    assert.ok(classifyPath(file).includes(RISK_FLAGS.moneyFlow), file);
+  }
+  assert.ok(!classifyPath("src/feedback/feedback.service.ts").includes(RISK_FLAGS.moneyFlow));
+});
