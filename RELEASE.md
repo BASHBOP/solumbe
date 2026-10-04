@@ -25,7 +25,7 @@ Preserve this discipline across the stable 3.x line. There is no Solumbe 2.x: th
 13. Verify the published binary:
 
 ```bash
-npm install -g @bashbop/solumbe@4.1.0
+npm install -g @bashbop/solumbe@4.2.0
 solumbe doctor
 ```
 

@@ -4,7 +4,7 @@
 
 > For teams that want any coding agent to produce evidence a human can trust before merge.
 
-**v4.1.0** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
+**v4.2.0** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
 
 Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep -->
 
@@ -20,6 +20,16 @@ Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep
 ---
 
 ## What's New
+
+!!! tip "v4.2.0 published (2026-10-04)"
+    Reviews look into a repository's companions and read what a migration does to existing data. No command, field or schema was removed.
+
+    - `review_verdict` and `change_impact` name the top files in each companion repository listed in `.solumberc.json`, so a web change whose rule the API also decides points at the API file. The verdict `schemaVersion` is now 2 for that one added field.
+    - A new `Migration safety` gate check warns when a changed SQL migration rewrites, deletes, truncates or drops existing data. Prisma schemas and SQL migrations are now mapped.
+    - `review_verdict --head` reviews exactly base..head, changed files rank by score, and `.env.example` no longer fails the secret check on its name.
+    - Go modules get validation commands, entrypoints and test guardrails, a multi-repo context pack keeps the small repo, and a checkout behind its upstream says so.
+
+    [npm v4.2.0](https://www.npmjs.com/package/@bashbop/solumbe/v/4.2.0) · [GitHub Release](https://github.com/BASHBOP/solumbe/releases/tag/v4.2.0) · [MCP Registry](https://registry.modelcontextprotocol.io/?q=io.github.BASHBOP%2Fsolumbe)
 
 !!! tip "v4.1.0 published (2026-10-01)"
     One command connects Solumbe to your agents. No command, field or schema was removed.
@@ -208,7 +218,7 @@ flowchart LR
 === "Install"
 
     ```bash
-    npm install -g @bashbop/solumbe@4.1.0
+    npm install -g @bashbop/solumbe@4.2.0
     solumbe doctor
     solumbe context "review this change" --path .
     ```
@@ -216,7 +226,7 @@ flowchart LR
 === "No Global Install"
 
     ```bash
-    npx -y @bashbop/solumbe@4.1.0 doctor
+    npx -y @bashbop/solumbe@4.2.0 doctor
     ```
 
 === "Source Checkout"

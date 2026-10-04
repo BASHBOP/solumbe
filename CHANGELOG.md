@@ -6,7 +6,9 @@ This project follows SemVer.
 
 ## [Unreleased]
 
-Fixes from running Solumbe's review tools on three bashbop repositories and checking every answer against the code.
+## [4.2.0] - 2026-10-04
+
+Fixes from running Solumbe's review tools on three bashbop repositories and checking every answer against the code, and reviews that look into a repository's companions. No command, field or schema was removed; the verdict `schemaVersion` moves to 2 for one added field.
 
 ### Added
 
