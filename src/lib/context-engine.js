@@ -112,11 +112,13 @@ const stopWords = new Set([
   "in",
   "is",
   "it",
+  "just",
   "let",
   "me",
   "new",
   "of",
   "on",
+  "only",
   "or",
   "the",
   "to",
@@ -134,7 +136,22 @@ const stopWords = new Set([
 /** Raised when no action word names the work; a model read that settles the intent withdraws it. */
 export const AMBIGUOUS_ACTION_QUESTION = "The requested action is ambiguous; clarify whether this is implementation, review, debugging, or exploration.";
 
-const actionWords = new Set(["add", "build", "change", "create", "debug", "fix", "implement", "refactor", "review", "test", "update"]);
+const actionWords = new Set([
+  "add",
+  "build",
+  "change",
+  "create",
+  "debug",
+  "fix",
+  "implement",
+  "migrate",
+  "refactor",
+  "remove",
+  "rename",
+  "review",
+  "test",
+  "update",
+]);
 // A request framed around symptoms ("scanning and date bugs", "the app is
 // broken", "crashes on submit") names no verb from actionWords at all, but it
 // is unmistakably a debugging task. Recorded gap: "ticket scanning (QR
@@ -529,10 +546,14 @@ function computeRepoHints(maps, query) {
     }
   }
 
+  const properNouns = properNounWords(query);
   for (const entry of perRepoSegments) {
     for (const segment of entry.segments) {
-      if (segment.length < minRepoSegmentLength || commonSegments.has(segment)) continue;
-      if (rawWords.has(segment)) {
+      if (commonSegments.has(segment)) continue;
+      // A short segment (`go`, `ui`) is an everyday word too; it names a repo
+      // only when written as a name: "the Go fee server", not "go to settings".
+      const named = segment.length >= minRepoSegmentLength ? rawWords.has(segment) : segment.length === 2 && properNouns.has(segment);
+      if (named) {
         hinted.add(entry.root);
         break;
       }
@@ -541,6 +562,25 @@ function computeRepoHints(maps, query) {
   // A hint naming every repo is not discriminating (nothing to prefer over
   // anything else).
   return hinted.size < maps.length ? hinted : new Set();
+}
+
+/**
+ * Lower-cased words the query capitalises away from the start of a sentence:
+ * a name or acronym (`Go`, `API`), not an ordinary word.
+ * @param {string} query
+ * @returns {Set<string>}
+ */
+function properNounWords(query) {
+  /** @type {Set<string>} */
+  const words = new Set();
+  for (const match of String(query).matchAll(/[A-Za-z0-9]+/g)) {
+    const word = match[0];
+    if (word === word.toLowerCase()) continue;
+    const before = String(query).slice(0, match.index).trimEnd();
+    if (!before || /[.!?:]$/.test(before)) continue;
+    words.add(word.toLowerCase());
+  }
+  return words;
 }
 
 /**
@@ -1186,7 +1226,29 @@ function selectPrimaryFiles(scoredFiles, limit, rules = noRequestRules) {
   const strong = files.filter((file) => file.score >= 25);
   const pool = strong.length ? strong : files.slice(0, Math.min(limit, 3));
   const remaining = limit - named.length;
-  return remaining > 0 ? [...named, ...diversifyByDomain(pool, remaining, 2)] : named;
+  return remaining > 0 ? [...named, ...keepEachRepo(diversifyByDomain(pool, remaining, 2), pool)] : named;
+}
+
+/**
+ * Across several repositories, a small one with a strong match keeps one
+ * primary slot instead of being outscored by a larger repo's volume: a
+ * request about a 6-file Go service once returned five files of the 1,000-file
+ * API that calls it, and none of the service.
+ * @param {ScoredFile[]} selected
+ * @param {ScoredFile[]} pool
+ * @returns {ScoredFile[]}
+ */
+function keepEachRepo(selected, pool) {
+  const result = [...selected];
+  for (const root of new Set(pool.map((file) => file.repo.root))) {
+    if (result.some((file) => file.repo.root === root)) continue;
+    const best = pool.filter((file) => file.repo.root === root).sort((a, b) => b.score - a.score)[0];
+    // The lowest-ranked file of a repo that holds more than one slot gives way.
+    let slot = result.length - 1;
+    while (slot >= 0 && result.filter((other) => other.repo.root === result[slot].repo.root).length < 2) slot -= 1;
+    if (best && slot >= 0) result[slot] = best;
+  }
+  return result;
 }
 
 const fallbackEntryStems = new Map([
@@ -1404,9 +1466,12 @@ function inferConflicts(maps) {
   /** @type {string[]} */
   const conflicts = [];
   for (const map of maps) {
-    const git = /** @type {{ available?: boolean, clean?: boolean, changes?: number }} */ (map.repo.git);
+    const git = /** @type {{ available?: boolean, clean?: boolean, changes?: number, upstream?: string, behind?: number }} */ (map.repo.git);
     if (git?.available && !git.clean) {
       conflicts.push(`${map.repo.name} has ${git.changes} uncommitted git change(s); inspect the working tree before editing.`);
+    }
+    if (git?.available && git.behind) {
+      conflicts.push(`${map.repo.name} is ${git.behind} commit(s) behind ${git.upstream} as of the last fetch; this context describes the older checkout.`);
     }
   }
   return conflicts;
@@ -1480,12 +1545,28 @@ function inferSources(maps, commands) {
  * @returns {Intent}
  */
 function inferIntent(tokens) {
-  const named = tokens.find((token) => actionWords.has(token));
+  const named = tokens.map(actionWordOf).find(Boolean);
   const action = named ?? (tokens.some((token) => debugSynonyms.has(token)) ? "debug" : "unknown");
   return {
     action,
-    topics: tokens.filter((token) => !actionWords.has(token)).slice(0, 8),
+    topics: tokens.filter((token) => !actionWordOf(token)).slice(0, 8),
   };
+}
+
+/**
+ * The action word a token inflects: "reviewing" is review, "fixed" is fix,
+ * "creating" is create, "debugging" is debug.
+ * @param {string} token
+ * @returns {string | undefined}
+ */
+function actionWordOf(token) {
+  if (actionWords.has(token)) return token;
+  const stem = token.replace(/(?:ing|ed|es|s)$/, "");
+  if (stem === token) return undefined;
+  for (const candidate of [stem, `${stem}e`, stem.replace(/(.)\1$/, "$1")]) {
+    if (actionWords.has(candidate)) return candidate;
+  }
+  return undefined;
 }
 
 /**

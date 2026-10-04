@@ -28,6 +28,10 @@ const sourceExtensions = new Set([
   ".yaml",
   ".yml",
   ".snap",
+  // The data model: a Prisma schema and SQL migrations. A migration that
+  // rewrites existing rows is as much the change as the service beside it.
+  ".prisma",
+  ".sql",
   // Markdown ships as source in this ecosystem: agent skills (SKILL.md and
   // its companion pages) are instructions contributors are asked to edit, and
   // docs/ pages are the thing a documentation request changes. Leaving them
@@ -38,11 +42,18 @@ const sourceExtensions = new Set([
 ]);
 
 /** @param {string} file @returns {boolean} */
+function isMigrationPath(file) {
+  return /(^|\/)migrations?(\/|$)/i.test(file);
+}
+
+/** @param {string} file @returns {boolean} */
 export function isSourceFilePath(file) {
   const basename = path.posix.basename(file);
   // Manifest and compiler metadata are ubiquitous but are not useful change
   // owners. Keep application JSON (translations and flag config) indexable.
   if (["package.json", "package-lock.json", "tsconfig.json"].includes(basename)) return false;
+  // SQL outside a migrations directory is usually a dump or seed, not a change owner.
+  if (path.posix.extname(file) === ".sql") return isMigrationPath(file) || /^(schema|structure)\.sql$/.test(basename);
   return sourceExtensions.has(path.posix.extname(file)) || (basename === ".snapshot" && /(^|\/)(feature[-_]?flags?|flags?|config)(\/|$)/i.test(file));
 }
 
@@ -276,10 +287,13 @@ function analyzeSource(relativePath, text, maxSymbols) {
   // instead. Data access is skipped for the same reason: a SQL snippet quoted
   // in a doc is an example, not a query this repository runs.
   const markdown = isMarkdownFilePath(relativePath);
-  const ast = markdown ? emptyAstFacts() : extractAstFacts(relativePath, text);
+  // Prisma and SQL are not JavaScript; their models, tables and columns come
+  // from `extractArtifactFacts`, not from the TypeScript parser.
+  const schemaArtifact = /\.(prisma|sql)$/i.test(relativePath);
+  const ast = markdown || schemaArtifact ? emptyAstFacts() : extractAstFacts(relativePath, text);
   const artifactFacts = extractArtifactFacts(relativePath, text);
   const vendor = isVendorFile(relativePath, text);
-  const dataAccess = vendor || markdown ? [] : extractDataAccess(text);
+  const dataAccess = vendor || markdown || schemaArtifact ? [] : extractDataAccess(text);
   const domainInfo = inferDomainInfo(relativePath);
   /** @type {FileRecord} */
   const record = {
@@ -335,6 +349,17 @@ function extractArtifactFacts(relativePath, text) {
     for (const match of text.matchAll(/"([^"\\]{2,120})"\s*:/g)) add("config", match[1], match.index ?? 0);
   } else if (extension === ".yaml" || extension === ".yml") {
     for (const match of text.matchAll(/^\s*([A-Za-z_$][\w$.-]{1,120})\s*:/gm)) add("config", match[1], match.index ?? 0);
+  } else if (extension === ".prisma") {
+    for (const match of text.matchAll(/^\s*(model|enum|view|type)\s+([A-Za-z_]\w*)\s*{/gm))
+      add(match[1] === "enum" ? "enum" : "model", match[2], match.index ?? 0);
+    // Field names: `paystackKycStatus String?` is what a KYC request matches on.
+    for (const match of text.matchAll(/^\s+([a-z_]\w*)\s+[A-Z]\w*(?:\[\])?\??(?:\s|$)/gm)) add("field", match[1], match.index ?? 0);
+  } else if (extension === ".sql") {
+    for (const match of text.matchAll(/\b(?:CREATE|ALTER|DROP)\s+TABLE\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?"?(\w+)"?/gi)) add("table", match[1], match.index ?? 0);
+    for (const match of text.matchAll(/\b(?:UPDATE|INSERT\s+INTO|DELETE\s+FROM)\s+"?(\w+)"?/gi)) add("table", match[1], match.index ?? 0);
+    for (const match of text.matchAll(/\b(?:ADD|DROP|ALTER|RENAME)\s+COLUMN\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?"?(\w+)"?/gi))
+      add("column", match[1], match.index ?? 0);
+    for (const match of text.matchAll(/\bSET\s+"?(\w+)"?\s*=/gi)) add("column", match[1], match.index ?? 0);
   } else if (extension === ".md" || extension === ".mdx" || extension === ".markdown") {
     // Frontmatter keys and their scalar values first: a skill's `name` is its
     // identifier, and it is what a request naming that skill matches on.

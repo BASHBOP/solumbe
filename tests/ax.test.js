@@ -104,3 +104,22 @@ test("bandFor maps scores to the expected bands", () => {
 test("ax requires a non-empty change request", () => {
   assert.throws(() => generateAxScore("   ", { path: makeRepo() }), /requires a change request/);
 });
+
+// Regression (dogfood, bashbop-go): nine `_test.go` files scored "tests: no,
+// validation: no" because only package.json scripts counted.
+test("generateAxScore counts a Go module's _test.go files and toolchain as guardrails", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ax-go-"));
+  const files = {
+    "go.mod": "module example.com/fees\n\ngo 1.22\n",
+    "internal/fees/fees.go": "package fees\n\nfunc RefundFee() int { return 1 }\n",
+    "internal/fees/fees_test.go": 'package fees\n\nimport "testing"\n\nfunc TestRefundFee(t *testing.T) {}\n',
+  };
+  for (const [relative, content] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(root, relative)), { recursive: true });
+    fs.writeFileSync(path.join(root, relative), content);
+  }
+
+  const data = generateAxScore("add a refund fee endpoint", { path: root });
+  assert.equal(data.drivers.guardrails.tests, true);
+  assert.equal(data.drivers.guardrails.validation, true);
+});

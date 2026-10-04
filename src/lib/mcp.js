@@ -203,6 +203,10 @@ export const tools = [
         path: { type: "string", description: "Repository path. Defaults to current working directory." },
         top: { type: "number", description: "Number of files to return. Defaults to 10." },
         diffBase: { type: "string", description: "Optional git ref to validate predictions against (e.g. origin/main, HEAD)." },
+        includeUntracked: {
+          type: "boolean",
+          description: "With diffBase, also count untracked, non-ignored files as changed. Defaults to true; pass false to review only tracked changes.",
+        },
         includeMarkdown: { type: "boolean", description: "Return a compact human-readable markdown report instead of the full JSON. Defaults to false." },
       },
       required: ["query"],
@@ -345,6 +349,11 @@ export const tools = [
         path: { type: "string", description: "Repository path. Defaults to current working directory." },
         request: { type: "string", description: "Plain-English change request for impact scoring." },
         base: { type: "string", description: "Base ref for local diff. Defaults to origin/main, then HEAD." },
+        head: {
+          type: "string",
+          description:
+            "Review exactly base..head: impact, gate and review context all read the head commit's changes, so uncommitted and untracked files play no part. Ignored in GitHub PR mode.",
+        },
         pr: {
           type: "string",
           description: "PR selector (number, URL, or branch). Set, gates that GitHub PR, as review_gate does; omitted or blank, runs the local gate.",
@@ -731,6 +740,7 @@ async function dispatchTool(name, args) {
         path: args.path ?? ".",
         top: args.top,
         diffBase: args.diffBase,
+        includeUntracked: args.includeUntracked,
         companions: true,
       });
       return args.includeMarkdown ? result : result.data;
@@ -805,6 +815,7 @@ async function dispatchTool(name, args) {
       const { data } = await generateReview(repoPath, {
         request: args.request,
         base: args.base,
+        head: optionalString(args.head),
         // Blank runs the local gate, as for review_gate. generateReview would
         // take " " for a PR, and gh would drop it and gate the checked-out
         // branch's PR instead.

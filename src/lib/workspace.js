@@ -1,7 +1,7 @@
 import path from "node:path";
 import { generateCodeMap } from "./code-map.js";
 import { getDoctorReport } from "./doctor.js";
-import { inspectRepo } from "./repo.js";
+import { formatGitSummary, inspectRepo } from "./repo.js";
 
 const keyScriptNames = ["dev", "start", "build", "lint", "tsc:check", "check:type", "test", "test:e2e"];
 
@@ -34,6 +34,24 @@ export function generateWorkspaceReport(repoPaths) {
     data,
     markdown: formatWorkspaceReport(data),
   };
+}
+
+/**
+ * Notes drawn from the repositories in this report, not from one product's
+ * stack: a Go service beside a Next app and a Nest API is named as such.
+ * @param {any[]} repos
+ * @returns {string[]}
+ */
+function productNotes(repos) {
+  const stacks = repos.map((repo) => `${repo.name} (${repo.languages[0]?.language ?? "unknown"})`);
+  const notes = [
+    `- Treat these ${repos.length} repositories as one product: ${stacks.join(", ")}.`,
+    "- Use repo-level reports for detailed file lists, and this workspace report for cross-repo orientation.",
+  ];
+  for (const repo of repos) {
+    if (repo.git?.behind) notes.push(`- ${repo.name} is ${repo.git.behind} commit(s) behind ${repo.git.upstream}; pull before relying on this report for it.`);
+  }
+  return notes;
 }
 
 /**
@@ -105,7 +123,7 @@ function formatWorkspaceReport(data) {
   ];
 
   for (const repo of data.repos) {
-    const git = formatGit(repo.git);
+    const git = formatGitSummary(repo.git);
     lines.push(
       `| ${repo.name} | ${repo.fileCount} | ${git} | ${repo.languages.map((/** @type {{ language: string, count: number }} */ item) => `${item.language} ${item.count}`).join(", ") || "unknown"} | ${repo.entrypoints.join(", ") || "none detected"} |`,
     );
@@ -154,16 +172,7 @@ function formatWorkspaceReport(data) {
     lines.push("| none detected | 0 | 0 | 0 |");
   }
 
-  lines.push(
-    "",
-    "## Product-Level Notes",
-    "",
-    "- Treat these as one product workspace: Next frontend plus Nest/Prisma API.",
-    "- Use repo-level reports for detailed file lists, and this workspace report for cross-repo orientation.",
-    "- Avoid full-repo `code-structure` on this workspace; prefer narrowed scopes like `app/**/*.tsx` or `src/**/*.ts`.",
-    "- Add MCP tooling around `workspace` next so agents can understand both repos before editing either one.",
-    "",
-  );
+  lines.push("", "## Product-Level Notes", "", ...productNotes(data.repos), "");
 
   return lines.join("\n");
 }
@@ -235,19 +244,6 @@ function countByDomain(files) {
  */
 function scoreIntegration(item) {
   return Math.min(item.frontendApiClients, 1) * 10 + item.backendControllers * 2 + item.backendServices;
-}
-
-/**
- * @param {GitInfo} git
- * @returns {string}
- */
-function formatGit(git) {
-  if (!git.available) {
-    return "not detected";
-  }
-
-  const dirty = git.clean ? "clean" : `${git.changes} change(s)`;
-  return `${git.branch ?? "unknown"} @ ${git.commit ?? "unknown"} (${dirty})`;
 }
 
 /**

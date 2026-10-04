@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { generateCodeMap } from "./code-map.js";
 import { isTypeCheckScript, selectScripts } from "./package-scripts.js";
-import { inspectRepo } from "./repo.js";
+import { formatGitSummary, inspectRepo } from "./repo.js";
 import { classifyPath, RISK_SCORE_WEIGHTS } from "./risk-paths.js";
 import { runCommand } from "./tools.js";
 import { estimateTokens, estimateTokenSections } from "./tokens.js";
@@ -290,7 +290,7 @@ export function formatPrReviewMarkdown(data) {
     "",
     `- Repo: ${data.repo.name}`,
     `- Root: ${data.repo.root}`,
-    `- Git: ${formatGit(data.repo.git)}`,
+    `- Git: ${formatGitSummary(data.repo.git)}`,
     `- Comparison: ${data.comparison.base}...${data.comparison.head}`,
     `- Changed files: ${data.comparison.changedFileCount}`,
     `- Diff: ${data.comparison.shortstat || `${data.comparison.insertions} insertion(s), ${data.comparison.deletions} deletion(s)`}`,
@@ -965,7 +965,8 @@ function inferBasicKind(file) {
   if (base.endsWith(".service.ts")) return "service";
   if (base.endsWith(".module.ts")) return "module";
   if (base.endsWith(".dto.ts")) return "dto";
-  if (base.endsWith(".schema.ts") || file.includes("/schemas/")) return "schema";
+  if (base.endsWith(".schema.ts") || file.includes("/schemas/") || extension === ".prisma") return "schema";
+  if (extension === ".sql") return "migration";
   if (base.startsWith("use") && /\.(ts|tsx)$/.test(base)) return "hook";
   if (file.startsWith("redux/apis/") || file.startsWith("services/") || base.includes("api-client")) return "apiClient";
   if (/^[A-Z]/.test(base) && /\.(tsx|jsx)$/.test(base)) return "component";
@@ -1334,18 +1335,6 @@ function normalizeRoutePart(value) {
     .trim()
     .replace(/^\/+|\/+$/g, "")
     .replace(/^:$/, "");
-}
-
-/**
- * @param {any} git
- * @returns {string}
- */
-function formatGit(git) {
-  if (!git.available) {
-    return "not detected";
-  }
-  const dirty = git.clean ? "clean" : `${git.changes} change(s)`;
-  return `${git.branch ?? "unknown"} @ ${git.commit ?? "unknown"} (${dirty})`;
 }
 
 /**

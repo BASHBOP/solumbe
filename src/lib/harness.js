@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { generateCodeMap } from "./code-map.js";
 import { isTypeCheckScript, selectScripts } from "./package-scripts.js";
-import { inspectRepo } from "./repo.js";
+import { formatGitSummary, inspectRepo } from "./repo.js";
 import { estimateTokens, estimateTokenSections } from "./tokens.js";
 
 const validationScripts = [
@@ -117,7 +117,7 @@ export function formatHarnessMarkdown(data) {
     "## Repo",
     "",
     `- Root: ${data.repo.root}`,
-    `- Git: ${formatGit(data.repo.git)}`,
+    `- Git: ${formatGitSummary(data.repo.git)}`,
     `- Package managers: ${data.repo.packageManagers.join(", ") || "none detected"}`,
     `- Entrypoints: ${data.repo.entrypoints.join(", ") || "none detected"}`,
     "",
@@ -159,7 +159,7 @@ function inferCommands(repo) {
   const runner = packageRunner(repo.packageManagers);
   return {
     setup: inferSetupCommands(repo),
-    validate: inferScriptCommands(repo.scripts, runner, validationScripts),
+    validate: [...inferScriptCommands(repo.scripts, runner, validationScripts), ...inferToolchainValidation(repo.root)],
     runtime: inferScriptCommands(repo.scripts, runner, runtimeScripts),
     context: [
       {
@@ -176,6 +176,22 @@ function inferCommands(repo) {
       },
     ],
   };
+}
+
+/**
+ * Validation a toolchain provides without a scripts file: a Go module is
+ * built, vetted, tested and format-checked by `go` itself.
+ * @param {string} root
+ * @returns {HarnessCommand[]}
+ */
+function inferToolchainValidation(root) {
+  if (!fs.existsSync(path.join(root, "go.mod"))) return [];
+  return [
+    { command: 'test -z "$(gofmt -l .)"', reason: "Go formatting check" },
+    { command: "go vet ./...", reason: "Go static checks" },
+    { command: "go build ./...", reason: "Go compile check" },
+    { command: "go test ./...", reason: "Go behavior verification" },
+  ];
 }
 
 /**
@@ -307,16 +323,4 @@ function formatCommands(commands, fallback) {
     return [`- ${fallback}`];
   }
   return commands.map((item) => `- \`${item.command}\`: ${item.reason}`);
-}
-
-/**
- * @param {{ available?: boolean, clean?: boolean, changes?: number, branch?: string, commit?: string }} git
- * @returns {string}
- */
-function formatGit(git) {
-  if (!git.available) {
-    return "not detected";
-  }
-  const dirty = git.clean ? "clean" : `${git.changes} change(s)`;
-  return `${git.branch ?? "unknown"} @ ${git.commit ?? "unknown"} (${dirty})`;
 }

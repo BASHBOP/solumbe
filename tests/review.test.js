@@ -51,6 +51,28 @@ test("generateReview reports the PR comparison statistics instead of zeroes", as
   assert.equal(data.prReviewSummary.deletions, 0);
 });
 
+// Regression (dogfood, bashbop-event-web): a review of a merged range counted
+// untracked scratch files, reporting 88 changed files for a 51-file PR, and
+// `--head` reached review context but not impact or the gate.
+test("generateReview with a head reviews exactly base..head in every engine", async () => {
+  const root = gitInit("exact-head", {
+    "package.json": JSON.stringify({ name: "review-fixture", version: "1.0.0", scripts: { test: "node --test" } }),
+    "src/paystack/bvn.service.ts": "export const verifyBvn = () => false;\n",
+  });
+  fs.writeFileSync(path.join(root, "src/paystack/bvn.service.ts"), "export const verifyBvn = () => true;\n");
+  spawnSync("git", ["commit", "-q", "-am", "verify bvn"], { cwd: root });
+  fs.mkdirSync(path.join(root, "scratch"), { recursive: true });
+  fs.writeFileSync(path.join(root, "scratch/notes.ts"), "export const notes = 1;\n");
+
+  const { data, fullReports } = await generateReview(root, { request: "verify the paystack bvn", base: "HEAD~1", head: "HEAD" });
+
+  assert.deepEqual(fullReports.pass.changedFiles, ["src/paystack/bvn.service.ts"]);
+  assert.equal(fullReports.pass.scope, "commit");
+  assert.deepEqual(fullReports.impact.diffEvidence.mappedFiles, ["src/paystack/bvn.service.ts"]);
+  assert.equal(data.prReviewSummary.changedFiles, 1);
+  assert.ok(!data.impactSummary.topFiles.some((file) => file.path.startsWith("scratch/")));
+});
+
 test("formatReviewTerminal renders a verdict line with bars in fancy mode", async () => {
   const root = gitInit("fancy", {
     "package.json": JSON.stringify({ name: "review-fixture", version: "1.0.0", scripts: { test: "node --test" } }),
