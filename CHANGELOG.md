@@ -8,6 +8,10 @@ This project follows SemVer.
 
 Fixes from running Solumbe's review tools on three bashbop repositories and checking every answer against the code.
 
+### Added
+
+- **The gate reads what a migration does to existing data.** A new `Migration safety` check warns when a changed SQL migration rewrites rows (`UPDATE … SET`), deletes them, truncates or drops a table, or drops columns, and names the table and whether the statement has no `WHERE`. A migration that reset every verified organiser to unverified passed the gate as an ordinary schema file; the check now points at it. Comments are ignored, additive migrations pass, and the check runs in both the local and the GitHub PR gate.
+
 ### Fixed
 
 - **Changed files are ranked by score.** With a diff base, `change_impact` listed changed files in path order, so a review of bashbop-event-web opened on an untracked dotfile README at score 0 and `review_verdict`'s top five were all unrelated. Changed files still lead the list, now highest score first.

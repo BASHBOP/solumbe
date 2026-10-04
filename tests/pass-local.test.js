@@ -1108,3 +1108,41 @@ test("evaluateLocal with a head gives review advice, not unstaging commands", ()
   assert.ok(!risk.details.some((detail) => detail.includes("git restore --staged")), JSON.stringify(risk.details));
   assert.ok(risk.details.some((detail) => detail.includes("record explicit review")));
 });
+
+// Regression (dogfood, bashbop-api #543): the migration that reset every
+// verified organiser to INCOMPLETE passed the gate as an ordinary schema file.
+test("evaluateLocal warns when a migration rewrites or drops existing data", () => {
+  const root = initRepo("migration-safety");
+  writeAndCommit(root, { "package.json": JSON.stringify({ name: "fixture", version: "1.0.0" }) }, "init");
+  writeAndCommit(
+    root,
+    {
+      "prisma/migrations/20261004_add/migration.sql": 'ALTER TABLE "Profile" ADD COLUMN "paystackKycName" TEXT;\n',
+    },
+    "additive",
+  );
+  const additive = evaluateLocal(root, { base: "HEAD~1", head: "HEAD" }).checks.find((check) => check.name === "Migration safety");
+  assert.equal(additive?.status, "PASS");
+
+  writeAndCommit(
+    root,
+    {
+      "prisma/migrations/20261004_reset/migration.sql": [
+        "-- Everyone starts again; UPDATE in a comment is not a statement",
+        'UPDATE "Profile" SET "paystackKycStatus" = \'INCOMPLETE\' WHERE "paystackKycStatus" IS DISTINCT FROM \'INCOMPLETE\';',
+        'ALTER TABLE "Profile" DROP COLUMN "paystackIdNumber",',
+        'DROP COLUMN "paystackSelfieUrl";',
+        'DELETE FROM "Session";',
+        "",
+      ].join("\n"),
+    },
+    "reset",
+  );
+  const risky = evaluateLocal(root, { base: "HEAD~1", head: "HEAD" }).checks.find((check) => check.name === "Migration safety");
+  assert.equal(risky?.status, "WARN");
+  const details = risky.details.join("\n");
+  assert.match(details, /rewrites existing rows in "Profile"/);
+  assert.match(details, /drops columns of "Profile"/);
+  assert.match(details, /deletes rows from "Session" \(every row: no WHERE\)/);
+  assert.equal(risky.details.length, 3, details);
+});

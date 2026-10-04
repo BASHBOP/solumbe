@@ -95,6 +95,7 @@ export function evaluateLocal(repoPath, options = {}) {
     ...(scope !== "working-tree" ? [changeSubjectCheck(scope, subject, subjectError)] : []),
     secretCheck(files, subjectContent),
     riskCheck(files, scope),
+    ...migrationCheck(files, subjectContent),
     checkRelease(root, files, { baseContent, governance }),
     validationCommandsCheck(root),
     ...(validationExecution ? [{ name: "Validation execution", ...validationExecution }] : []),
@@ -611,6 +612,63 @@ function readWorkingTreeFile(root, file) {
   } catch {
     return null;
   }
+}
+
+// Statements that change or remove data already in the database. A schema
+// diff shows a migration exists; only its body shows that it resets every
+// verified profile or drops a column of personal data.
+const DATA_MUTATIONS = [
+  { pattern: /\bUPDATE\s+("?[\w.]+"?)\s+SET\b/i, describe: (/** @type {string} */ table) => `rewrites existing rows in ${table}` },
+  { pattern: /\bDELETE\s+FROM\s+("?[\w.]+"?)/i, describe: (/** @type {string} */ table) => `deletes rows from ${table}` },
+  { pattern: /\bTRUNCATE\s+(?:TABLE\s+)?("?[\w.]+"?)/i, describe: (/** @type {string} */ table) => `empties ${table}` },
+  { pattern: /\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?("?[\w.]+"?)/i, describe: (/** @type {string} */ table) => `drops table ${table} and its data` },
+  {
+    pattern: /\bALTER\s+TABLE\s+("?[\w.]+"?)[\s\S]*?\bDROP\s+COLUMN\b/i,
+    describe: (/** @type {string} */ table) => `drops columns of ${table} and their data`,
+  },
+];
+
+/**
+ * Warn when a changed SQL migration rewrites, deletes or drops existing data,
+ * so a reviewer reads the migration body, not only its file name. Returns no
+ * check when the change carries no SQL migration.
+ * @param {string[]} files
+ * @param {(file: string) => string | null} readContent
+ * @returns {Check[]}
+ */
+export function migrationCheck(files, readContent) {
+  const migrations = (files ?? []).filter((file) => /\.sql$/i.test(file) && /(^|\/)migrations?\//i.test(file));
+  if (migrations.length === 0) return [];
+  /** @type {string[]} */
+  const details = [];
+  for (const file of migrations) {
+    const text = readContent(file);
+    if (text == null) continue;
+    const statements = text
+      .replace(/--[^\n]*/g, "")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split(";");
+    for (const statement of statements) {
+      for (const { pattern, describe } of DATA_MUTATIONS) {
+        const match = pattern.exec(statement);
+        if (match)
+          details.push(
+            `${file}: ${describe(match[1])}${/\bUPDATE\b|\bDELETE\b/i.test(match[0]) && !/\bWHERE\b/i.test(statement) ? " (every row: no WHERE)" : ""}`,
+          );
+      }
+    }
+  }
+  if (details.length === 0) {
+    return [{ name: "Migration safety", status: STATUS.pass, summary: "Changed migrations add or alter schema without rewriting or dropping existing data." }];
+  }
+  return [
+    {
+      name: "Migration safety",
+      status: STATUS.warn,
+      summary: "A migration rewrites or drops existing data; review its effect on production rows and how it is rolled back.",
+      details: details.slice(0, 20),
+    },
+  ];
 }
 
 /**
