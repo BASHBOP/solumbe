@@ -6,8 +6,9 @@
 
 /// <reference types="node" />
 import path from "node:path";
+import { companionRepos } from "./config.js";
 import { getCachedCodeMap } from "./index-cache.js";
-import { conceptsFromQuery, classifyPath, CONCEPT_SYNONYMS, RISK_FLAGS, glyphFor, isDocPath, singularizeToken } from "./risk-paths.js";
+import { conceptsFromQuery, classifyPath, CONCEPT_SYNONYMS, RISK_FLAGS, glyphFor, isDocPath, isTestDataPath, singularizeToken } from "./risk-paths.js";
 import { isRunnableTestPath, isTestFilePath } from "./code-map/classify.js";
 import { collapseLocaleSiblings, formatLocales, isCopyRequest, resolveNamedFiles, stripFileExtensions, TRANSLATION_DEMOTION } from "./ranking-rules.js";
 import { estimateTokens, estimateTokenSections } from "./tokens.js";
@@ -29,6 +30,15 @@ export const DIFF_RENAME_LIMIT = 1000;
  * @property {string[]} [diffFiles]
  * @property {any} [codeMap]
  * @property {boolean} [includeUntracked] count untracked files as changed against diffBase (default true)
+ * @property {boolean} [companions] also rank the companion repositories in the repo's .solumberc.json (see companionLeads)
+ */
+
+/**
+ * The few files a companion repository would own for the same request.
+ * @typedef {object} CompanionLead
+ * @property {string} repo
+ * @property {string} root
+ * @property {{ path: string, score: number, riskFlags: string[] }[]} topFiles
  */
 
 /**
@@ -58,10 +68,12 @@ export const DIFF_RENAME_LIMIT = 1000;
 // share one entry (`siblings`), and a named file's extension no longer scores.
 const impactEngineVersion = 4;
 const defaultTop = 10;
+const companionTop = 3;
 
 const STOP_WORDS = new Set([
   "a",
   "add",
+  "also",
   "an",
   "and",
   "are",
@@ -72,6 +84,7 @@ const STOP_WORDS = new Set([
   "can",
   "change",
   "do",
+  "drop",
   "fix",
   "for",
   "from",
@@ -83,14 +96,18 @@ const STOP_WORDS = new Set([
   "into",
   "is",
   "it",
+  "just",
   "make",
   "need",
   "new",
   "of",
   "on",
+  "only",
   "or",
   "our",
   "please",
+  "remove",
+  "rename",
   "should",
   "that",
   "the",
@@ -98,6 +115,7 @@ const STOP_WORDS = new Set([
   "to",
   "update",
   "use",
+  "via",
   "want",
   "we",
   "when",
@@ -332,6 +350,10 @@ export function generateImpact(query, options = {}) {
     },
     validation,
   });
+  if (options.companions) {
+    const companions = companionLeads(normalized, repoPath);
+    if (companions.length) data.companions = companions;
+  }
 
   data.tokenEstimate = {
     ...estimateTokenSections([
@@ -348,6 +370,36 @@ export function generateImpact(query, options = {}) {
   data.tokenEstimate.markdown = estimateTokens(markdown);
 
   return { data, markdown };
+}
+
+/**
+ * Leads in the repository's companions (`companions` in its .solumberc.json):
+ * the top few files each one would own for the same request, ranked by the
+ * heuristic alone since a companion has no diff here. A web change whose rule
+ * the API also decides then points at the API file, which a single-repo impact
+ * never sees. A companion with no file scoring above zero is kept with no
+ * files, so the report shows it was looked at.
+ * @param {string} query
+ * @param {string} repoPath
+ * @param {{ top?: number }} [options]
+ * @returns {CompanionLead[]}
+ */
+export function companionLeads(query, repoPath, options = {}) {
+  const root = path.resolve(repoPath);
+  const top = options.top ?? companionTop;
+  return companionRepos(root)
+    .filter((dir) => dir !== root)
+    .map((dir) => {
+      const { data } = generateImpact(query, { path: dir, top });
+      return {
+        repo: data.repo.name,
+        root: data.repo.root,
+        topFiles: data.topFiles
+          .filter((/** @type {any} */ file) => file.score > 0)
+          .slice(0, top)
+          .map((/** @type {any} */ file) => ({ path: file.path, score: file.score, riskFlags: file.riskFlags })),
+      };
+    });
 }
 
 /**
@@ -383,7 +435,9 @@ function scoreFiles(files, weightedQuery, concepts, flags, stats) {
  * @returns {ScoreResult}
  */
 function scoreFile(file, weightedQuery, concepts, { wantsTests, wantsDocs, wantsCopy }, stats) {
-  const pathTokens = tokenize(file.path);
+  // The extension names the language, not the change: "port it to Go" must
+  // not path-match every `.go` file.
+  const pathTokens = tokenize(file.path.replace(/\.[A-Za-z0-9]+$/, ""));
   const pathCounts = countTokens(pathTokens);
   const symbolTokens = tokenize(file.symbols.map((symbol) => symbol.name ?? "").join(" "));
   const symbolCounts = countTokens(symbolTokens);
@@ -742,8 +796,12 @@ function applyDependencyBoosts(allFiles, scored, pinned = new Map()) {
     }
   }
 
+  // Keep the eight most relevant neighbours, not the first eight imports: a
+  // controller that imports forty services listed affiliates and analytics
+  // ahead of its own service, and they became "supporting" fan-out.
+  const relevance = (/** @type {string} */ related) => scored.get(related)?.score ?? 0;
   for (const entry of scored.values()) {
-    entry.relatedFiles = [...new Set(entry.relatedFiles)].slice(0, 8);
+    entry.relatedFiles = [...new Set(entry.relatedFiles)].sort((a, b) => relevance(b) - relevance(a)).slice(0, 8);
   }
   return scored;
 }
@@ -843,6 +901,9 @@ function suggestTests(files, ranked, repo) {
 function identifyRisks(query, ranked, concepts) {
   const flags = new Set(concepts);
   for (const entry of ranked) {
+    // A plan that mentions Stripe or a golden fixture of fee answers is not a
+    // money-flow change; the code they describe is.
+    if (isDocPath(entry.file.path) || isTestDataPath(entry.file.path)) continue;
     for (const flag of classifyPath(entry.file.path, { kind: entry.file.kind })) {
       flags.add(flag);
     }
@@ -1009,7 +1070,10 @@ function mergeDiffEvidence(evidence, heuristic) {
     const exact = changed.get(entry.file.path);
     if (exact && entry.siblings?.length) exact.siblings = [...entry.siblings];
   }
-  return [...evidence, ...heuristic.filter((entry) => !changed.has(entry.file.path))];
+  // Changed files lead, ranked by their own score: the diff decides which files
+  // surface, not their order, so a score-0 dotfile cannot head the list.
+  const byScore = [...evidence].sort((a, b) => b.score - a.score || a.file.path.localeCompare(b.file.path));
+  return [...byScore, ...heuristic.filter((entry) => !changed.has(entry.file.path))];
 }
 
 /**
@@ -1309,6 +1373,10 @@ export function formatImpactMarkdown(data) {
   for (const suggestion of data.testSuggestions) lines.push(`- ${suggestion}`);
   lines.push("", "## Risks To Check", "");
   for (const risk of data.risks) lines.push(`- ${risk}`);
+  if (data.companions) {
+    lines.push("", "## Companion Repository Leads", "");
+    for (const companion of data.companions) lines.push(`- ${companion.repo}: ${formatCompanionFiles(companion)}`);
+  }
   if (data.validation) {
     lines.push("", "## Validation Against Diff", "");
     lines.push(`- Base: ${data.validation.base}`);
@@ -1331,6 +1399,15 @@ export function formatImpactMarkdown(data) {
  */
 function formatList(items) {
   return items.length ? items.map((item) => `\`${item}\``).join(", ") : "none";
+}
+
+/**
+ * @param {CompanionLead} companion
+ * @returns {string}
+ */
+function formatCompanionFiles(companion) {
+  if (!companion.topFiles.length) return "no matching files";
+  return companion.topFiles.map((file) => `\`${file.path}\` (score ${file.score}${file.riskFlags.length ? `, ${file.riskFlags.join(", ")}` : ""})`).join(", ");
 }
 
 // Tokenize a string into lowercased path/identifier tokens. Mirrors
@@ -1536,6 +1613,17 @@ export function formatImpactTerminal(data, rendererFactory) {
       data.risks.slice(0, 6).map((/** @type {string} */ r) => `${renderer.paint(renderer.glyphs.item, "dim")} ${r}`),
     ),
   );
+  if (data.companions) {
+    lines.push("");
+    lines.push(
+      renderer.section(
+        `${decor("🔗")}Companion repository leads`,
+        data.companions.map(
+          (/** @type {CompanionLead} */ companion) => `${renderer.paint(renderer.glyphs.item, "dim")} ${companion.repo}: ${formatCompanionFiles(companion)}`,
+        ),
+      ),
+    );
+  }
   if (data.validation) {
     lines.push("");
     const v = data.validation;

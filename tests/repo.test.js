@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { inspectRepo, gateInspectScripts } from "../src/lib/repo.js";
+import { spawnSync } from "node:child_process";
+import { formatGitSummary, gateInspectScripts, getGitInfo, inspectRepo } from "../src/lib/repo.js";
 
 test("inspectRepo detects TypeScript repo basics", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "solumbe-repo-"));
@@ -69,4 +70,28 @@ test("gateInspectScripts drops script bodies but keeps names unless opted in", (
 
   const opted = gateInspectScripts(inspectRepo(root), true);
   assert.equal(opted.scripts.build, "tsc -p tsconfig.json", "includeScripts:true keeps command bodies");
+});
+
+// Regression (dogfood, bashbop-go): a checkout ten commits behind origin/main
+// reported "main @ ccbba9f (clean)", so every analysis ran on stale code.
+test("getGitInfo and formatGitSummary report a checkout behind its upstream", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "repo-behind-"));
+  const git = (/** @type {string[]} */ ...args) => spawnSync("git", args, { cwd: root, encoding: "utf8" });
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "t@t");
+  git("config", "user.name", "T");
+  fs.writeFileSync(path.join(root, "a.txt"), "1\n");
+  git("add", ".");
+  git("commit", "-q", "-m", "one");
+  git("branch", "remote-main");
+  git("switch", "-q", "remote-main");
+  fs.writeFileSync(path.join(root, "a.txt"), "2\n");
+  git("commit", "-q", "-am", "two");
+  git("switch", "-q", "main");
+  git("branch", "--set-upstream-to=remote-main");
+
+  const info = getGitInfo(root);
+  assert.equal(info.behind, 1);
+  assert.equal(info.upstream, "remote-main");
+  assert.match(formatGitSummary(info), /\(clean, 1 behind remote-main\)$/);
 });

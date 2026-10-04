@@ -148,7 +148,7 @@ export function walk(root) {
 
       if (entry.isDirectory()) {
         visit(absolute);
-      } else if (entry.isFile() && !isIgnoredFile(entry.name)) {
+      } else if (entry.isFile() && !isIgnoredFile(entry.name, relative)) {
         results.push(relative);
       }
     }
@@ -200,10 +200,13 @@ function gitTrackedAndUntrackedFiles(root) {
 
 /**
  * @param {string} fileName
+ * @param {string} [relativePath]
  * @returns {boolean}
  */
-function isIgnoredFile(fileName) {
+function isIgnoredFile(fileName, relativePath = fileName) {
   const extension = path.extname(fileName).toLowerCase();
+  // SQL is skipped as dumps and backups, except a migration: that is source.
+  if (extension === ".sql" && /(^|[\\/])migrations?[\\/]/i.test(relativePath)) return false;
   return (
     fileName === ".DS_Store" ||
     fileName === ".eslintcache" ||
@@ -220,7 +223,8 @@ function isIgnoredFile(fileName) {
  * @returns {boolean}
  */
 function isIgnoredRepoPath(filePath) {
-  return filePath.split(path.sep).some((segment) => ignoredDirs.has(segment) || isIgnoredFile(segment));
+  const segments = filePath.split(path.sep);
+  return segments.some((segment, index) => ignoredDirs.has(segment) || isIgnoredFile(segment, index === segments.length - 1 ? filePath : segment));
 }
 
 /**
@@ -358,6 +362,11 @@ function detectEntrypoints(root, files, packageJson) {
     }
   }
 
+  // A Go module's binaries live at the root `main.go` or under `cmd/<name>/main.go`.
+  for (const file of files) {
+    if (file === "main.go" || /^cmd\/[^/]+\/main\.go$/.test(file.replaceAll("\\", "/"))) candidates.add(file);
+  }
+
   for (const file of ["src/main.ts", "main.ts", "middleware.ts", "next.config.js", "next.config.mjs", "next.config.ts"]) {
     if (files.includes(file) || fs.existsSync(path.join(root, file))) {
       candidates.add(file);
@@ -422,6 +431,11 @@ export function getGitInfo(root) {
   const statusLines = status.stdout.trim().split("\n").filter(Boolean);
   const branchLine = statusLines[0] ?? "";
   const changeLines = statusLines.slice(1);
+  // `## main...origin/main [ahead 1, behind 10]`, against the last fetch. A
+  // checkout behind its upstream is analysed as it was, not as it is.
+  const upstream = /^## [^ ]+?\.\.\.([^ ]+)/.exec(branchLine)?.[1];
+  const ahead = Number(/\bahead (\d+)/.exec(branchLine)?.[1] ?? 0);
+  const behind = Number(/\bbehind (\d+)/.exec(branchLine)?.[1] ?? 0);
   return {
     available: true,
     root: result.stdout.trim(),
@@ -430,5 +444,22 @@ export function getGitInfo(root) {
     clean: changeLines.length === 0,
     changes: changeLines.length,
     status: branchLine || undefined,
+    upstream,
+    ahead,
+    behind,
   };
+}
+
+/**
+ * One-line git state for reports: `main @ ccbba9f (clean, 10 behind origin/main)`.
+ * @param {{ available?: boolean, branch?: string, commit?: string, clean?: boolean, changes?: number, upstream?: string, behind?: number }} git
+ * @returns {string}
+ */
+export function formatGitSummary(git) {
+  if (!git.available) {
+    return "not detected";
+  }
+  const dirty = git.clean ? "clean" : `${git.changes} change(s)`;
+  const stale = git.behind ? `, ${git.behind} behind ${git.upstream}` : "";
+  return `${git.branch ?? "unknown"} @ ${git.commit ?? "unknown"} (${dirty}${stale})`;
 }

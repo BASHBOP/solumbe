@@ -308,6 +308,24 @@ test("generateImpact surfaces exact diff evidence without concealing unexplained
   assert.deepEqual(result.data.validation.heuristic.missedChangedFiles, exactFiles);
 });
 
+// Regression (dogfood, bashbop-event-web): changed files were listed in path
+// order, so a dotfile README at score 0 led a review over the real owner.
+test("generateImpact ranks changed files by score, not by path", () => {
+  const root = gitFixture("diff-order", {
+    "package.json": JSON.stringify({ name: "diff-order-fixture" }),
+    ".notes/README.md": "# notes\n",
+    "src/paystack/bvn-verification.service.ts": "export const verifyBvn = () => false;\n",
+  });
+  fs.writeFileSync(path.join(root, ".notes/README.md"), "# notes, edited\n");
+  fs.writeFileSync(path.join(root, "src/paystack/bvn-verification.service.ts"), "export const verifyBvn = () => true;\n");
+
+  const result = generateImpact("verify the paystack bvn", { path: root, diffBase: "HEAD" });
+  const top = result.data.topFiles.map((file) => file.path);
+
+  assert.equal(top[0], "src/paystack/bvn-verification.service.ts");
+  assert.ok(top.indexOf(".notes/README.md") > 0, `expected the unrelated note after the owner: ${top.join(", ")}`);
+});
+
 test("generateImpact reports a clean validation error for a bad diff base instead of throwing", () => {
   const root = gitFixture("validate-bad", {
     "package.json": JSON.stringify({ name: "validate-bad-fixture", scripts: { test: "node --test" } }),
@@ -644,4 +662,120 @@ test("generateImpact raises no risk from a domain only an advisory lead touches"
     !result.data.risks.some((r) => r.startsWith("Money-flow")),
     `payment page (advisory: ${advisory.includes("app/rsvp-payment-success/page.tsx")}) must not raise money flow: ${result.data.risks.join(" | ")}`,
   );
+});
+
+test("generateImpact ranks a configured companion repository only when asked", async () => {
+  const { companionLeads, formatImpactMarkdown } = await import("../src/lib/impact.js");
+  const parent = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "impact-companions-")));
+  const write = (root, files) => {
+    for (const [relative, content] of Object.entries(files)) {
+      fs.mkdirSync(path.dirname(path.join(root, relative)), { recursive: true });
+      fs.writeFileSync(path.join(root, relative), content);
+    }
+  };
+  const web = path.join(parent, "web");
+  const api = path.join(parent, "api");
+  const docs = path.join(parent, "docs");
+  write(api, {
+    "package.json": JSON.stringify({ name: "api" }),
+    "src/paystack/paystack.service.ts": "export class PaystackService { bvnRequired(profile) { return profile.country === 'NG'; } }\n",
+  });
+  write(docs, { "src/theme.ts": "export const theme = {};\n" });
+  write(web, {
+    "package.json": JSON.stringify({ name: "web" }),
+    ".solumberc.json": JSON.stringify({ companions: ["../api", "../docs", "."] }),
+    "src/checkout/bvn-gate.tsx": "export function BvnGate({ location }) { return location.country === 'NG'; }\n",
+  });
+  const query = "decide when BVN verification is required";
+
+  assert.ok(!("companions" in generateImpact(query, { path: web }).data), "off unless the caller asks");
+  const { data, markdown } = generateImpact(query, { path: web, companions: true });
+  assert.deepEqual(
+    data.companions.map((lead) => lead.repo),
+    ["api", "docs"],
+    "the repository itself is not its own companion",
+  );
+  assert.equal(data.companions[0].topFiles[0].path, "src/paystack/paystack.service.ts");
+  assert.deepEqual(data.companions[1].topFiles, [], "a companion with nothing scoring is kept, with no files");
+  assert.match(markdown, /## Companion Repository Leads\n\n- api: `src\/paystack\/paystack\.service\.ts` \(score [\d.]+[^)]*\)\n- docs: no matching files/);
+  assert.equal(formatImpactMarkdown(data), markdown);
+
+  assert.deepEqual(companionLeads(query, api), [], "no .solumberc.json, no leads");
+  assert.ok(!("companions" in generateImpact(query, { path: api, companions: true }).data));
+  fs.rmSync(parent, { recursive: true });
+});
+
+// Regression (dogfood, bashbop-api): the Prisma schema and the migration that
+// reset every verified profile were "unmapped", so impact could not rank the
+// most dangerous file in the change.
+test("generateImpact maps a Prisma schema and SQL migration by their models and columns", () => {
+  const root = gitFixture("prisma-map", {
+    "package.json": JSON.stringify({ name: "prisma-fixture" }),
+    "prisma/schema.prisma": "model Profile {\n  id Int @id\n  paystackKycStatus String?\n}\n",
+    "src/profile/profile.service.ts": "export class ProfileService {}\n",
+    "seeds/dump.sql": 'INSERT INTO "Profile" VALUES (1);\n',
+  });
+  fs.mkdirSync(path.join(root, "prisma/migrations/20261004_bvn"), { recursive: true });
+  fs.writeFileSync(path.join(root, "prisma/migrations/20261004_bvn/migration.sql"), 'UPDATE "Profile" SET "paystackKycStatus" = \'INCOMPLETE\';\n');
+  fs.writeFileSync(path.join(root, "prisma/schema.prisma"), "model Profile {\n  id Int @id\n  paystackKycStatus String?\n  paystackKycName String?\n}\n");
+
+  const result = generateImpact("reset the paystack kyc status on the profile", { path: root, diffBase: "HEAD" });
+  const byPath = new Map(result.data.topFiles.map((file) => [file.path, file]));
+
+  assert.deepEqual(result.data.diffEvidence.unmappedFiles, []);
+  assert.equal(byPath.get("prisma/schema.prisma")?.kind, "schema");
+  assert.equal(byPath.get("prisma/migrations/20261004_bvn/migration.sql")?.kind, "migration");
+  assert.ok(byPath.get("prisma/migrations/20261004_bvn/migration.sql")?.riskFlags.includes("data model"));
+  assert.ok(byPath.get("prisma/schema.prisma")?.score > 0, "expected the schema to match on its fields");
+  assert.ok(!byPath.has("seeds/dump.sql"), "a seed dump is not indexed as a change owner");
+});
+
+// Regression (dogfood, bashbop-go): "port ... to Go" path-matched every `.go`
+// file on its extension.
+test("generateImpact does not path-match a file on its extension", () => {
+  const root = writeFixture("go-extension", {
+    "go.mod": "module example.com/fees\n",
+    "internal/pricing/pricing.go": "package pricing\n\nfunc PromoDiscount() int { return 1 }\n",
+    "internal/jsmath/round.go": "package jsmath\n\nfunc Round() int { return 1 }\n",
+  });
+  const result = generateImpact("port promo discounts to Go", { path: root });
+  const round = result.data.topFiles.find((file) => file.path === "internal/jsmath/round.go");
+  assert.ok(!round?.reasons.some((reason) => reason.startsWith("path matches") && reason.includes("go")), JSON.stringify(round?.reasons));
+  assert.equal(result.data.topFiles[0].path, "internal/pricing/pricing.go");
+});
+
+test("generateImpact does not raise a money-flow risk from docs or test data alone", () => {
+  const root = gitFixture("risk-docs", {
+    "go.mod": "module example.com/x\n",
+    "docs/plans/stripe-cutover.md": "# Cutover plan\n",
+    "internal/fees/testdata/stripe.json": JSON.stringify({ cutover: 1 }),
+  });
+  fs.writeFileSync(path.join(root, "docs/plans/stripe-cutover.md"), "# Cutover plan\n\nUpdated.\n");
+  fs.writeFileSync(path.join(root, "internal/fees/testdata/stripe.json"), JSON.stringify({ cutover: 2 }));
+
+  const result = generateImpact("update the cutover plan", { path: root, diffBase: "HEAD" });
+  assert.ok(!result.data.risks.some((risk) => risk.startsWith("Money-flow")), result.data.risks.join(" | "));
+});
+
+// Regression (dogfood, bashbop-api): paystack.controller.ts imports dozens of
+// services; the first eight in import order (affiliates, analytics, ...) were
+// labelled "predictable supporting fan-out" for a Paystack identity change.
+test("generateImpact keeps a controller's most relevant imports as supporting fan-out", () => {
+  const unrelated = ["affiliates", "analytics", "audit", "banners", "blog", "booking", "branding", "calendar", "campaigns"];
+  const files = {
+    "package.json": JSON.stringify({ name: "fanout-fixture" }),
+    "src/paystack/paystack.service.ts": "export class PaystackService { verifyBvn() { return true; } }\n",
+    "src/paystack/paystack.controller.ts": [
+      ...unrelated.map((name) => `import { ${name}Service } from "../${name}/${name}.service";`),
+      'import { PaystackService } from "./paystack.service";',
+      "export class PaystackController { verifyBvn() { return new PaystackService(); } }",
+      "",
+    ].join("\n"),
+  };
+  for (const name of unrelated) files[`src/${name}/${name}.service.ts`] = `export class ${name}Service {}\n`;
+  const root = writeFixture("fanout", files);
+
+  const result = generateImpact("verify the paystack bvn in the controller", { path: root });
+  const controller = result.data.topFiles.find((file) => file.path === "src/paystack/paystack.controller.ts");
+  assert.equal(controller?.relatedFiles[0], "src/paystack/paystack.service.ts", JSON.stringify(controller?.relatedFiles));
 });

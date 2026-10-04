@@ -324,6 +324,90 @@
       }
     },
     {
+      "name": "impact-companions",
+      "formatter": "impact",
+      "data": {
+        "ok": true,
+        "generatedAt": "2026-01-01T00:00:00.000Z",
+        "impactEngineVersion": 4,
+        "query": "add Stripe refunds to the payment webhook",
+        "repo": {
+          "name": "solumbe-gate-eval-fixture",
+          "root": "<work>/git/gate-node-companion",
+          "sourceFileCount": 3
+        },
+        "concepts": ["money flow"],
+        "diffEvidence": null,
+        "topFiles": [],
+        "testSuggestions": ["No matching test file found. Add focused coverage around the highest-ranked impacted file."],
+        "risks": ["Money-flow change: verify idempotency, webhook behavior, refunds, invoices, and provider edge cases."],
+        "classifications": {
+          "requiredOwners": [],
+          "supportingFiles": [],
+          "advisoryFiles": []
+        },
+        "validation": null,
+        "companions": [
+          {
+            "repo": "shop-api",
+            "root": "<work>/fixtures/shop-api",
+            "topFiles": [
+              {
+                "path": "src/payment/stripe.webhook.ts",
+                "score": 262,
+                "riskFlags": ["money flow"]
+              },
+              {
+                "path": "src/payment/checkout.service.ts",
+                "score": 72.9,
+                "riskFlags": ["money flow"]
+              }
+            ]
+          }
+        ],
+        "tokenEstimate": {
+          "estimated": true,
+          "method": "ceil(characters / 4)",
+          "total": 56,
+          "sections": [
+            {
+              "name": "concepts",
+              "tokens": 4,
+              "characters": 14
+            },
+            {
+              "name": "diffEvidence",
+              "tokens": 1,
+              "characters": 2
+            },
+            {
+              "name": "topFiles",
+              "tokens": 1,
+              "characters": 2
+            },
+            {
+              "name": "testSuggestions",
+              "tokens": 24,
+              "characters": 94
+            },
+            {
+              "name": "risks",
+              "tokens": 26,
+              "characters": 104
+            }
+          ],
+          "fullJson": 250,
+          "markdown": 209
+        }
+      },
+      "outputs": {
+        "unicode-plain": "╭────────────────────────────────────────────────────────────────────────────╮\n│  solumbe impact · change blast radius                                      │\n│  \"add Stripe refunds to the payment webhook\"                               │\n│  <work>/git/gate-node-companion · 3 source file(s)                         │\n╰────────────────────────────────────────────────────────────────────────────╯\n\n  [?]  concepts: 💳 money flow\n\n▾ Suggested tests\n  - No matching test file found. Add focused coverage around the highest-ranked impacted file.\n\n▾ Risk hotspots\n  - Money-flow change: verify idempotency, webhook behavior, refunds, invoices, and provider edge cases.\n\n▾ Companion repository leads\n  - shop-api: `src/payment/stripe.webhook.ts` (score 262, money flow), `src/payment/checkout.service.ts` (score 72.9, money flow)\n\n  [i] Token estimate: JSON 250 · markdown 209",
+        "emoji-plain": "╭────────────────────────────────────────────────────────────────────────────╮\n│  🎯  solumbe impact · change blast radius                                  │\n│  💬  \"add Stripe refunds to the payment webhook\"                           │\n│  📂  <work>/git/gate-node-companion · 3 source file(s)                     │\n╰────────────────────────────────────────────────────────────────────────────╯\n\n  🧠  concepts: 💳 money flow\n\n▾ 🧪 Suggested tests\n  • No matching test file found. Add focused coverage around the highest-ranked impacted file.\n\n▾ 🚨 Risk hotspots\n  • Money-flow change: verify idempotency, webhook behavior, refunds, invoices, and provider edge cases.\n\n▾ 🔗 Companion repository leads\n  • shop-api: `src/payment/stripe.webhook.ts` (score 262, money flow), `src/payment/checkout.service.ts` (score 72.9, money flow)\n\n  📦 Token estimate: JSON 250 · markdown 209",
+        "ascii-plain": "+----------------------------------------------------------------------------+\n|  solumbe impact · change blast radius                                      |\n|  \"add Stripe refunds to the payment webhook\"                               |\n|  <work>/git/gate-node-companion · 3 source file(s)                         |\n+----------------------------------------------------------------------------+\n\n  [?]  concepts: 💳 money flow\n\n> > Suggested tests\n  - No matching test file found. Add focused coverage around the highest-ranked impacted file.\n\n> > Risk hotspots\n  - Money-flow change: verify idempotency, webhook behavior, refunds, invoices, and provider edge cases.\n\n> > Companion repository leads\n  - shop-api: `src/payment/stripe.webhook.ts` (score 262, money flow), `src/payment/checkout.service.ts` (score 72.9, money flow)\n\n  [i] Token estimate: JSON 250 · markdown 209",
+        "emoji-color": "\u001b[2m╭────────────────────────────────────────────────────────────────────────────╮\u001b[0m\n\u001b[2m│\u001b[0m  🎯  solumbe impact · change blast radius                                  \u001b[2m│\u001b[0m\n\u001b[2m│\u001b[0m  💬  \"add Stripe refunds to the payment webhook\"                           \u001b[2m│\u001b[0m\n\u001b[2m│\u001b[0m  📂  <work>/git/gate-node-companion · 3 source file(s)                     \u001b[2m│\u001b[0m\n\u001b[2m╰────────────────────────────────────────────────────────────────────────────╯\u001b[0m\n\n  🧠  concepts: 💳 money flow\n\n\u001b[1m▾ 🧪 Suggested tests\u001b[0m\n  \u001b[2m•\u001b[0m No matching test file found. Add focused coverage around the highest-ranked impacted file.\n\n\u001b[1m▾ 🚨 Risk hotspots\u001b[0m\n  \u001b[2m•\u001b[0m Money-flow change: verify idempotency, webhook behavior, refunds, invoices, and provider edge cases.\n\n\u001b[1m▾ 🔗 Companion repository leads\u001b[0m\n  \u001b[2m•\u001b[0m shop-api: `src/payment/stripe.webhook.ts` (score 262, money flow), `src/payment/checkout.service.ts` (score 72.9, money flow)\n\n  📦 Token estimate: JSON 250 · markdown 209"
+      }
+    },
+    {
       "name": "pass-warn",
       "formatter": "pass",
       "data": {
@@ -691,7 +775,7 @@
       "data": {
         "ok": true,
         "generatedAt": "2026-01-01T00:00:00.000Z",
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "reviewEngineVersion": 1,
         "request": "add a reporting export",
         "verdict": "WARN",
@@ -783,7 +867,7 @@
       "data": {
         "ok": true,
         "generatedAt": "2026-01-01T00:00:00.000Z",
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "reviewEngineVersion": 1,
         "request": "rotate the webhook secret",
         "verdict": "FAIL",
@@ -867,6 +951,116 @@
         "emoji-plain": "╭────────────────────────────────────────────────────────────────────────────╮\n│  🔬  solumbe review · composite verdict                                    │\n│  💬  \"rotate the webhook secret\"                                           │\n│  📂  <work>/git/gate-node-secret-content                                   │\n│  🚦  verdict FAIL · confidence 40%                                         │\n╰────────────────────────────────────────────────────────────────────────────╯\n\n  🎯  Impact   ▰▱▱▱▱▱▱▱▱▱   1 owner file(s) · 1 concept(s)\n  📋  Context  ▰▱▱▱▱▱▱▱▱▱   1 changed file(s) · risk low\n  🚦  Pass     ❌  FAIL        policy standard · governance team\n  🎓  Confidence  ▰▰▰▰▱▱▱▱▱▱   40%\n\n  🥇  Owner files\n     └─ src/greeting.js (score 0)\n\n  ❌  Blocking checks\n     └─ Secret safety: Potential credential value found in changed content.\n\n  ⚠️  Warnings\n     └─ Review state: Local mode cannot verify approvals, CODEOWNERS, status checks, or unresolved conversations yet.\n",
         "ascii-plain": "+----------------------------------------------------------------------------+\n|  solumbe review · composite verdict                                        |\n|  \"rotate the webhook secret\"                                               |\n|  <work>/git/gate-node-secret-content                                       |\n|  verdict FAIL · confidence 40%                                             |\n+----------------------------------------------------------------------------+\n\n  >  Impact   [#.........]   1 owner file(s) · 1 concept(s)\n  >  Context  [#.........]   1 changed file(s) · risk low\n  >  Pass     [FAIL]  FAIL        policy standard · governance team\n  >  Confidence  [####......]   40%\n\n  >  Owner files\n     |- src/greeting.js (score 0)\n\n  [FAIL]  Blocking checks\n     |- Secret safety: Potential credential value found in changed content.\n\n  [WARN] Warnings\n     |- Review state: Local mode cannot verify approvals, CODEOWNERS, status checks, or unresolved conversations yet.\n",
         "emoji-color": "\u001b[2m╭────────────────────────────────────────────────────────────────────────────╮\u001b[0m\n\u001b[2m│\u001b[0m  🔬  solumbe review · composite verdict                                    \u001b[2m│\u001b[0m\n\u001b[2m│\u001b[0m  💬  \"rotate the webhook secret\"                                           \u001b[2m│\u001b[0m\n\u001b[2m│\u001b[0m  📂  <work>/git/gate-node-secret-content                                   \u001b[2m│\u001b[0m\n\u001b[2m│\u001b[0m  🚦  verdict FAIL · confidence 40%                                         \u001b[2m│\u001b[0m\n\u001b[2m╰────────────────────────────────────────────────────────────────────────────╯\u001b[0m\n\n  🎯  Impact   ▰▱▱▱▱▱▱▱▱▱   1 owner file(s) · 1 concept(s)\n  📋  Context  ▰▱▱▱▱▱▱▱▱▱   1 changed file(s) · risk low\n  🚦  Pass     ❌  FAIL        policy standard · governance team\n  🎓  Confidence  ▰▰▰▰▱▱▱▱▱▱   40%\n\n  🥇  Owner files\n     └─ src/greeting.js (score 0)\n\n  ❌  Blocking checks\n     └─ Secret safety: Potential credential value found in changed content.\n\n  ⚠️  Warnings\n     └─ Review state: Local mode cannot verify approvals, CODEOWNERS, status checks, or unresolved conversations yet.\n"
+      }
+    },
+    {
+      "name": "review-companions",
+      "formatter": "review",
+      "data": {
+        "ok": true,
+        "generatedAt": "2026-01-01T00:00:00.000Z",
+        "schemaVersion": 2,
+        "reviewEngineVersion": 1,
+        "request": "add Stripe refunds to the payment webhook",
+        "verdict": "WARN",
+        "confidence": 75,
+        "repo": {
+          "root": "<work>/git/gate-node-companion",
+          "name": "gate-node-companion"
+        },
+        "impactSummary": {
+          "concepts": ["money flow"],
+          "topFiles": [
+            {
+              "path": "src/reporting/export.js",
+              "score": 0,
+              "riskFlags": []
+            }
+          ],
+          "risks": ["Money-flow change: verify idempotency, webhook behavior, refunds, invoices, and provider edge cases."],
+          "companions": [
+            {
+              "repo": "shop-api",
+              "root": "<work>/fixtures/shop-api",
+              "topFiles": [
+                {
+                  "path": "src/payment/stripe.webhook.ts",
+                  "score": 262,
+                  "riskFlags": ["money flow"]
+                },
+                {
+                  "path": "src/payment/checkout.service.ts",
+                  "score": 72.9,
+                  "riskFlags": ["money flow"]
+                }
+              ]
+            }
+          ]
+        },
+        "prReviewSummary": {
+          "changedFiles": 1,
+          "additions": 3,
+          "deletions": 0,
+          "riskLevel": "low",
+          "riskFlags": ["no test files changed"],
+          "reviewTargetsCount": 0
+        },
+        "pass": {
+          "verdict": "WARN",
+          "policy": "standard",
+          "governance": "team",
+          "checks": [
+            {
+              "name": "Changed files",
+              "status": "PASS",
+              "summary": "1 changed file found."
+            },
+            {
+              "name": "Secret safety",
+              "status": "PASS",
+              "summary": "No secret file paths and no credential values found in the changed content."
+            },
+            {
+              "name": "Risk review",
+              "status": "PASS",
+              "summary": "No obvious risk-sensitive file paths changed."
+            },
+            {
+              "name": "Release discipline",
+              "status": "PASS",
+              "summary": "No version metadata changes found."
+            },
+            {
+              "name": "Validation commands",
+              "status": "PASS",
+              "summary": "Validation commands are available."
+            },
+            {
+              "name": "Dependency audit",
+              "status": "PASS",
+              "summary": "Dependency audit commands are available."
+            },
+            {
+              "name": "Review state",
+              "status": "WARN",
+              "summary": "Local mode cannot verify approvals, CODEOWNERS, status checks, or unresolved conversations yet."
+            },
+            {
+              "name": "Policy profile",
+              "status": "PASS",
+              "summary": "Standard policy profile active."
+            }
+          ]
+        },
+        "tokenEstimate": {
+          "fullJson": 480
+        }
+      },
+      "outputs": {
+        "unicode-plain": "╭────────────────────────────────────────────────────────────────────────────╮\n│  solumbe review · composite verdict                                        │\n│  \"add Stripe refunds to the payment webhook\"                               │\n│  <work>/git/gate-node-companion                                            │\n│  verdict WARN · confidence 75%                                             │\n╰────────────────────────────────────────────────────────────────────────────╯\n\n  >  Impact   ▰▱▱▱▱▱▱▱▱▱   1 owner file(s) · 1 concept(s)\n  >  Context  ▰▱▱▱▱▱▱▱▱▱   1 changed file(s) · risk low\n  >  Pass     !  WARN        policy standard · governance team\n  >  Confidence  ▰▰▰▰▰▰▰▰▱▱   75%\n\n  >  Owner files\n     └─ src/reporting/export.js (score 0)\n\n  >  Companion repository leads\n     └─ shop-api: src/payment/stripe.webhook.ts (score 262), src/payment/checkout.service.ts (score 72.9)\n\n  ! Warnings\n     └─ Review state: Local mode cannot verify approvals, CODEOWNERS, status checks, or unresolved conversations yet.\n",
+        "emoji-plain": "╭────────────────────────────────────────────────────────────────────────────╮\n│  🔬  solumbe review · composite verdict                                    │\n│  💬  \"add Stripe refunds to the payment webhook\"                           │\n│  📂  <work>/git/gate-node-companion                                        │\n│  🚦  verdict WARN · confidence 75%                                         │\n╰────────────────────────────────────────────────────────────────────────────╯\n\n  🎯  Impact   ▰▱▱▱▱▱▱▱▱▱   1 owner file(s) · 1 concept(s)\n  📋  Context  ▰▱▱▱▱▱▱▱▱▱   1 changed file(s) · risk low\n  🚦  Pass     ⚠️   WARN        policy standard · governance team\n  🎓  Confidence  ▰▰▰▰▰▰▰▰▱▱   75%\n\n  🥇  Owner files\n     └─ src/reporting/export.js (score 0)\n\n  🔗  Companion repository leads\n     └─ shop-api: src/payment/stripe.webhook.ts (score 262), src/payment/checkout.service.ts (score 72.9)\n\n  ⚠️  Warnings\n     └─ Review state: Local mode cannot verify approvals, CODEOWNERS, status checks, or unresolved conversations yet.\n",
+        "ascii-plain": "+----------------------------------------------------------------------------+\n|  solumbe review · composite verdict                                        |\n|  \"add Stripe refunds to the payment webhook\"                               |\n|  <work>/git/gate-node-companion                                            |\n|  verdict WARN · confidence 75%                                             |\n+----------------------------------------------------------------------------+\n\n  >  Impact   [#.........]   1 owner file(s) · 1 concept(s)\n  >  Context  [#.........]   1 changed file(s) · risk low\n  >  Pass     [WARN]  WARN        policy standard · governance team\n  >  Confidence  [########..]   75%\n\n  >  Owner files\n     |- src/reporting/export.js (score 0)\n\n  >  Companion repository leads\n     |- shop-api: src/payment/stripe.webhook.ts (score 262), src/payment/checkout.service.ts (score 72.9)\n\n  [WARN] Warnings\n     |- Review state: Local mode cannot verify approvals, CODEOWNERS, status checks, or unresolved conversations yet.\n",
+        "emoji-color": "\u001b[2m╭────────────────────────────────────────────────────────────────────────────╮\u001b[0m\n\u001b[2m│\u001b[0m  🔬  solumbe review · composite verdict                                    \u001b[2m│\u001b[0m\n\u001b[2m│\u001b[0m  💬  \"add Stripe refunds to the payment webhook\"                           \u001b[2m│\u001b[0m\n\u001b[2m│\u001b[0m  📂  <work>/git/gate-node-companion                                        \u001b[2m│\u001b[0m\n\u001b[2m│\u001b[0m  🚦  verdict WARN · confidence 75%                                         \u001b[2m│\u001b[0m\n\u001b[2m╰────────────────────────────────────────────────────────────────────────────╯\u001b[0m\n\n  🎯  Impact   ▰▱▱▱▱▱▱▱▱▱   1 owner file(s) · 1 concept(s)\n  📋  Context  ▰▱▱▱▱▱▱▱▱▱   1 changed file(s) · risk low\n  🚦  Pass     ⚠️   WARN        policy standard · governance team\n  🎓  Confidence  ▰▰▰▰▰▰▰▰▱▱   75%\n\n  🥇  Owner files\n     └─ src/reporting/export.js (score 0)\n\n  🔗  Companion repository leads\n     └─ shop-api: src/payment/stripe.webhook.ts (score 262), src/payment/checkout.service.ts (score 72.9)\n\n  ⚠️  Warnings\n     └─ Review state: Local mode cannot verify approvals, CODEOWNERS, status checks, or unresolved conversations yet.\n"
       }
     },
     {

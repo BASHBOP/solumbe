@@ -6,6 +6,34 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-10-04
+
+Fixes from running Solumbe's review tools on three bashbop repositories and checking every answer against the code, and reviews that look into a repository's companions. No command, field or schema was removed; the verdict `schemaVersion` moves to 2 for one added field.
+
+### Added
+
+- **The gate reads what a migration does to existing data.** A new `Migration safety` check warns when a changed SQL migration rewrites rows (`UPDATE … SET`), deletes them, truncates or drops a table, or drops columns, and names the table and whether the statement has no `WHERE`. A migration that reset every verified organiser to unverified passed the gate as an ordinary schema file; the check now points at it. Comments are ignored, additive migrations pass, and the check runs in both the local and the GitHub PR gate.
+- **`review_verdict` and `change_impact` point into companion repositories.** When a repository's `.solumberc.json` lists `companions` (`"companions": ["../api"]`), both rank the same request in each companion, without a diff, and name its top three files with their scores and risk flags: under `impactSummary.companions` in the verdict and `companions` in the impact report, with a line in `solumbe review` and a section in `solumbe impact`. A review of a web change whose rule the API also decides now names the API file. A dogfood review of bashbop-event-web, which decides "BVN required" from the user's location while bashbop-api decides from the profile country, never surfaced `src/paystack/paystack.service.ts`. The verdict carries the field only when companions are configured and a request is given. The leads do not change the verdict, its confidence, or what an attestation record stores.
+
+### Changed
+
+- **The verdict `schemaVersion` is now 2**, for the added `impactSummary.companions`. Attestation records written from now on carry `verdictSchemaVersion: 2`; earlier records verify unchanged.
+
+### Fixed
+
+- **Changed files are ranked by score.** With a diff base, `change_impact` listed changed files in path order, so a review of bashbop-event-web opened on an untracked dotfile README at score 0 and `review_verdict`'s top five were all unrelated. Changed files still lead the list, now highest score first.
+- **`review_verdict --head` reviews exactly base..head.** `head` reached review context but not impact or the gate, which counted the working tree: a merged 51-file PR was reported as 88 files, untracked scratch output included. Impact and the gate now read the head commit's file set, and the MCP tool takes `head`. `change_impact` takes `includeUntracked` (default true) to review tracked changes only.
+- **`.env.example` no longer fails the secret check on its name.** Committed env templates (`.env.example`, `.sample`, `.template`, `.dist`) name variables; removing two from one hard-failed a gate. They are still scanned, and a credential value inside one still fails.
+- **A head-bound gate no longer tells you to unstage committed files.** Risk-review advice to run `git restore --staged` now appears only for a staged gate.
+- **Prisma schemas and SQL migrations are mapped.** Both were outside the code map, so a migration that rewrote existing rows was "unmapped" in the change it belonged to. `schema.prisma` is a `schema` file indexed by its models, enums and fields; `.sql` under `migrations/` is a `migration` file indexed by its tables and columns. Other SQL, such as dumps and seeds, stays unindexed.
+- **Go modules have validation commands, entrypoints and test guardrails.** `harness` lists `gofmt`, `go vet`, `go build` and `go test` for a module with `go.mod`, `main.go` and `cmd/<name>/main.go` are entrypoints, and AX counts `_test.go` files as tests. A file's extension no longer path-matches a request, so "port it to Go" stops matching every `.go` file.
+- **A multi-repo context pack keeps the small repo.** A request about a 6-file Go service named it ("the Go fee server") and got five files of the 1,000-file API that calls it. A two-letter folder segment such as `go` now names a repo when the request writes it as a name (`Go`, not "go to settings"), and each repository with a strong match keeps one primary slot.
+- **Inflected action words set the intent.** "reviewing", "fixed", "creating" and "debugging" read as review, fix, create and debug; `rename`, `remove` and `migrate` are actions. "only", "just", "also" and "via" no longer match code.
+- **Money flow is flagged on the code that moves money.** `fee`, `pricing`, `payout`, `paystack` and `settlement` paths carry the flag, so `internal/pricing/pricing.go` does; a plan document or a golden fixture that mentions Stripe no longer raises the impact's money-flow risk on its own.
+- **Related files are the most relevant imports.** A controller importing forty services listed the first eight in import order, so a Paystack change named affiliates and analytics modules as expected fan-out. Related files are now ordered by their own score.
+- **The workspace report describes the repositories it was given.** Its notes named every workspace "Next frontend plus Nest/Prisma API" and ended on an internal TODO; they now list each repo with its main language and say which are behind their upstream.
+- **A checkout behind its upstream says so.** Reports show `main @ ccbba9f (clean, 10 behind origin/main)`, as of the last fetch, and the context pack lists it as a conflict. The four copies of the git one-liner are now one.
+
 ## [4.1.0] - 2026-10-01
 
 One command connects Solumbe to every agent host on the machine, and host configs now start under GUI hosts. No command, field or schema was removed.

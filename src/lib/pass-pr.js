@@ -7,7 +7,7 @@
 import path from "node:path";
 import * as codeowners from "./codeowners.js";
 import { defaultGhRunner } from "./gh.js";
-import { convergenceCheck, gitRoot, gitShowContent, secretCheck } from "./pass-local.js";
+import { convergenceCheck, gitRoot, gitShowContent, migrationCheck, secretCheck } from "./pass-local.js";
 import { aggregateVerdict, normalizeGovernance, normalizeProfile, policyCheck, STATUS } from "./policy.js";
 import { checkRelease } from "./release-check.js";
 import { matchRiskPaths } from "./risk-paths.js";
@@ -129,6 +129,7 @@ export async function evaluatePR(repoPath, selector, options = {}) {
     changedFilesCheck(files),
     secretCheck(files, prHeadContent),
     riskCheck(files),
+    ...migrationCheck(files, prHeadContent),
     checkRelease(root, files, { baseContent: prBaseContent(root, pr.baseRefOid, pr.baseRefName), governance }),
     reviewDecisionCheck(pr.reviewDecision, governance),
     codeownersCheckPR(root, files, pr.reviews ?? [], runner, governance),

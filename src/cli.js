@@ -430,6 +430,7 @@ async function handleImpact(parsed) {
     path: repoPath,
     top: parsed.flags.top,
     diffBase: parsed.flags.diff_base,
+    companions: true,
   });
   noteResult(result.data);
 

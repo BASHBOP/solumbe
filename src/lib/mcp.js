@@ -194,7 +194,7 @@ export const tools = [
       "Ranks the files most likely to own a plain-English change request, with risk flags and suggested tests. A diff base adds exact changed-file evidence beside the heuristic.",
     title: "Change Impact",
     description:
-      "Given a plain-English change request, rank the files most likely to own the change, with risk flags, suggested tests, and an implementation plan. Optional diff base surfaces exact changed-file evidence alongside the heuristic. Uses a per-user external cache and leaves the target repository unchanged.",
+      "Given a plain-English change request, rank the files most likely to own the change, with risk flags, suggested tests, and an implementation plan. Optional diff base surfaces exact changed-file evidence alongside the heuristic. When the repository's .solumberc.json lists companions, companions also carries the top few files each companion repository would own for the same request. Uses a per-user external cache and leaves the target repository unchanged.",
     annotations: { readOnlyHint: true },
     inputSchema: {
       type: "object",
@@ -203,6 +203,10 @@ export const tools = [
         path: { type: "string", description: "Repository path. Defaults to current working directory." },
         top: { type: "number", description: "Number of files to return. Defaults to 10." },
         diffBase: { type: "string", description: "Optional git ref to validate predictions against (e.g. origin/main, HEAD)." },
+        includeUntracked: {
+          type: "boolean",
+          description: "With diffBase, also count untracked, non-ignored files as changed. Defaults to true; pass false to review only tracked changes.",
+        },
         includeMarkdown: { type: "boolean", description: "Return a compact human-readable markdown report instead of the full JSON. Defaults to false." },
       },
       required: ["query"],
@@ -337,7 +341,7 @@ export const tools = [
       "change_impact plus review_context plus review_gate in one call, with a derived confidence score and a schemaVersion the attestation ledger records.",
     title: "Review Verdict",
     description:
-      "Run the full review pipeline in one shot: change_impact plus review_context plus review_gate, returning a unified verdict with a derived confidence score. Use review_verdict when you want the complete picture of a change in a single call. Use review_context instead for diff metadata only (no verdict), or review_gate for the gate verdict alone.",
+      "Run the full review pipeline in one shot: change_impact plus review_context plus review_gate, returning a unified verdict with a derived confidence score. When the repository's .solumberc.json lists companions and a request is given, impactSummary.companions names the top few files each companion repository would own for that request. Use review_verdict when you want the complete picture of a change in a single call. Use review_context instead for diff metadata only (no verdict), or review_gate for the gate verdict alone.",
     annotations: { readOnlyHint: true },
     inputSchema: {
       type: "object",
@@ -345,6 +349,11 @@ export const tools = [
         path: { type: "string", description: "Repository path. Defaults to current working directory." },
         request: { type: "string", description: "Plain-English change request for impact scoring." },
         base: { type: "string", description: "Base ref for local diff. Defaults to origin/main, then HEAD." },
+        head: {
+          type: "string",
+          description:
+            "Review exactly base..head: impact, gate and review context all read the head commit's changes, so uncommitted and untracked files play no part. Ignored in GitHub PR mode.",
+        },
         pr: {
           type: "string",
           description: "PR selector (number, URL, or branch). Set, gates that GitHub PR, as review_gate does; omitted or blank, runs the local gate.",
@@ -731,6 +740,8 @@ async function dispatchTool(name, args) {
         path: args.path ?? ".",
         top: args.top,
         diffBase: args.diffBase,
+        includeUntracked: args.includeUntracked,
+        companions: true,
       });
       return args.includeMarkdown ? result : result.data;
     }
@@ -804,6 +815,7 @@ async function dispatchTool(name, args) {
       const { data } = await generateReview(repoPath, {
         request: args.request,
         base: args.base,
+        head: optionalString(args.head),
         // Blank runs the local gate, as for review_gate. generateReview would
         // take " " for a PR, and gh would drop it and gate the checked-out
         // branch's PR instead.

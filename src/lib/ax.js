@@ -12,7 +12,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { generateImpact } from "./impact.js";
-import { inspectRepo } from "./repo.js";
+import { inspectRepo, listRepoFiles } from "./repo.js";
 import { load as loadCodeowners } from "./codeowners.js";
 import { estimateTokens } from "./tokens.js";
 
@@ -140,8 +140,12 @@ function evaluateGuardrails(repo, root) {
   const dirs = repo.importantDirectories ?? [];
   const hasScript = (/** @type {string} */ name) => scriptNames.includes(name);
 
-  const tests = hasScript("test") || dirs.some((/** @type {string} */ d) => /(^|[/\\])tests?$/.test(d));
-  const validation = ["lint", "typecheck", "test", "build"].some(hasScript);
+  // A Go module needs no scripts: `go vet` and `go test` are the toolchain's
+  // own validation, and its tests sit beside the code as `_test.go` files.
+  const goModule = fs.existsSync(path.join(root, "go.mod"));
+  const goTests = goModule && listRepoFiles(root).some((file) => file.endsWith("_test.go"));
+  const tests = hasScript("test") || dirs.some((/** @type {string} */ d) => /(^|[/\\])tests?$/.test(d)) || goTests;
+  const validation = ["lint", "typecheck", "test", "build"].some(hasScript) || goModule;
   const ownersLoad = safeCall(() => loadCodeowners(root));
   const owners = Boolean(ownersLoad?.ok && (ownersLoad.ruleset?.rules?.length ?? 0) > 0);
   const ci = hasCiWorkflow(root);
@@ -171,7 +175,7 @@ function hasCiWorkflow(root) {
 function buildRecommendations({ guardrails, tokens, meanFanOut, concepts }) {
   /** @type {string[]} */
   const recs = [];
-  if (!guardrails.tests) recs.push("Add a `test` script or a tests/ directory so changes are verifiable before merge (+6 AX).");
+  if (!guardrails.tests) recs.push("Add tests (a `test` script, a tests/ directory, or `_test.go` files) so changes are verifiable before merge (+6 AX).");
   if (!guardrails.validation) recs.push("Add lint/typecheck/test/build scripts agents can run as guardrails (+6 AX).");
   if (!guardrails.owners) recs.push("Add a CODEOWNERS file so required reviewers resolve automatically (+6 AX).");
   if (!guardrails.ci) recs.push("Add a CI workflow under .github/workflows to gate merges — `solumbe init` scaffolds one (+6 AX).");

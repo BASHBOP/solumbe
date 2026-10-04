@@ -27,7 +27,8 @@ export function classifyFile(file) {
   if (base.endsWith(".service.ts")) return "service";
   if (base.endsWith(".module.ts")) return "module";
   if (base.endsWith(".dto.ts")) return "dto";
-  if (base.endsWith(".schema.ts") || file.includes("/schemas/")) return "schema";
+  if (base.endsWith(".schema.ts") || file.includes("/schemas/") || /\.prisma$/i.test(base)) return "schema";
+  if (/\.sql$/i.test(base)) return "migration";
   if (base.startsWith("use") && /\.(ts|tsx)$/.test(base)) return "hook";
   if (
     file.startsWith("redux/apis/") ||

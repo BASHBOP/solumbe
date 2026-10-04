@@ -1081,3 +1081,68 @@ test("secretCheck reports that content was unavailable instead of claiming a cle
   assert.equal(scanned.status, "PASS");
   assert.match(scanned.summary, /no credential values found/);
 });
+
+// Regression (dogfood, bashbop-api): removing DOJAH_* keys from `.env.example`
+// hard-failed the gate as a secret file. A template passes on its path; a
+// real credential pasted into it still fails on content.
+test("secretCheck passes an env template and still fails a credential inside one", () => {
+  const files = [".env.example"];
+  const empty = secretCheck(files, () => "# Paystack BVN check\nPAYSTACK_BVN_ENFORCEMENT_DATE=\n");
+  assert.equal(empty.status, "PASS");
+
+  const leaked = secretCheck(files, () => `AWS_ACCESS_KEY_ID=${FIXTURE_AWS_KEY}\n`);
+  assert.equal(leaked.status, "FAIL");
+  assert.match(leaked.summary, /credential value/);
+});
+
+// Regression (dogfood, bashbop-api): a head-bound gate told the maintainer to
+// `git restore --staged` files that were committed, not staged.
+test("evaluateLocal with a head gives review advice, not unstaging commands", () => {
+  const root = initRepo("head-risk-advice");
+  writeAndCommit(root, { "package.json": JSON.stringify({ name: "fixture", version: "1.0.0" }), "prisma/schema.prisma": "model A { id Int @id }\n" }, "init");
+  writeAndCommit(root, { "prisma/schema.prisma": "model A { id Int @id\n name String? }\n" }, "add name");
+
+  const result = evaluateLocal(root, { base: "HEAD~1", head: "HEAD" });
+  const risk = result.checks.find((check) => check.name === "Risk review");
+  assert.equal(risk.status, "WARN");
+  assert.ok(!risk.details.some((detail) => detail.includes("git restore --staged")), JSON.stringify(risk.details));
+  assert.ok(risk.details.some((detail) => detail.includes("record explicit review")));
+});
+
+// Regression (dogfood, bashbop-api #543): the migration that reset every
+// verified organiser to INCOMPLETE passed the gate as an ordinary schema file.
+test("evaluateLocal warns when a migration rewrites or drops existing data", () => {
+  const root = initRepo("migration-safety");
+  writeAndCommit(root, { "package.json": JSON.stringify({ name: "fixture", version: "1.0.0" }) }, "init");
+  writeAndCommit(
+    root,
+    {
+      "prisma/migrations/20261004_add/migration.sql": 'ALTER TABLE "Profile" ADD COLUMN "paystackKycName" TEXT;\n',
+    },
+    "additive",
+  );
+  const additive = evaluateLocal(root, { base: "HEAD~1", head: "HEAD" }).checks.find((check) => check.name === "Migration safety");
+  assert.equal(additive?.status, "PASS");
+
+  writeAndCommit(
+    root,
+    {
+      "prisma/migrations/20261004_reset/migration.sql": [
+        "-- Everyone starts again; UPDATE in a comment is not a statement",
+        'UPDATE "Profile" SET "paystackKycStatus" = \'INCOMPLETE\' WHERE "paystackKycStatus" IS DISTINCT FROM \'INCOMPLETE\';',
+        'ALTER TABLE "Profile" DROP COLUMN "paystackIdNumber",',
+        'DROP COLUMN "paystackSelfieUrl";',
+        'DELETE FROM "Session";',
+        "",
+      ].join("\n"),
+    },
+    "reset",
+  );
+  const risky = evaluateLocal(root, { base: "HEAD~1", head: "HEAD" }).checks.find((check) => check.name === "Migration safety");
+  assert.equal(risky?.status, "WARN");
+  const details = risky.details.join("\n");
+  assert.match(details, /rewrites existing rows in "Profile"/);
+  assert.match(details, /drops columns of "Profile"/);
+  assert.match(details, /deletes rows from "Session" \(every row: no WHERE\)/);
+  assert.equal(risky.details.length, 3, details);
+});

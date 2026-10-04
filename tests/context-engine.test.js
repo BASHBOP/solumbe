@@ -552,3 +552,50 @@ test("generateContextPack does not apply a repo hint for a single-repo request",
 
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+// Regression (dogfood, bashbop-api + bashbop-go): a request about the Go fee
+// service named it ("the Go fee server"), but a two-letter folder segment was
+// never a hint, and the 1,000-file API filled every primary slot.
+test("generateContextPack names a repo by a capitalised short segment and keeps a slot for each repo", () => {
+  const big = fs.mkdtempSync(path.join(os.tmpdir(), "shop-api-"));
+  fs.writeFileSync(path.join(big, "package.json"), JSON.stringify({ name: "api", scripts: { test: "node --test" } }));
+  fs.mkdirSync(path.join(big, "src", "fees"), { recursive: true });
+  for (const name of ["fee-calculator", "fee-shadow", "fee-config", "fee-report", "fee-export", "fee-audit"]) {
+    fs.writeFileSync(path.join(big, "src", "fees", `${name}.service.ts`), `export class FeeServer${name.length} { fees() { return "fee server"; } }\n`);
+  }
+  const small = fs.mkdtempSync(path.join(os.tmpdir(), "shop-go-"));
+  fs.writeFileSync(path.join(small, "go.mod"), "module example.com/fees\n");
+  fs.mkdirSync(path.join(small, "cmd", "fees"), { recursive: true });
+  fs.writeFileSync(path.join(small, "cmd", "fees", "main.go"), "package main\n\n// Fee server.\nfunc serveFees() {}\n");
+
+  const pack = generateContextPack("rename the Go fee server", { paths: [big, small], limit: 5 });
+  const primaryRepos = pack.data.primaryFiles.map((file) => file.repo.root);
+  assert.ok(primaryRepos.includes(small), pack.data.primaryFiles.map((f) => `${f.repo.name}:${f.path}`).join(", "));
+
+  const lowercase = generateContextPack("go rename the fee server", { paths: [big, small], limit: 5 });
+  assert.ok(!lowercase.data.primaryFiles.some((file) => file.reasons.includes("repo named in request")));
+
+  fs.rmSync(big, { recursive: true, force: true });
+  fs.rmSync(small, { recursive: true, force: true });
+});
+
+// Regression (dogfood): "dogfood solumbe by reviewing bashbop" came back with
+// intent "unknown" because only the bare verb "review" counted.
+test("generateContextPack reads an inflected action word as the intent", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "intent-inflect-"));
+  fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "intent", scripts: { test: "node --test" } }));
+  fs.mkdirSync(path.join(root, "src"), { recursive: true });
+  fs.writeFileSync(path.join(root, "src", "payout.ts"), "export function payout() { return 1; }\n");
+
+  for (const [query, action] of [
+    ["reviewing the payout change", "review"],
+    ["fixed payout rounding", "fix"],
+    ["creating a payout export", "create"],
+    ["debugging payouts", "debug"],
+    ["rename the payout helper", "rename"],
+  ]) {
+    const pack = generateContextPack(query, { path: root, limit: 3 });
+    assert.equal(pack.data.intent.action, action, query);
+  }
+  fs.rmSync(root, { recursive: true, force: true });
+});
