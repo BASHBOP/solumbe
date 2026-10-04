@@ -645,3 +645,44 @@ test("generateImpact raises no risk from a domain only an advisory lead touches"
     `payment page (advisory: ${advisory.includes("app/rsvp-payment-success/page.tsx")}) must not raise money flow: ${result.data.risks.join(" | ")}`,
   );
 });
+
+test("generateImpact ranks a configured companion repository only when asked", async () => {
+  const { companionLeads, formatImpactMarkdown } = await import("../src/lib/impact.js");
+  const parent = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "impact-companions-")));
+  const write = (root, files) => {
+    for (const [relative, content] of Object.entries(files)) {
+      fs.mkdirSync(path.dirname(path.join(root, relative)), { recursive: true });
+      fs.writeFileSync(path.join(root, relative), content);
+    }
+  };
+  const web = path.join(parent, "web");
+  const api = path.join(parent, "api");
+  const docs = path.join(parent, "docs");
+  write(api, {
+    "package.json": JSON.stringify({ name: "api" }),
+    "src/paystack/paystack.service.ts": "export class PaystackService { bvnRequired(profile) { return profile.country === 'NG'; } }\n",
+  });
+  write(docs, { "src/theme.ts": "export const theme = {};\n" });
+  write(web, {
+    "package.json": JSON.stringify({ name: "web" }),
+    ".solumberc.json": JSON.stringify({ companions: ["../api", "../docs", "."] }),
+    "src/checkout/bvn-gate.tsx": "export function BvnGate({ location }) { return location.country === 'NG'; }\n",
+  });
+  const query = "decide when BVN verification is required";
+
+  assert.ok(!("companions" in generateImpact(query, { path: web }).data), "off unless the caller asks");
+  const { data, markdown } = generateImpact(query, { path: web, companions: true });
+  assert.deepEqual(
+    data.companions.map((lead) => lead.repo),
+    ["api", "docs"],
+    "the repository itself is not its own companion",
+  );
+  assert.equal(data.companions[0].topFiles[0].path, "src/paystack/paystack.service.ts");
+  assert.deepEqual(data.companions[1].topFiles, [], "a companion with nothing scoring is kept, with no files");
+  assert.match(markdown, /## Companion Repository Leads\n\n- api: `src\/paystack\/paystack\.service\.ts` \(score [\d.]+[^)]*\)\n- docs: no matching files/);
+  assert.equal(formatImpactMarkdown(data), markdown);
+
+  assert.deepEqual(companionLeads(query, api), [], "no .solumberc.json, no leads");
+  assert.ok(!("companions" in generateImpact(query, { path: api, companions: true }).data));
+  fs.rmSync(parent, { recursive: true });
+});

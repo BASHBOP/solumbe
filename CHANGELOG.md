@@ -6,6 +6,14 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+### Added
+
+- **`review_verdict` and `change_impact` point into companion repositories.** When a repository's `.solumberc.json` lists `companions` (`"companions": ["../api"]`), both rank the same request in each companion, without a diff, and name its top three files with their scores and risk flags: under `impactSummary.companions` in the verdict and `companions` in the impact report, with a line in `solumbe review` and a section in `solumbe impact`. A review of a web change whose rule the API also decides now names the API file. A dogfood review of bashbop-event-web, which decides "BVN required" from the user's location while bashbop-api decides from the profile country, never surfaced `src/paystack/paystack.service.ts`. The verdict carries the field only when companions are configured and a request is given. The leads do not change the verdict, its confidence, or what an attestation record stores.
+
+### Changed
+
+- **The verdict `schemaVersion` is now 2**, for the added `impactSummary.companions`. Attestation records written from now on carry `verdictSchemaVersion: 2`; earlier records verify unchanged.
+
 ## [4.1.0] - 2026-10-01
 
 One command connects Solumbe to every agent host on the machine, and host configs now start under GUI hosts. No command, field or schema was removed.

@@ -16,8 +16,10 @@ const reviewEngineVersion = 1;
  * Version of the verdict JSON shape. Attestation records and any store that
  * receives them read this to know which fields to expect. Bump it when a
  * field is added, removed or changes meaning.
+ * 2: `impactSummary.companions`, leads in the companion repositories, present
+ *    only when the repository's .solumberc.json lists any and a request is given.
  */
-export const VERDICT_SCHEMA_VERSION = 1;
+export const VERDICT_SCHEMA_VERSION = 2;
 
 /** @typedef {import('./pass-pr.js').Runner} Runner */
 
@@ -41,11 +43,14 @@ export const VERDICT_SCHEMA_VERSION = 1;
  * @param {ReviewOptions} [options]
  */
 export async function generateReview(repoPath, options = {}) {
-  const request = String(options.request ?? "").trim() || "review this change";
+  const asked = String(options.request ?? "").trim();
+  const request = asked || "review this change";
   const wantsPr = Boolean(options.prSelector || options.pr);
 
+  // The placeholder request ranks nothing in particular, so companions are
+  // read only for a request the caller actually gave.
   /** @type {any} */
-  const impact = generateImpact(request, { path: repoPath, top: options.impactTop ?? 8, diffBase: options.base }).data;
+  const impact = generateImpact(request, { path: repoPath, top: options.impactTop ?? 8, diffBase: options.base, companions: Boolean(asked) }).data;
   const prReview = generatePrReview(repoPath, { base: options.base, head: options.head, number: options.prSelector, github: wantsPr });
   /** @type {any} */
   const prData = prReview.data;
@@ -88,6 +93,7 @@ export async function generateReview(repoPath, options = {}) {
       concepts: impact.concepts,
       topFiles: impact.topFiles.slice(0, 5).map((/** @type {any} */ file) => ({ path: file.path, score: file.score, riskFlags: file.riskFlags })),
       risks: impact.risks,
+      ...(impact.companions ? { companions: impact.companions } : {}),
     },
     prReviewSummary: {
       changedFiles: prData.changedFiles.length,
@@ -133,7 +139,7 @@ function computeConfidence({ impact, passReport, prReview }) {
  * @property {string} verdict
  * @property {number} confidence
  * @property {{ root: string, name: string }} repo
- * @property {{ concepts: string[], topFiles: { path: string, score: number, riskFlags: string[] }[], risks: string[] }} impactSummary
+ * @property {{ concepts: string[], topFiles: { path: string, score: number, riskFlags: string[] }[], risks: string[], companions?: import('./impact.js').CompanionLead[] }} impactSummary
  * @property {{ changedFiles: number, additions: number, deletions: number, riskLevel?: string, riskFlags: string[], reviewTargetsCount: number }} prReviewSummary
  * @property {{ verdict: string, policy: string, governance: string, checks: { name: string, status: string, summary: string }[] }} pass
  */
@@ -171,6 +177,14 @@ export function formatReviewTerminal(data, rendererFactory) {
     lines.push(`  ${renderer.pick({ emoji: "🥇", ascii: ">" })}  Owner files`);
     for (const file of data.impactSummary.topFiles) {
       lines.push(`     ${renderer.glyphs.box.arrow} ${file.path} (score ${file.score})`);
+    }
+    lines.push("");
+  }
+  if (data.impactSummary.companions?.length) {
+    lines.push(`  ${renderer.pick({ emoji: "🔗", ascii: ">" })}  Companion repository leads`);
+    for (const companion of data.impactSummary.companions) {
+      const files = companion.topFiles.map((file) => `${file.path} (score ${file.score})`).join(", ") || "no matching files";
+      lines.push(`     ${renderer.glyphs.box.arrow} ${companion.repo}: ${files}`);
     }
     lines.push("");
   }
