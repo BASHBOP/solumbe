@@ -1,11 +1,11 @@
 {
   "ok": true,
-  "generatedAt": "2026-10-01T20:54:09.904Z",
-  "schemaVersion": 1,
+  "generatedAt": "2026-10-04T11:54:38.709Z",
+  "schemaVersion": 2,
   "reviewEngineVersion": 1,
   "request": "review this change",
   "verdict": "WARN",
-  "confidence": 65,
+  "confidence": 70,
   "repo": {
     "root": "/home/runner/work/solumbe/solumbe",
     "name": "solumbe"
@@ -14,47 +14,43 @@
     "concepts": [],
     "topFiles": [
       {
-        "path": ".github/workflows/post-merge-attest.yml",
-        "score": 0,
-        "riskFlags": [
-          "configuration"
-        ]
-      },
-      {
-        "path": ".rebrandrc.json",
-        "score": 0,
+        "path": "src/lib/review.js",
+        "score": 22.6,
         "riskFlags": []
       },
       {
-        "path": "CHANGELOG.md",
-        "score": 0,
+        "path": "src/lib/pr-review.js",
+        "score": 19.8,
         "riskFlags": []
       },
       {
-        "path": "README.md",
-        "score": 0,
+        "path": "src/lib/ax.js",
+        "score": 12.1,
         "riskFlags": []
       },
       {
-        "path": "RELEASE.md",
-        "score": 0,
+        "path": "src/cli.js",
+        "score": 8.3,
+        "riskFlags": []
+      },
+      {
+        "path": "tests/review.test.js",
+        "score": 5.7,
         "riskFlags": []
       }
     ],
     "risks": [
-      "Configuration change: verify environment variables, secrets, build output, and production defaults."
+      "No obvious high-risk domain detected. Main risk is missing a caller or test outside the matched files."
     ]
   },
   "prReviewSummary": {
-    "changedFiles": 17,
-    "additions": 801,
-    "deletions": 19,
-    "riskLevel": "medium",
+    "changedFiles": 34,
+    "additions": 1177,
+    "deletions": 133,
+    "riskLevel": "low",
     "riskFlags": [
-      "configuration",
       "dependency",
-      "large PR",
-      "large file diff"
+      "large PR"
     ],
     "reviewTargetsCount": 0
   },
@@ -66,7 +62,12 @@
       {
         "name": "Changed files",
         "status": "PASS",
-        "summary": "18 changed files found."
+        "summary": "34 changed files found."
+      },
+      {
+        "name": "Commit snapshot",
+        "status": "PASS",
+        "summary": "Changed-file scope and convergence evidence are captured from the exact head commit tree."
       },
       {
         "name": "Secret safety",
@@ -75,8 +76,8 @@
       },
       {
         "name": "Risk review",
-        "status": "WARN",
-        "summary": "Risk-sensitive files changed; maintainer review should be explicit."
+        "status": "PASS",
+        "summary": "No obvious risk-sensitive file paths changed."
       },
       {
         "name": "Release discipline",
@@ -106,6 +107,6 @@
     ]
   },
   "tokenEstimate": {
-    "fullJson": 449
+    "fullJson": 470
   }
 }
