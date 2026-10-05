@@ -1,20 +1,22 @@
 ---
 name: solumbe-self-improve
 description: >-
-  Self-evaluates solumbe context packs against expected files/symbols, records labeled gaps as eval corpus cases, and implements ranking/extractor fixes when retrieval fails. Use when solumbe missed the right file, hotspots were wrong, the user says solumbe was not useful, or asks to self-evaluate / auto-improve solumbe. Default mode is gated: detect → eval case → fix → verify; commit/PR only when the user asks.
+  Self-evaluates solumbe context packs against expected files/symbols, records labeled gaps as eval corpus cases, and implements ranking/extractor fixes when retrieval fails. Use when solumbe missed the right file, hotspots were wrong, the user says solumbe was not useful, or asks to self-evaluate / auto-improve solumbe. Every run ends in a pull request for the user to review: detect → eval case → fix → verify → PR to develop. Never merges.
 ---
 
 # solumbe self-evaluate + auto-improve
 
-Close the loop when `context_pack` / `solumbe context` is a weak map: turn the miss into a labeled regression, fix the engine, prove it, then stop for commit approval.
+Close the loop when `context_pack` / `solumbe context` is a weak map: turn the miss into a labeled regression, fix the engine, prove it, then open a pull request for the user to review.
 
-## Default autonomy (gated)
+## Default autonomy: every run ends in a pull request
 
 1. Detect and score the gap.
 2. Add or update an accuracy eval case (fixture when possible; live-repo note when not).
-3. Implement the smallest ranking/extractor fix in `/Users/segzy/dev/otito`.
-4. Re-run targeted tests + `npm run eval:accuracy` (or the skill script).
-5. Report before/after. **Do not commit or open a PR unless the user asks.**
+3. Implement the smallest ranking/extractor fix in a worktree branched from `origin/develop`.
+4. Re-run targeted tests + `npm run eval:accuracy` (or the skill script), then the full `npm run ci`.
+5. **Open a pull request to `develop` for the user to review.** Run `convergence_score` before the commit and `review_gate` before the PR, and put the gap report and both results in the PR body. Never merge it; the user reviews every self-improve change.
+
+If `npm run ci` fails, fix it or report it. Never open the PR on a red gate.
 
 Do **not** silently lower corpus thresholds to make a bad pack pass.
 
@@ -42,10 +44,10 @@ If the user did not label expected files, infer from what the agent actually edi
 
 ### 1) Score the gap
 
-Prefer the helper (from a solumbe checkout):
+Prefer the helper, run from the root of a solumbe checkout:
 
 ```bash
-node /Users/segzy/dev/otito/codex/skills/solumbe-self-improve/scripts/score-gap.mjs \
+node codex/skills/solumbe-self-improve/scripts/score-gap.mjs \
   --query "…" \
   --path /path/to/repo \
   --expect-primary "src/email/email.service.ts" \
@@ -92,7 +94,7 @@ If only a live repo can reproduce today: keep a markdown note under `codex/skill
 
 ### 4) Implement the fix
 
-Work only in the solumbe checkout (`/Users/segzy/dev/otito` unless the user moved it).
+Work only in a solumbe checkout, ideally a worktree branched from `origin/develop`. The MCP server's own checkout may be on an old branch.
 
 - Smallest change that makes the new case pass.
 - Update unit tests next to the change (`tests/context-engine.test.js`, `tests/code-map.test.js`, …).
@@ -102,7 +104,7 @@ Work only in the solumbe checkout (`/Users/segzy/dev/otito` unless the user move
 ### 5) Verify
 
 ```bash
-cd /Users/segzy/dev/otito
+cd <solumbe checkout>
 node --test tests/code-map.test.js tests/context-engine.test.js tests/index-cache.test.js
 npm run eval:accuracy
 # re-score the original gap
@@ -123,7 +125,7 @@ Pass criteria: gap script `ok: true`, accuracy eval exit 0, targeted unit tests 
 - Fix: files touched
 - After: primary=[…]; hotspots=[…]
 - Eval case: name / still pending
-- Next: ask to commit/PR (do not push unless asked)
+- PR: link to the pull request opened for review
 ```
 
 ## Hard rules

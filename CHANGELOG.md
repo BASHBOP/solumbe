@@ -6,6 +6,12 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A word the request repeats counts once.** "session replay / session playback … errors … error boundary, global error handler" counted `session` twice and `error` four times. Methods matching only `session` (`createSession`, a cache's `get` and `set`) then scored as two-word matches, led the hotspots, and pushed `app/global-error.tsx` out of the pack. A plural and its singular (`errors`, `error`) are also one word.
+- **The words of a camelCase name count together.** "OpenPanel" splits into `open` and `panel`, and "PostHog" into `post` and `hog`, like any identifier. On its own, `open` made a seller checkout service a primary file, and `post` matched `postAiStream`. Each word now counts only when another word of the same name also matches, unless the request also uses it on its own.
+- **The action verb counts only in a symbol's own name.** `add` from "add session replay…" matched a local variable inside `handleCheckoutSessionCompleted`. A symbol named for the action (`createOrder` for "create an order") still matches.
+
 ## [4.2.0] - 2026-10-04
 
 Fixes from running Solumbe's review tools on three bashbop repositories and checking every answer against the code, and reviews that look into a repository's companions. No command, field or schema was removed; the verdict `schemaVersion` moves to 2 for one added field.

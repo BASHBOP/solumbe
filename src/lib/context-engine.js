@@ -184,10 +184,10 @@ export function generateContextPack(query, options = {}) {
   // The words of a named file score; its extension, shared by every file of
   // that language, does not.
   const termsQuery = stripFileExtensions(normalizedQuery);
-  const tokens = tokenize(termsQuery);
+  const tokens = uniqueConcepts(tokenize(termsQuery));
   const phrases = extractPhrases(termsQuery);
   const intent = inferIntent(tokens);
-  const tokenStats = computeTokenDocFrequency(maps, tokens);
+  const tokenStats = { ...computeTokenDocFrequency(maps, tokens), partners: compoundPartners(termsQuery) };
   const rules = requestRules(maps, normalizedQuery, tokens, limit);
   const scoredFiles = scoreMaps(maps, tokens, intent, phrases, tokenStats, rules);
   const matchedPrimaryFiles = selectPrimaryFiles(scoredFiles, limit, rules);
@@ -794,7 +794,10 @@ function scoreConceptCoverage(file, tokens, reasons, tokenStats) {
     `${file.path} ${file.kind} ${file.domain} ${file.route ?? ""} ${file.controllerBasePath ?? ""} ${file.exports?.join(" ")} ${symbolTerms(file.symbols)} ${file.formFields?.join(" ")} ${file.navigationTargets?.join(" ")} ${file.localIdentifiers?.join(" ")}`,
   );
   const textTokens = new Set(tokenize(text));
-  const matched = tokens.filter((token) => tokenVariants(token).some((variant) => textTokens.has(variant)));
+  const matched = withPartners(
+    tokens.filter((token) => tokenVariants(token).some((variant) => textTokens.has(variant))),
+    tokenStats,
+  );
   if (matched.length < 3) {
     return 0;
   }
@@ -816,6 +819,7 @@ function scoreConceptCoverage(file, tokens, reasons, tokenStats) {
  * @typedef {object} TokenStats
  * @property {number} totalFiles
  * @property {Map<string, number>} docFreq
+ * @property {Map<string, string[]>} [partners] - query words that only count alongside another word of the same camelCase name; see compoundPartners.
  */
 
 /**
@@ -1041,12 +1045,24 @@ function scoreSymbols(symbols, tokens, tokenStats) {
 
   for (const symbol of symbols) {
     const nameTokens = new Set(tokenize(`${symbol.name} ${symbol.terms?.join(" ") ?? ""}`));
-    const matchedTokens = tokens.filter((token) => tokenVariants(token).some((variant) => nameTokens.has(variant)));
+    const ownNameTokens = new Set(tokenize(symbol.name));
+    // The request's action verb names a symbol that does it (`createOrder`
+    // for "create an order"); one called somewhere in the body says nothing.
+    // `add` from a `.add()` call made `handleCheckoutSessionCompleted` a
+    // two-word match for "add session replay to the OpenPanel provider".
+    const matchedTokens = withPartners(
+      tokens.filter(
+        (token) =>
+          tokenVariants(token).some((variant) => nameTokens.has(variant)) &&
+          (!actionWordOf(token) || tokenVariants(token).some((variant) => ownNameTokens.has(variant))),
+      ),
+      tokenStats,
+    );
     if (!matchedTokens.length) {
       continue;
     }
 
-    const variantHits = tokens.flatMap((token) => tokenVariants(token).filter((variant) => nameTokens.has(variant)));
+    const variantHits = matchedTokens.flatMap((token) => tokenVariants(token).filter((variant) => nameTokens.has(variant)));
     // Two matched tokens that are both repo-wide generic nouns (e.g. "date"
     // and "booking" hitting `formatBookingDate` in an events app) shouldn't
     // score the same as two genuinely distinctive tokens. Weight each match
@@ -1703,15 +1719,20 @@ function scoreField(value, tokens, weight, reason, reasons, tokenStats) {
 
   const normalized = normalizeText(String(value));
   const normalizedTokens = new Set(tokenize(String(value)));
-  let score = 0;
+  /** @type {Map<string, number>} */
+  const hits = new Map();
   for (const token of tokens) {
     const variants = tokenVariants(token);
     const factor = tokenWeightFactor(token, tokenStats);
     if (variants.some((variant) => normalized === variant)) {
-      score += Math.round(weight * 2 * factor);
+      hits.set(token, Math.round(weight * 2 * factor));
     } else if (variants.some((variant) => normalizedTokens.has(variant) || normalized.includes(variant))) {
-      score += Math.round(weight * factor);
+      hits.set(token, Math.round(weight * factor));
     }
+  }
+  let score = 0;
+  for (const token of withPartners([...hits.keys()], tokenStats)) {
+    score += hits.get(token) ?? 0;
   }
 
   if (score > 0) {
@@ -1753,7 +1774,7 @@ function scoreCollection(values, tokens, weight, reason, reasons, cap, tokenStat
     }
   }
   const score = Math.min(
-    [...scoreByToken.values()].reduce((sum, value) => sum + value, 0),
+    withPartners([...scoreByToken.keys()], tokenStats).reduce((sum, token) => sum + (scoreByToken.get(token) ?? 0), 0),
     cap,
   );
   if (score > 0) {
@@ -1847,6 +1868,83 @@ function tokenize(value) {
     .split(" ")
     .map((token) => token.trim())
     .filter((token) => token.length > 1 && !stopWords.has(token));
+}
+
+/**
+ * The singular a token's plural variant reduces to, mirroring tokenVariants.
+ * @param {string} token
+ * @returns {string}
+ */
+function singularOf(token) {
+  if (token.endsWith("ies") && token.length > 4) return `${token.slice(0, -3)}y`;
+  if (token.endsWith("s") && !token.endsWith("ss") && token.length > 3) return token.slice(0, -1);
+  return token;
+}
+
+/**
+ * One token per word of the request. Saying "session" twice, or both "errors"
+ * and "error", counted that word once per mention, so a method matching only
+ * `session` scored as a two-word match and led the hotspots. The plural is
+ * kept because its variants also match the singular.
+ * @param {string[]} tokens
+ * @returns {string[]}
+ */
+export function uniqueConcepts(tokens) {
+  /** @type {Map<string, string>} */
+  const bySingular = new Map();
+  for (const token of tokens) {
+    const singular = singularOf(token);
+    const kept = bySingular.get(singular);
+    if (kept === undefined || (kept === singular && token !== singular)) {
+      bySingular.set(singular, token);
+    }
+  }
+  return [...bySingular.values()];
+}
+
+/**
+ * Words of a camelCase name in the request, each mapped to the name's other
+ * words. "OpenPanel" splits into `open` and `panel` like any identifier, and
+ * alone `open` matched `createVendorSubscriptionCheckout` while `post` from
+ * "PostHog" matched `postAiStream`. A word the request also uses on its own
+ * counts on its own.
+ * @param {string} query
+ * @returns {Map<string, string[]>}
+ */
+export function compoundPartners(query) {
+  /** @type {Map<string, Set<string>>} */
+  const partners = new Map();
+  /** @type {Set<string>} */
+  const standalone = new Set();
+  for (const word of String(query).match(/[A-Za-z0-9]+/g) ?? []) {
+    const parts = tokenize(word);
+    if (parts.length < 2) {
+      for (const part of parts) standalone.add(part);
+      continue;
+    }
+    for (const part of parts) {
+      const others = partners.get(part) ?? new Set();
+      for (const other of parts) if (other !== part) others.add(other);
+      partners.set(part, others);
+    }
+  }
+  return new Map([...partners].filter(([part]) => !standalone.has(part)).map(([part, others]) => [part, [...others]]));
+}
+
+/**
+ * Drop each matched camelCase word whose partners did not match with it.
+ * @param {string[]} matched
+ * @param {TokenStats} [tokenStats]
+ * @returns {string[]}
+ */
+function withPartners(matched, tokenStats) {
+  const partners = tokenStats?.partners;
+  if (!partners?.size) return matched;
+  const present = new Set(matched);
+  return matched.filter((token) => {
+    const others = partners.get(token);
+    return !others || others.some((other) => present.has(other));
+  });
 }
 
 /**

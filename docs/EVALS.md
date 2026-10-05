@@ -151,21 +151,32 @@ the older floor.)
 
 ## Current baseline
 
-Recorded **2026-09-27** by running `runRetrievalEval()` against the committed
-corpus (22 retrieval + 22 risk cases):
+Recorded **2026-10-05** by running `runRetrievalEval()` against the committed
+corpus (24 retrieval + 22 risk cases):
 
 ```
 | Group     | Metric       | Value | Threshold | Pass |
 |-----------|--------------|------:|----------:|:----:|
-| retrieval | precisionAtK | 0.873 |      0.85 | yes  |
+| retrieval | precisionAtK | 0.87  |      0.85 | yes  |
 | retrieval | recallAtK    | 1.0   |      0.9  | yes  |
-| retrieval | mrr          | 0.976 |      0.9  | yes  |
+| retrieval | mrr          | 0.978 |      0.9  | yes  |
 | risk      | accuracy     | 1.0   |      0.96 | yes  |
 
-Retrieval: p@5=0.873, r@5=1.0, mrr=0.976 (22/22 cases pass)
+Retrieval: p@5=0.87, r@5=1.0, mrr=0.978 (24/24 cases pass)
 Risk:      accuracy=1.0 (22/22 cases pass)
 Overall:   PASS (exit 0)
 ```
+
+The 2026-10-05 change (each request word counted once, the words of a
+camelCase name such as `OpenPanel` counted only together, and an action verb
+counted only in a symbol's own name) left all 22 earlier cases with the same
+aggregate (p@5=0.873, r@5=1.0, mrr=0.976). It added `telemetry-repeated-words`
+and `telemetry-openpanel-camelcase` on the new `telemetry-web` fixture; the
+aggregate moved because the first returns a third, unlabeled primary file
+(p@5=0.667). The fixture is too small to reproduce the live failure, where
+`app/global-error.tsx` fell out of the pack and a seller checkout service
+became primary; `tests/context-engine.test.js` asserts the three mechanisms
+directly, and each of those tests fails with its fix removed.
 
 The 2026-09-27 change (named-file pinning, translation-catalog demotion and
 locale folding, extension tokens dropped, runnable tests only) left all 21
