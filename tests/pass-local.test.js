@@ -4,8 +4,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { evaluateLocal, formatPassMarkdown, secretCheck } from "../src/lib/pass-local.js";
+import { evaluateLocal, formatPassMarkdown, formatPassOutcome, formatPassTerminal, secretCheck } from "../src/lib/pass-local.js";
 import { generateConvergence } from "../src/lib/converge.js";
+import { createRenderer } from "../src/lib/render/fancy.js";
 
 function git(cwd, ...args) {
   const result = spawnSync("git", args, {
@@ -302,6 +303,111 @@ test("run-validation records failed command evidence without retaining raw outpu
     if (previous === undefined) delete process.env.SOLUMBE_TEST_SECRET_OUTPUT;
     else process.env.SOLUMBE_TEST_SECRET_OUTPUT = previous;
   }
+});
+
+test("run-validation names the failing test and shows its output beside the digests", () => {
+  // The demo case: a node:test suite whose summary fills the end of the
+  // output, so a plain tail would show the counts and not which test failed.
+  const root = initRepo("validation-excerpt");
+  const testFile = (name, body) =>
+    `const test = require("node:test");\nconst assert = require("node:assert/strict");\ntest(${JSON.stringify(name)}, () => ${body});\n`;
+  writeAndCommit(
+    root,
+    {
+      "solumbe.gate.json": JSON.stringify({
+        version: 1,
+        validation: { commands: [{ id: "tests", command: `"${process.execPath}" --test`, timeoutSeconds: 60 }] },
+      }),
+      "tests/ok.test.js": testFile("adds", "assert.equal(1 + 1, 2)"),
+      "tests/refunds.test.js": testFile("refund total sums line items", "assert.equal(0.1 + 0.2, 0.3)"),
+      "src/value.js": "module.exports = 'base';\n",
+    },
+    "init",
+  );
+  fs.writeFileSync(path.join(root, "src/value.js"), "module.exports = 'staged';\n");
+  git(root, "add", "src/value.js");
+
+  const result = evaluateLocal(root, { base: "HEAD", staged: true, runValidation: true });
+  const execution = result.checks.find((check) => check.name === "Validation execution");
+  const [excerpt] = execution.excerpts;
+
+  assert.equal(execution.status, "FAIL");
+  assert.match(execution.details.join("\n"), /tests: failed \(exit 1; stdout sha256 [0-9a-f]{12}; stderr sha256 [0-9a-f]{12}\)/);
+  assert.ok(execution.details.includes("tests failing (1): refund total sums line items"), execution.details.join("\n"));
+  assert.equal(excerpt.from, "failure");
+  assert.match(excerpt.lines[0], /refund total sums line items/);
+  assert.ok(excerpt.lines.length <= 12);
+  assert.ok(
+    excerpt.lines.some((line) => line.includes("./tests/refunds.test.js")),
+    "the deleted snapshot directory is shown as the repository root",
+  );
+  assert.ok(!JSON.stringify(execution.excerpts).includes("solumbe-gate-"));
+  // The excerpt is for the reader: the evidence and its receipt keep digests only.
+  assert.ok(!JSON.stringify(result.validationEvidence).includes("refund total sums line items"));
+
+  const terminal = formatPassTerminal(result, (options) => createRenderer({ ...options, color: false, emoji: false })).split("\n");
+  const heading = terminal.findIndex((line) => /tests stdout, lines \d+-\d+ of \d+ \(from the first failure\):$/.test(line));
+  assert.ok(heading > 0, terminal.join("\n"));
+  assert.match(terminal[heading + 1], /refund total sums line items/);
+  assert.match(formatPassMarkdown(result), /tests stdout, lines \d+-\d+ of \d+ \(from the first failure\):\n\n```text\n[^\n]*refund total sums line items/);
+});
+
+test("run-validation falls back to a sanitized tail and withholds credential-shaped lines", () => {
+  const root = initRepo("validation-tail");
+  writeAndCommit(
+    root,
+    {
+      "solumbe.gate.json": JSON.stringify({ version: 1, validation: { commands: [{ id: "build", command: `"${process.execPath}" scripts/build.js` }] } }),
+      "scripts/build.js": [
+        'for (let step = 1; step <= 40; step += 1) console.log("build step " + step);',
+        'console.log("\\u001b[31mcompile error\\u001b[0m in src/value.js");',
+        // Assembled at run time so this test file holds no credential-shaped literal.
+        'console.log("token " + "xox" + "b-9f3Kq2Lm8Zp4Rt6W");',
+        'console.log("x".repeat(500));',
+        "process.exit(3);",
+        "",
+      ].join("\n"),
+      "src/value.js": "module.exports = 'base';\n",
+    },
+    "init",
+  );
+  fs.writeFileSync(path.join(root, "src/value.js"), "module.exports = 'staged';\n");
+  git(root, "add", "src/value.js");
+
+  const result = evaluateLocal(root, { base: "HEAD", staged: true, runValidation: true });
+  const execution = result.checks.find((check) => check.name === "Validation execution");
+
+  assert.equal(execution.excerpts.length, 1, "stderr was empty, so only stdout is excerpted");
+  const [excerpt] = execution.excerpts;
+  assert.equal(excerpt.from, "tail");
+  assert.equal(excerpt.stream, "stdout");
+  assert.equal(excerpt.lines.length, 12);
+  assert.equal(excerpt.lastLine, excerpt.totalLines);
+  assert.ok(excerpt.lines.includes("compile error in src/value.js"), "terminal escapes are stripped");
+  assert.ok(excerpt.lines.includes("[line withheld: possible Slack token]"));
+  assert.ok(!JSON.stringify(result).includes("9f3Kq2Lm8Zp4Rt6W"));
+  assert.equal(excerpt.lines.at(-1).length, 200);
+  assert.ok(excerpt.lines.at(-1).endsWith("…"));
+  assert.ok(!execution.details.some((detail) => detail.startsWith("build failing")), "no runner marker, so no failing-test list");
+});
+
+test("formatPassOutcome names the verdict and the check that decided it", () => {
+  assert.equal(formatPassOutcome({ verdict: "PASS", checks: [{ name: "Secret safety", status: "PASS", summary: "Clean." }] }), "PASS");
+  assert.equal(
+    formatPassOutcome({ verdict: "WARN", checks: [{ name: "Risk review", status: "WARN", summary: "Auth paths changed." }] }),
+    "WARN — Risk review: Auth paths changed.",
+  );
+  assert.equal(
+    formatPassOutcome({
+      verdict: "FAIL",
+      checks: [
+        { name: "Secret safety", status: "FAIL", summary: "Potential secret or environment file changed." },
+        { name: "Review state", status: "WARN", summary: "No review yet." },
+        { name: "Validation execution", status: "FAIL", summary: "1 versioned validation command(s) failed." },
+      ],
+    }),
+    "FAIL — blocked by Secret safety: Potential secret or environment file changed. (also failing: Validation execution)",
+  );
 });
 
 test("run-validation fails closed when the selected base has no versioned validation policy", () => {

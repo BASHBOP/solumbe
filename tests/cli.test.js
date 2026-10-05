@@ -400,7 +400,8 @@ test("pass evaluates merge readiness on a git fixture", async () => {
 
   const out = path.join(os.tmpdir(), `solumbe-cli-pass-${Date.now()}.md`);
   const written = await runCli(["pass", fixture, "--base", "HEAD~1", "--out", out]);
-  assert.match(written.stdout, /Pass report written/);
+  assert.match(written.stdout, new RegExp(`^Gate verdict: ${payload.verdict}\\b`, "m"));
+  assert.match(written.stdout, /Gate report written/);
   fs.unlinkSync(out);
 });
 

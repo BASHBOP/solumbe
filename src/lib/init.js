@@ -607,7 +607,10 @@ fi
 echo "solumbe pre-commit: checking staged changes"
 # --policy standard: a stricter policy in .solumberc.json (company, high-risk) is
 # for merge time and would fail every local commit on review state alone.
-solumbe gate . --staged --policy standard --out .solumbe/gate.md
+if ! solumbe gate . --staged --policy standard --out .solumbe/gate.md; then
+  echo "solumbe pre-commit: FAIL — commit blocked by the staged safety gate; full report in .solumbe/gate.md" >&2
+  exit 1
+fi
 
 echo "solumbe pre-commit: running static checks"
 ${body}
