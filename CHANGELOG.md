@@ -6,6 +6,10 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+### Added
+
+- **The MCP server sends its workflow to every host.** `initialize` now returns `instructions` that say which tool to call at each stage of a task: `context_pack` first, a `repo_search` retry when the pack is weak, `change_impact` before editing, `convergence_score` before each commit and `review_gate` before a pull request. The workflow used to live only in one host's instruction file, so an agent on another host never saw it. The text is defined once in `src/lib/agent-workflow.js`, and a test fails if it names a tool the server does not list.
+
 ## [4.2.1] - 2026-10-06
 
 Context packs rank by distinct request words, and a failing gate says what failed. No command or schema was removed. The gate check gains one optional field, and `gate --out` prints a verdict line.

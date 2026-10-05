@@ -131,6 +131,7 @@ test("startMcpServer handles initialize, ping, tools/list, and skips notificatio
   assert.equal(init.result.capabilities.tools.listChanged, false);
   assert.equal(typeof init.result.serverInfo.name, "string");
   assert.equal(typeof init.result.serverInfo.version, "string");
+  assert.match(init.result.instructions, /^Use solumbe at each stage/);
   assert.deepEqual(byId(messages, 2).result, {});
 
   const expectedTools = [
@@ -1214,4 +1215,32 @@ test("the review_* tool descriptions are verb-first and state when to use each v
       `${name} should name a sibling review_* tool to disambiguate, got: ${description}`,
     );
   }
+});
+
+test("the initialize instructions only name tools the server lists", async () => {
+  const messages = await runRequests([
+    { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } },
+    { jsonrpc: "2.0", id: 2, method: "tools/list" },
+  ]);
+  const listed = new Set(byId(messages, 2).result.tools.map((tool) => tool.name));
+  const { AGENT_WORKFLOW_STAGES } = await import("../src/lib/agent-workflow.js");
+
+  for (const { tool } of AGENT_WORKFLOW_STAGES) {
+    assert.ok(listed.has(tool), `workflow names ${tool}, which tools/list does not have`);
+    assert.ok(byId(messages, 1).result.instructions.includes(`: ${tool}.`), tool);
+  }
+  for (const named of byId(messages, 1).result.instructions.match(/\b[a-z]+_[a-z_]+\b/g) ?? []) {
+    assert.ok(listed.has(named), `instructions mention ${named}, which tools/list does not have`);
+  }
+});
+
+test("the solumbe skill lists the same workflow tools the server sends", async () => {
+  const { AGENT_WORKFLOW_STAGES } = await import("../src/lib/agent-workflow.js");
+  const skill = fs.readFileSync(path.resolve("codex/skills/solumbe/SKILL.md"), "utf8");
+  const section = skill.slice(skill.indexOf("### Over MCP"));
+  const rows = [...section.matchAll(/^\| (.+?) +\| `([a-z_]+)` +\|$/gm)].map(([, stage, tool]) => ({ stage, tool }));
+  assert.deepEqual(
+    rows,
+    AGENT_WORKFLOW_STAGES.map(({ stage, tool }) => ({ stage, tool })),
+  );
 });
