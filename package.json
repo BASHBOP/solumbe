@@ -1,6 +1,6 @@
 {
   "name": "@bashbop/solumbe",
-  "version": "4.2.0",
+  "version": "4.2.1",
   "mcpName": "io.github.BASHBOP/solumbe",
   "description": "Solumbe: deterministic local repository context, impact analysis, and merge evidence.",
   "type": "module",
