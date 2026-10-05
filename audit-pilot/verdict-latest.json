@@ -1,11 +1,11 @@
 {
   "ok": true,
-  "generatedAt": "2026-10-04T11:54:38.709Z",
+  "generatedAt": "2026-10-05T23:22:48.302Z",
   "schemaVersion": 2,
   "reviewEngineVersion": 1,
   "request": "review this change",
   "verdict": "WARN",
-  "confidence": 70,
+  "confidence": 55,
   "repo": {
     "root": "/home/runner/work/solumbe/solumbe",
     "name": "solumbe"
@@ -14,28 +14,30 @@
     "concepts": [],
     "topFiles": [
       {
-        "path": "src/lib/review.js",
-        "score": 22.6,
-        "riskFlags": []
-      },
-      {
-        "path": "src/lib/pr-review.js",
-        "score": 19.8,
-        "riskFlags": []
-      },
-      {
-        "path": "src/lib/ax.js",
-        "score": 12.1,
-        "riskFlags": []
-      },
-      {
         "path": "src/cli.js",
         "score": 8.3,
         "riskFlags": []
       },
       {
-        "path": "tests/review.test.js",
-        "score": 5.7,
+        "path": "src/lib/pass-local.js",
+        "score": 5.5,
+        "riskFlags": []
+      },
+      {
+        "path": "CHANGELOG.md",
+        "score": 0,
+        "riskFlags": []
+      },
+      {
+        "path": "codex/skills/solumbe-self-improve/gaps/2026-10-05-session-replay.md",
+        "score": 0,
+        "riskFlags": [
+          "auth/security"
+        ]
+      },
+      {
+        "path": "codex/skills/solumbe-self-improve/SKILL.md",
+        "score": 0,
         "riskFlags": []
       }
     ],
@@ -44,13 +46,16 @@
     ]
   },
   "prReviewSummary": {
-    "changedFiles": 34,
-    "additions": 1177,
-    "deletions": 133,
-    "riskLevel": "low",
+    "changedFiles": 33,
+    "additions": 778,
+    "deletions": 57,
+    "riskLevel": "high",
     "riskFlags": [
+      "auth/security",
       "dependency",
-      "large PR"
+      "large PR",
+      "money flow",
+      "request surface"
     ],
     "reviewTargetsCount": 0
   },
@@ -62,7 +67,7 @@
       {
         "name": "Changed files",
         "status": "PASS",
-        "summary": "34 changed files found."
+        "summary": "33 changed files found."
       },
       {
         "name": "Commit snapshot",
@@ -76,8 +81,8 @@
       },
       {
         "name": "Risk review",
-        "status": "PASS",
-        "summary": "No obvious risk-sensitive file paths changed."
+        "status": "WARN",
+        "summary": "Risk-sensitive files changed; maintainer review should be explicit."
       },
       {
         "name": "Release discipline",
@@ -107,6 +112,6 @@
     ]
   },
   "tokenEstimate": {
-    "fullJson": 470
+    "fullJson": 506
   }
 }
