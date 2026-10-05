@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { AMBIGUOUS_ACTION_QUESTION, formatContextPackTerminal, generateContextPack } from "../src/lib/context-engine.js";
+import { AMBIGUOUS_ACTION_QUESTION, compoundPartners, formatContextPackTerminal, generateContextPack, uniqueConcepts } from "../src/lib/context-engine.js";
 import { createRenderer } from "../src/lib/render/fancy.js";
 
 test("generateContextPack returns task-aware files, tests, and commands", () => {
@@ -598,4 +598,61 @@ test("generateContextPack reads an inflected action word as the intent", () => {
     assert.equal(pack.data.intent.action, action, query);
   }
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+const telemetryFixture = path.resolve("evals/fixtures/telemetry-web");
+const replayErrorsQuery =
+  "session replay / session playback for critical user errors: error tracking, Sentry, PostHog, monitoring, error boundary, global error handler";
+const openPanelQuery = "add session replay to the OpenPanel analytics provider";
+
+test("uniqueConcepts counts a repeated word or its plural once, keeping the plural", () => {
+  assert.deepEqual(uniqueConcepts(["session", "replay", "session", "error", "errors", "error"]), ["session", "replay", "errors"]);
+  assert.deepEqual(uniqueConcepts(["check", "checkin", "qr", "ticket"]), ["check", "checkin", "qr", "ticket"]);
+});
+
+test("compoundPartners ties the words of a camelCase name together unless the request also uses them alone", () => {
+  assert.deepEqual(Object.fromEntries(compoundPartners("add OpenPanel and PostHog")), {
+    open: ["panel"],
+    panel: ["open"],
+    post: ["hog"],
+    hog: ["post"],
+  });
+  assert.deepEqual(Object.fromEntries(compoundPartners("open the OpenPanel panel")), {});
+});
+
+test("generateContextPack scores a word the request repeats once per hotspot", () => {
+  const pack = generateContextPack(replayErrorsQuery, { path: telemetryFixture });
+  for (const hotspot of pack.data.hotspots) {
+    assert.equal(new Set(hotspot.matchedTokens).size, hotspot.matchedTokens.length, `${hotspot.symbol}: ${hotspot.matchedTokens}`);
+  }
+  assert.deepEqual(
+    pack.data.primaryFiles
+      .slice(0, 2)
+      .map((file) => file.path)
+      .sort(),
+    ["app/global-error.tsx", "components/common/ErrorBoundary.tsx"],
+  );
+});
+
+test("generateContextPack does not match one word of a camelCase name on its own", () => {
+  const errors = generateContextPack(replayErrorsQuery, { path: telemetryFixture });
+  assert.ok(!errors.data.hotspots.some((hotspot) => hotspot.matchedTokens.includes("post")), "post from PostHog matched alone");
+
+  const openPanel = generateContextPack(openPanelQuery, { path: telemetryFixture });
+  const symbols = openPanel.data.hotspots.map((hotspot) => hotspot.symbol);
+  assert.ok(symbols.includes("OpenPanelProvider"), symbols.join(", "));
+  for (const decoy of ["OpenHouseCard", "createVendorSubscriptionCheckout", "StreamAnalyticsPanel"]) {
+    const hotspot = openPanel.data.hotspots.find((item) => item.symbol === decoy);
+    assert.ok(!hotspot?.matchedTokens.includes("open") && !hotspot?.matchedTokens.includes("panel"), `${decoy}: ${hotspot?.matchedTokens}`);
+  }
+});
+
+test("generateContextPack counts the action verb only in a symbol's own name", () => {
+  const pack = generateContextPack("add a completed session flag", { path: telemetryFixture });
+  const completed = pack.data.hotspots.find((hotspot) => hotspot.symbol === "handleCheckoutSessionCompleted");
+  assert.ok(completed, pack.data.hotspots.map((hotspot) => hotspot.symbol).join(", "));
+  assert.ok(!completed.matchedTokens.includes("add"), `add matched the addOnIds variable: ${completed.matchedTokens}`);
+
+  const openPanel = generateContextPack(openPanelQuery, { path: telemetryFixture });
+  assert.ok(!openPanel.data.primaryFiles.some((file) => file.path === "services/seller-checkout.ts"));
 });

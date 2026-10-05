@@ -11,21 +11,51 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { scanSecretContent } from "./secret-scan.js";
 
 const POLICY_PATH = "solumbe.gate.json";
 const MAX_COMMANDS = 20;
 const MAX_TIMEOUT_SECONDS = 600;
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 const MAX_INHERITED_ENVIRONMENT_VARIABLES = 20;
+const MAX_EXCERPT_LINES = 12;
+const MAX_EXCERPT_LINE_LENGTH = 200;
+const MAX_LISTED_FAILURES = 5;
 const validationEngineVersion = 1;
+
+// Lines test runners use to announce a failing test: TAP and node:test
+// (`not ok`, `✖`), Jest (`FAIL`, `✕`, `●`), Vitest (`FAIL`, `×`), pytest
+// (`FAILED`) and Go (`--- FAIL:`).
+const FAILURE_MARKER = /^\s*(?:not ok\b|✖|✕|×|●|FAILED\b|FAIL\b|--- FAIL:)/;
+// Marker-shaped lines that are not failures: TAP directives, node:test's
+// summary heading, and Jest's console-output blocks.
+const NOT_A_FAILURE = /#\s*(?:TODO|SKIP)\b|^\s*✖\s*failing tests:|^\s*●\s*Console\b/i;
+const FAILURE_PREFIX = /^(?:not ok\s+\d*\s*-?\s*|✖\s*|✕\s*|×\s*|●\s*|FAILED\s+|FAIL\s+|--- FAIL:\s*)/;
+const FAILURE_DURATION = /\s+\(\d+(?:\.\d+)?\s*m?s\)$/;
+
+/**
+ * A bounded, display-only slice of a failed command's output.
+ * @typedef {Object} OutputExcerpt
+ * @property {string} id command id from the validation policy
+ * @property {"stdout" | "stderr"} stream
+ * @property {"failure" | "tail"} from whether the slice starts at the first failure marker or is the stream's tail
+ * @property {number} firstLine 1-indexed line of the stream the slice starts at
+ * @property {number} lastLine
+ * @property {number} totalLines
+ * @property {string[]} lines
+ */
 
 /**
  * Execute the base-committed validation plan against an isolated materialised
  * copy of the exact staged tree. No checkout filters or working-tree source
  * participate in the snapshot.
  *
+ * A failed command also yields a bounded excerpt of its output for the
+ * report. The excerpt is for the reader only: the evidence and its receipt
+ * still bind the output by digest and never carry the text.
+ *
  * @param {{ root: string, subject: Record<string, any> | null }} options
- * @returns {{ status: "PASS" | "FAIL", summary: string, details: string[], evidence?: Record<string, any> }}
+ * @returns {{ status: "PASS" | "FAIL", summary: string, details: string[], evidence?: Record<string, any>, excerpts?: OutputExcerpt[] }}
  */
 export function executeValidationPlan(options) {
   const { root, subject } = options;
@@ -54,7 +84,8 @@ export function executeValidationPlan(options) {
     materializeTree(root, String(subject.treeSha), snapshot);
     const dependencyMode = linkDependencies(root, snapshot);
     const environment = validationEnvironment(snapshot, subject, policy);
-    const results = policy.commands.map((command) => runValidationCommand(command, snapshot, subject, policy, environment.env));
+    const runs = policy.commands.map((command) => runValidationCommand(command, snapshot, subject, policy, environment.env));
+    const results = runs.map((run) => run.result);
     const passed = results.every((result) => result.status === "PASS");
     /** @type {Record<string, any>} */
     const evidence = {
@@ -80,8 +111,9 @@ export function executeValidationPlan(options) {
       summary: passed
         ? `${results.length} versioned validation command${results.length === 1 ? "" : "s"} passed against the exact staged tree.`
         : `${results.filter((result) => result.status !== "PASS").length} versioned validation command(s) failed against the exact staged tree.`,
-      details: [`Dependency environment: ${dependencyMode.replaceAll("_", " ")} (not attested).`, ...results.map(formatResult)],
+      details: [`Dependency environment: ${dependencyMode.replaceAll("_", " ")} (not attested).`, ...runs.flatMap(formatRun)],
       evidence,
+      excerpts: runs.flatMap((run) => run.excerpts),
     };
   } catch (/** @type {any} */ error) {
     return {
@@ -180,7 +212,7 @@ function readValidationPolicy(root, baseSha) {
 function runValidationCommand(command, cwd, subject, policy, environment) {
   const startedAt = Date.now();
   const scriptFailure = verifyPinnedPackageScript(command.packageScript, cwd);
-  if (scriptFailure) return failedCommand(command, scriptFailure, startedAt);
+  if (scriptFailure) return { result: failedCommand(command, scriptFailure, startedAt), failures: [], excerpts: [] };
   const result = spawnSync(command.command, {
     cwd,
     shell: "/bin/sh",
@@ -196,16 +228,125 @@ function runValidationCommand(command, cwd, subject, policy, environment) {
   const outputTooLarge = errorCode === "ENOBUFS";
   const passed = result.status === 0 && !result.error && !result.signal;
   return {
-    ...command,
-    status: passed ? "PASS" : "FAIL",
-    exitCode: typeof result.status === "number" ? result.status : null,
-    signal: result.signal ?? null,
-    timedOut,
-    outputTooLarge,
-    stdoutSha256: sha256(stdout),
-    stderrSha256: sha256(stderr),
-    durationMs: Date.now() - startedAt,
+    result: {
+      ...command,
+      status: passed ? "PASS" : "FAIL",
+      exitCode: typeof result.status === "number" ? result.status : null,
+      signal: result.signal ?? null,
+      timedOut,
+      outputTooLarge,
+      stdoutSha256: sha256(stdout),
+      stderrSha256: sha256(stderr),
+      durationMs: Date.now() - startedAt,
+    },
+    ...(passed ? { failures: [], excerpts: [] } : failureExcerpt(command.id, { stdout, stderr }, cwd)),
   };
+}
+
+/**
+ * Pick what a reader needs from a failed command without rerunning it: the
+ * failing test names a runner announced, and the output from the first of
+ * them. Output with no recognised marker falls back to each stream's tail.
+ * Everything is bounded, stripped of terminal control sequences, and has
+ * credential-shaped lines withheld.
+ * @param {string} id
+ * @param {{ stdout: Buffer, stderr: Buffer }} output
+ * @param {string} snapshot
+ * @returns {{ failures: string[], excerpts: OutputExcerpt[] }}
+ */
+function failureExcerpt(id, output, snapshot) {
+  const prefixes = [...new Set([realpath(snapshot), snapshot])].sort((left, right) => right.length - left.length);
+  const streams = /** @type {const} */ (["stdout", "stderr"]).map((stream) => ({ stream, lines: displayLines(output[stream], prefixes) }));
+  const marked = streams.find(({ lines }) => lines.some(isFailureLine));
+  if (marked) {
+    const names = marked.lines.filter(isFailureLine).map(failureName);
+    const start = marked.lines.findIndex(isFailureLine);
+    return { failures: [...new Set(names)], excerpts: [excerptOf(id, marked, start, MAX_EXCERPT_LINES, "failure")] };
+  }
+  const written = streams.filter(({ lines }) => lines.length > 0);
+  const budget = Math.floor(MAX_EXCERPT_LINES / Math.max(written.length, 1));
+  return { failures: [], excerpts: written.map((entry) => excerptOf(id, entry, Math.max(entry.lines.length - budget, 0), budget, "tail")) };
+}
+
+/**
+ * Decode one stream into printable lines: terminal escapes and control
+ * characters removed, a carriage-return-redrawn line reduced to what was last
+ * drawn, the deleted snapshot directory shown as `.`, and trailing blank lines
+ * dropped.
+ * @param {Buffer} buffer
+ * @param {string[]} prefixes
+ */
+function displayLines(buffer, prefixes) {
+  // eslint-disable-next-line no-control-regex
+  let text = buffer.toString("utf8").replace(/\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)|\u001b[@-_]/g, "");
+  for (const prefix of prefixes) text = text.replaceAll(prefix, ".");
+  const lines = text.split(/\r?\n/).map((line) =>
+    line
+      .slice(line.lastIndexOf("\r") + 1)
+      .replaceAll("\t", "  ")
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u0000-\u001f\u007f-\u009f‪-‮⁦-⁩]/g, "")
+      .trimEnd(),
+  );
+  while (lines.length && !lines[lines.length - 1]) lines.pop();
+  return lines;
+}
+
+/**
+ * @param {string} id
+ * @param {{ stream: "stdout" | "stderr", lines: string[] }} entry
+ * @param {number} start
+ * @param {number} count
+ * @param {"failure" | "tail"} from
+ * @returns {OutputExcerpt}
+ */
+function excerptOf(id, entry, start, count, from) {
+  const lines = entry.lines.slice(start, start + count);
+  while (lines.length && !lines[lines.length - 1]) lines.pop();
+  return {
+    id,
+    stream: entry.stream,
+    from,
+    firstLine: start + 1,
+    lastLine: start + lines.length,
+    totalLines: entry.lines.length,
+    lines: withholdSecrets(lines.map(truncate)),
+  };
+}
+
+/** @param {string} line */
+function isFailureLine(line) {
+  return FAILURE_MARKER.test(line) && !NOT_A_FAILURE.test(line);
+}
+
+/** @param {string} line */
+function failureName(line) {
+  const trimmed = line.trim();
+  return withholdSecrets([truncate(trimmed.replace(FAILURE_PREFIX, "").replace(FAILURE_DURATION, "") || trimmed)])[0];
+}
+
+/**
+ * A report is a second place output can travel, so a line the gate's own
+ * secret scanner would flag is replaced rather than printed.
+ * @param {string[]} lines
+ */
+function withholdSecrets(lines) {
+  const flagged = new Map(scanSecretContent(lines.join("\n"), { maxFindings: lines.length }).map((finding) => [finding.line - 1, finding.label]));
+  return lines.map((line, index) => (flagged.has(index) ? `[line withheld: possible ${flagged.get(index)}]` : line));
+}
+
+/** @param {string} line */
+function truncate(line) {
+  return line.length > MAX_EXCERPT_LINE_LENGTH ? `${line.slice(0, MAX_EXCERPT_LINE_LENGTH - 1)}…` : line;
+}
+
+/** @param {string} target */
+function realpath(target) {
+  try {
+    return fs.realpathSync(target);
+  } catch {
+    return target;
+  }
 }
 
 /** @param {string} snapshot @param {Record<string, any>} subject @param {Record<string, any>} policy */
@@ -315,6 +456,14 @@ function failedCommand(command, message, startedAt) {
     stderrSha256: sha256(stderr),
     durationMs: Date.now() - startedAt,
   };
+}
+
+/** @param {{ result: Record<string, any>, failures: string[] }} run */
+function formatRun({ result, failures }) {
+  if (!failures.length) return [formatResult(result)];
+  const listed = failures.slice(0, MAX_LISTED_FAILURES).join("; ");
+  const more = failures.length > MAX_LISTED_FAILURES ? ` (+${failures.length - MAX_LISTED_FAILURES} more)` : "";
+  return [formatResult(result), `${result.id} failing (${failures.length}): ${listed}${more}`];
 }
 
 /** @param {Record<string, any>} result */

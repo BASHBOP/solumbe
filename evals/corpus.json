@@ -3,7 +3,7 @@
   "description": "Labeled evaluation corpus for solumbe retrieval, risk classification, fixture-backed harness command execution, and gate effectiveness. Gate cases initialize an isolated Git repository from a committed base, apply one committed change-set, and assert both the verdict and deterministic check reason. See docs/EVALS.md for how to add a case and how thresholds work.",
   "k": 5,
   "thresholds": {
-    "comment": "Floors set to current-baseline-minus-slack so the suite is green today but a regression trips it. Baseline (2026-09-27): retrieval p@5=0.873 r@5=1.0 mrr=0.976 (22/22); risk accuracy=1.0 (22/22). Aggregate metrics must be >= these floors for exit code 0. The risk floor is 0.96 so that a single failing case (21/22 = 0.955) still trips the gate. Re-record both baseline and floors in docs/EVALS.md after any intentional behavior change.",
+    "comment": "Floors set to current-baseline-minus-slack so the suite is green today but a regression trips it. Baseline (2026-10-05): retrieval p@5=0.87 r@5=1.0 mrr=0.978 (24/24); risk accuracy=1.0 (22/22). Aggregate metrics must be >= these floors for exit code 0. The risk floor is 0.96 so that a single failing case (21/22 = 0.955) still trips the gate. Re-record both baseline and floors in docs/EVALS.md after any intentional behavior change.",
     "retrieval": {
       "precisionAtK": 0.85,
       "recallAtK": 0.9,
@@ -28,7 +28,8 @@
     "mobile-host-rsvp": "evals/fixtures/mobile-host-rsvp",
     "campaign-email": "evals/fixtures/campaign-email",
     "gate-node": "evals/fixtures/gate-node",
-    "multi-locale-web": "evals/fixtures/multi-locale-web"
+    "multi-locale-web": "evals/fixtures/multi-locale-web",
+    "telemetry-web": "evals/fixtures/telemetry-web"
   },
   "retrieval": [
     {
@@ -186,6 +187,20 @@
         "utils/combineDateAndTime.ts",
         "components/conversational/utils/aiEventSchema.ts"
       ]
+    },
+    {
+      "name": "telemetry-repeated-words",
+      "comment": "The bashbop-event-web session replay request (2026-10-05). It says `session` twice and `error`/`errors` four times, and each mention counted, so methods matching only `session` (createSession, a cache's get and set) led the pack and app/global-error.tsx fell out of it.",
+      "query": "session replay / session playback for critical user errors: error tracking, Sentry, PostHog, monitoring, error boundary, global error handler",
+      "repoFixture": "telemetry-web",
+      "expectedPrimary": ["app/global-error.tsx", "components/common/ErrorBoundary.tsx"]
+    },
+    {
+      "name": "telemetry-openpanel-camelcase",
+      "comment": "The bashbop-event-web request naming OpenPanel (2026-10-05). The name splits into `open` and `panel`; alone, `open` with `session` made a seller checkout service primary in the web and API pack.",
+      "query": "add session replay to the OpenPanel analytics provider",
+      "repoFixture": "telemetry-web",
+      "expectedPrimary": ["components/providers/openpanel-provider.tsx"]
     }
   ],
   "risk": [

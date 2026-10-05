@@ -4,7 +4,7 @@
 
 > For teams that want any coding agent to produce evidence a human can trust before merge.
 
-**v4.2.0** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
+**v4.2.1** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
 
 Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep -->
 
@@ -20,6 +20,15 @@ Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep
 ---
 
 ## What's New
+
+!!! tip "v4.2.1 published (2026-10-06)"
+    Context packs rank by distinct request words, and a failing gate says what failed. No command or schema was removed.
+
+    - A word the request repeats counts once, a plural and its singular are one word, and the parts of a camelCase name count only together, so one repeated or generic word no longer pushes the right file out of the pack.
+    - `gate --run-validation` names the failing tests and shows up to 12 lines from the first failure beside the output digests. The excerpt is cleaned, credential-shaped lines are withheld, and the evidence and receipt still carry digests only.
+    - `gate --out` and the pre-commit hook from `solumbe init` print the verdict and the blocking check, instead of only the report path.
+
+    [npm v4.2.1](https://www.npmjs.com/package/@bashbop/solumbe/v/4.2.1) · [GitHub Release](https://github.com/BASHBOP/solumbe/releases/tag/v4.2.1) · [MCP Registry](https://registry.modelcontextprotocol.io/?q=io.github.BASHBOP%2Fsolumbe)
 
 !!! tip "v4.2.0 published (2026-10-04)"
     Reviews look into a repository's companions and read what a migration does to existing data. No command, field or schema was removed.
@@ -218,7 +227,7 @@ flowchart LR
 === "Install"
 
     ```bash
-    npm install -g @bashbop/solumbe@4.2.0
+    npm install -g @bashbop/solumbe@4.2.1
     solumbe doctor
     solumbe context "review this change" --path .
     ```
@@ -226,7 +235,7 @@ flowchart LR
 === "No Global Install"
 
     ```bash
-    npx -y @bashbop/solumbe@4.2.0 doctor
+    npx -y @bashbop/solumbe@4.2.1 doctor
     ```
 
 === "Source Checkout"

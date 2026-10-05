@@ -677,7 +677,7 @@ async function handleConverge(parsed) {
 
 /** @param {CliArgs} parsed */
 async function handlePass(parsed) {
-  const { evaluateLocal, formatPassMarkdown, formatPassTerminal } = await import("./lib/pass-local.js");
+  const { evaluateLocal, formatPassMarkdown, formatPassOutcome, formatPassTerminal } = await import("./lib/pass-local.js");
   const repoPath = parsed.positionals[0] ?? ".";
   const { policy, governance } = gatePolicy(repoPath, parsed.flags);
   // evaluateLocal returns a loosely-typed record; it is a PassData at runtime.
@@ -704,7 +704,9 @@ async function handlePass(parsed) {
 
   if (parsed.flags.out) {
     const artifact = writeArtifact(parsed.flags.out, formatPassMarkdown(data));
-    printText(`Pass report written: ${artifact.path}`);
+    // The path alone reads as success; a hook that blocks a commit must say why.
+    printText(`Gate verdict: ${formatPassOutcome(data)}`);
+    printText(`Gate report written: ${artifact.path}`);
     if (data.verdict === "FAIL") process.exitCode = 1;
     return;
   }

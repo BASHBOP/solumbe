@@ -6,6 +6,18 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+## [4.2.1] - 2026-10-06
+
+Context packs rank by distinct request words, and a failing gate says what failed. No command or schema was removed. The gate check gains one optional field, and `gate --out` prints a verdict line.
+
+### Fixed
+
+- **A word the request repeats counts once.** "session replay / session playback … errors … error boundary, global error handler" counted `session` twice and `error` four times. Methods matching only `session` (`createSession`, a cache's `get` and `set`) then scored as two-word matches, led the hotspots, and pushed `app/global-error.tsx` out of the pack. A plural and its singular (`errors`, `error`) are also one word.
+- **The words of a camelCase name count together.** "OpenPanel" splits into `open` and `panel`, and "PostHog" into `post` and `hog`, like any identifier. On its own, `open` made a seller checkout service a primary file, and `post` matched `postAiStream`. Each word now counts only when another word of the same name also matches, unless the request also uses it on its own.
+- **The action verb counts only in a symbol's own name.** `add` from "add session replay…" matched a local variable inside `handleCheckoutSessionCompleted`. A symbol named for the action (`createOrder` for "create an order") still matches.
+- **A failed validation command shows what failed.** `gate --run-validation` printed only `tests: failed (exit 1; stdout sha256 …; stderr sha256 …)`, so finding the failing test meant running the suite again. The check now lists the failing tests the runner announced (TAP and node:test, Jest, Vitest, pytest, Go) and shows up to 12 lines of output from the first of them. When no runner marker is recognised it shows each stream's tail instead. The excerpt appears in the terminal and markdown reports and as `excerpts` on the check in JSON. Lines are capped at 200 characters and stripped of terminal escapes, the deleted snapshot directory is shown as `.`, and any line the secret scanner would flag is withheld. The digests stay, and the validation evidence and its receipt still carry digests only.
+- **`gate --out` and the pre-commit hook say FAIL.** Writing the report printed only `Pass report written: <path>`, which read as a pass while the hook refused the commit. `--out` now prints `Gate verdict: FAIL — blocked by <check>: <summary>` (or `WARN …` / `PASS`) and then `Gate report written: <path>`. The hook scaffolded by `solumbe init` also prints `FAIL — commit blocked by the staged safety gate`. Hooks scaffolded before this release show the verdict line without re-running `init`.
+
 ## [4.2.0] - 2026-10-04
 
 Fixes from running Solumbe's review tools on three bashbop repositories and checking every answer against the code, and reviews that look into a repository's companions. No command, field or schema was removed; the verdict `schemaVersion` moves to 2 for one added field.
