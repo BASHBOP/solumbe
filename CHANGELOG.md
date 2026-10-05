@@ -6,6 +6,10 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+## [4.2.1] - 2026-10-06
+
+Context packs rank by distinct request words, and a failing gate says what failed. No command or schema was removed. The gate check gains one optional field, and `gate --out` prints a verdict line.
+
 ### Fixed
 
 - **A word the request repeats counts once.** "session replay / session playback … errors … error boundary, global error handler" counted `session` twice and `error` four times. Methods matching only `session` (`createSession`, a cache's `get` and `set`) then scored as two-word matches, led the hotspots, and pushed `app/global-error.tsx` out of the pack. A plural and its singular (`errors`, `error`) are also one word.
