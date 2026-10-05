@@ -1,0 +1,7 @@
+{
+  "name": "telemetry-web",
+  "scripts": {
+    "build": "next build",
+    "test": "jest"
+  }
+}
