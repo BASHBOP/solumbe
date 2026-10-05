@@ -296,6 +296,40 @@ test("the pre-commit hook gates under --policy standard so a strict repository p
   assert.equal(hooked.exitCode, 0);
 });
 
+test("the pre-commit hook says FAIL and names the blocking check when it blocks a commit", () => {
+  // Printing only the report path read as a pass while the commit was refused.
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "solumbe-init-hook-fail-"));
+  fs.writeFileSync(path.join(fixture, "package.json"), JSON.stringify({ name: "sample", scripts: { lint: "eslint ." } }, null, 2));
+  fs.writeFileSync(path.join(fixture, "index.js"), "export const value = 1;\n");
+  const git = (/** @type {string[]} */ args) =>
+    execFileSync("git", ["-c", "user.name=solumbe", "-c", "user.email=solumbe@example.com", "-c", "commit.gpgsign=false", ...args], {
+      cwd: fixture,
+      stdio: "ignore",
+    });
+  git(["init", "--quiet"]);
+  git(["add", "--all"]);
+  git(["commit", "--quiet", "-m", "baseline"]);
+  initProject(fixture);
+  fs.writeFileSync(path.join(fixture, ".env"), "API_TOKEN=local\n");
+  git(["add", ".env"]);
+
+  // The hook calls `solumbe` from PATH; point it at this checkout.
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "solumbe-init-hook-bin-"));
+  fs.writeFileSync(path.join(bin, "solumbe"), `#!/bin/sh\nexec "${process.execPath}" "${path.join(repoRoot, "src", "cli.js")}" "$@"\n`, { mode: 0o755 });
+  const hook = spawnSync("sh", [path.join(".githooks", "pre-commit")], {
+    cwd: fixture,
+    encoding: "utf8",
+    env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, SOLUMBE_TELEMETRY: "0", SOLUMBE_TELEMETRY_SHARE: "0" },
+  });
+
+  assert.equal(hook.status, 1, hook.stdout + hook.stderr);
+  assert.match(hook.stdout, /Gate verdict: FAIL — blocked by Secret safety: /);
+  assert.match(hook.stdout, /Gate report written: .*\.solumbe\/gate\.md/);
+  assert.match(hook.stderr, /solumbe pre-commit: FAIL — commit blocked by the staged safety gate; full report in \.solumbe\/gate\.md/);
+  assert.doesNotMatch(hook.stdout, /running static checks/, "a blocked commit stops before the static checks");
+  assert.match(fs.readFileSync(path.join(fixture, ".solumbe", "gate.md"), "utf8"), /Verdict: \*\*FAIL\*\*/);
+});
+
 test("the generated workflow pins the same action majors as this repository's own CI", () => {
   // The template is shipped in the package and cannot read solumbe-ci.yml at
   // run time, so the majors are constants. This test is what keeps them from

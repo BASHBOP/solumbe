@@ -30,6 +30,7 @@ import { executeValidationPlan } from "./validation-attestation.js";
  * @property {string} [band]
  * @property {Record<string, any>} [receipt]
  * @property {Record<string, any>} [subject]
+ * @property {import("./validation-attestation.js").OutputExcerpt[]} [excerpts]
  */
 
 /**
@@ -1193,6 +1194,10 @@ export function formatPassTerminal(data, rendererFactory) {
     const status = STATUS_TO_RENDER[check.status] ?? "info";
     const details = (check.details ?? []).slice(0, 10).map((detail) => decorateDetail(detail, renderer));
     lines.push(renderer.statusLine(status, check.name, check.summary, details));
+    for (const excerpt of check.excerpts ?? []) {
+      lines.push(`     ${renderer.glyphs.box.arrow} ${excerptHeading(excerpt)}:`);
+      for (const line of excerpt.lines) lines.push(`        ${renderer.paint(renderer.glyphs.tree.pipe, "dim")}${line ? ` ${line}` : ""}`);
+    }
   }
 
   lines.push("");
@@ -1211,6 +1216,29 @@ export function formatPassTerminal(data, rendererFactory) {
   for (const command of data.contextEvidence) lines.push(`     ${renderer.paint(renderer.glyphs.item, "dim")} ${command}`);
 
   return lines.join("\n");
+}
+
+/**
+ * One line naming the verdict and the check that decided it, for callers that
+ * write the report to a file and would otherwise print only its path.
+ * @param {PassData} data
+ * @returns {string}
+ */
+export function formatPassOutcome(data) {
+  const deciding = data.verdict === "FAIL" ? STATUS.fail : data.verdict === "WARN" ? STATUS.warn : null;
+  const [first, ...rest] = deciding ? data.checks.filter((check) => check.status === deciding) : [];
+  if (!first) return data.verdict;
+  const also = rest.length ? ` (also ${data.verdict === "FAIL" ? "failing" : "warning"}: ${rest.map((check) => check.name).join(", ")})` : "";
+  return `${data.verdict} — ${data.verdict === "FAIL" ? "blocked by " : ""}${first.name}: ${first.summary}${also}`;
+}
+
+/**
+ * @param {import("./validation-attestation.js").OutputExcerpt} excerpt
+ * @returns {string}
+ */
+function excerptHeading(excerpt) {
+  const range = excerpt.firstLine === excerpt.lastLine ? `line ${excerpt.firstLine}` : `lines ${excerpt.firstLine}-${excerpt.lastLine}`;
+  return `${excerpt.id} ${excerpt.stream}, ${range} of ${excerpt.totalLines} (${excerpt.from === "failure" ? "from the first failure" : "tail"})`;
 }
 
 /**
@@ -1285,6 +1313,11 @@ export function formatPassMarkdown(data) {
     if (check.details && check.details.length) {
       lines.push("");
       for (const detail of check.details) lines.push(`- ${detail}`);
+    }
+    for (const excerpt of check.excerpts ?? []) {
+      const longestRun = Math.max(0, ...excerpt.lines.flatMap((line) => (line.match(/`+/g) ?? []).map((run) => run.length)));
+      const fence = "`".repeat(Math.max(3, longestRun + 1));
+      lines.push("", `${excerptHeading(excerpt)}:`, "", `${fence}text`, ...excerpt.lines, fence);
     }
     lines.push("");
   }
