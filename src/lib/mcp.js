@@ -3,6 +3,7 @@ import path from "node:path";
 import readline from "node:readline";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
+import { AGENT_WORKFLOW_INSTRUCTIONS } from "./agent-workflow.js";
 import { discoverRepositories, indexRepositories, listCatalog, searchCatalog } from "./catalog.js";
 import { generateContextPack } from "./context-engine.js";
 import { readContextPack } from "./context-read.js";
@@ -568,6 +569,9 @@ async function handleMessage(message) {
             name: packageJson.name,
             version: packageJson.version,
           },
+          // Hosts that read server instructions get the workflow from the
+          // server itself, whatever their own instruction files say.
+          instructions: AGENT_WORKFLOW_INSTRUCTIONS,
         });
       case "ping":
         return successResponse(message.id, {});

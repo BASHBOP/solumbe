@@ -48,6 +48,19 @@ Use this sequence for coding work. It is deliberately independent of the model o
 
 Use the lightest useful path for a trivial, low-risk documentation correction. Do not skip context, impact, or review merely because an agent authored the change.
 
+### Over MCP
+
+The MCP server sends this workflow to every host in its `initialize` result (`instructions`, from `src/lib/agent-workflow.js`). A host that shows server instructions gets it without any instruction file of its own. The stages, by tool:
+
+| Stage                                                            | Tool                |
+| ---------------------------------------------------------------- | ------------------- |
+| New task, or the scope changes                                   | `context_pack`      |
+| Weak result: intent unknown, or the top files don't fit the task | `repo_search`       |
+| Before editing a specific change                                 | `change_impact`     |
+| Delegating to another agent                                      | `context_pack`      |
+| Before each commit                                               | `convergence_score` |
+| Before opening a pull request                                    | `review_gate`       |
+
 ## Host Compatibility
 
 The workflow supports three connection modes. Do not claim that a host has direct MCP support until its current vendor documentation confirms it.
