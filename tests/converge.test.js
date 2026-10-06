@@ -458,3 +458,83 @@ test("inferInScopeFiles does not read a suffix after a generic stem as naming th
   });
   assert.deepEqual(inferred, []);
 });
+
+test("inferInScopeFiles keeps what the change wires to a confirmed file, from the lines it adds", () => {
+  const inferred = inferInScopeFiles({
+    confirmedDirect: ["src/lib/context-engine.js"],
+    confirmedRelated: ["src/lib/code-map/text.js"],
+    candidates: [
+      "src/lib/code-map/ast.js",
+      "tests/registered-names.test.js",
+      "docs/EVALS.md",
+      "docs/gap-note.md",
+      "src/lib/auth/session.js",
+      "docs/unrelated.md",
+      "src/lib/reporter.js",
+    ],
+    addedFiles: [],
+    mappedFiles: [],
+    addedLines: new Map([
+      ["src/lib/code-map/ast.js", ['import { isIdentifierShaped, lineNumberAt } from "./text.js";']],
+      ["tests/registered-names.test.js", ['import { generateContextPack } from "../src/lib/context-engine.js";']],
+      ["docs/EVALS.md", ["The change pins `src/lib/context-engine.js` for a named tool."]],
+      ["docs/gap-note.md", ["- `ast.js` indexes registered names"]],
+      // Imports a confirmed file but carries an auth flag that file lacks.
+      ["src/lib/auth/session.js", ['import { x } from "../context-engine.js";']],
+      ["docs/unrelated.md", ["Setup notes for the new release."]],
+      // Already imported the confirmed file; this change added nothing that wires them.
+      ["src/lib/reporter.js", ["export const header = 'report';"]],
+    ]),
+  }).map((entry) => `${entry.rule}:${entry.file}<-${entry.anchor}`);
+
+  assert.deepEqual(inferred, [
+    "owner-doc:docs/EVALS.md<-src/lib/context-engine.js",
+    "owner-doc:docs/gap-note.md<-src/lib/code-map/ast.js",
+    "owner-import:src/lib/code-map/ast.js<-src/lib/code-map/text.js",
+    "owner-test:tests/registered-names.test.js<-src/lib/context-engine.js",
+  ]);
+});
+
+test("a doc naming only a generic file name names nothing", () => {
+  const inferred = inferInScopeFiles({
+    confirmedDirect: ["src/lib/index.js"],
+    confirmedRelated: [],
+    candidates: ["docs/notes.md"],
+    addedFiles: [],
+    mappedFiles: [],
+    addedLines: new Map([["docs/notes.md", ["Run `index.js` to start."]]]),
+  });
+  assert.deepEqual(inferred, []);
+});
+
+test("head mode reads the lines a commit adds to place its docs", () => {
+  const root = featureCommitFixture();
+  const write = (files) => {
+    for (const [file, body] of Object.entries(files)) {
+      fs.mkdirSync(path.join(root, path.dirname(file)), { recursive: true });
+      fs.writeFileSync(path.join(root, file), body);
+    }
+  };
+  write({ "docs/greeting.md": "# Greeting\n", "docs/setup.md": "# Setup\n" });
+  convergeGit(root, "add", "docs");
+  convergeGit(root, "commit", "-q", "-m", "docs");
+  const baseSha = convergeGit(root, "rev-parse", "HEAD").trim();
+  write({
+    "src/greeting/greeting.ts": "export function greetingMessage(name) { return `welcome ${name}`; }\n",
+    "tests/welcome.test.ts": 'import { greetingMessage } from "../src/greeting/greeting";\n',
+    "src/cache/store.ts": 'import { greetingMessage } from "../greeting/greeting.js";\nexport const store = new Map([["hi", greetingMessage("x")]]);\n',
+    "docs/greeting.md": "# Greeting\n\n`src/greeting/greeting.ts` now says welcome.\n",
+    "docs/setup.md": "# Setup\n\nInstall with npm.\n",
+  });
+  convergeGit(root, "add", "src/greeting/greeting.ts", "tests/welcome.test.ts", "src/cache/store.ts", "docs/greeting.md", "docs/setup.md");
+  convergeGit(root, "commit", "-q", "-m", "welcome");
+  const headSha = convergeGit(root, "rev-parse", "HEAD").trim();
+
+  const data = generateConvergence(TASK, { path: root, base: baseSha, head: headSha });
+  assert.deepEqual(data.drivers.confirmedDirect, ["src/greeting/greeting.ts"]);
+  // The import graph already relates the new test and the importing module.
+  assert.deepEqual(data.drivers.confirmedRelated, ["src/cache/store.ts", "tests/welcome.test.ts"]);
+  // The doc is placed from the line the commit adds to it, read through git.
+  assert.deepEqual(data.drivers.inferredRelated, [{ file: "docs/greeting.md", rule: "owner-doc", anchor: "src/greeting/greeting.ts" }]);
+  assert.deepEqual(data.drivers.missedChangedFiles, ["docs/setup.md"]);
+});

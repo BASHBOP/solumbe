@@ -28,6 +28,11 @@ This project follows SemVer.
   - Display names such as "Convergence Score" are not indexed.
   - The index cache moves to version 12, so existing indexes rebuild once.
 - **A failing accuracy eval says FAIL instead of crashing.** The closing line called `.find` on the accuracy eval's cases, which are grouped by suite (`{ retrieval, risk }`), so a run below threshold threw `data.cases?.find is not a function`.
+- **`convergence_score` reads what the change adds to place a file.**
+  - A test or source file whose added lines import a confirmed file is in scope (`owner-test`, and the new `owner-import`). A source file still needs no risk flag that file lacks.
+  - A doc whose added lines name a confirmed or inferred file is in scope (`owner-doc`).
+  - #273 had four files wrongly called drift: `ast.js`, which now imports a helper from `text.js`; a test named `registered-names.test.js`; its gap note; and `docs/EVALS.md`. Its score moves from 59 to 70, with scope and risk alignment both at 100.
+  - The convergence engine moves to `0.4.0`.
 
 ## [4.2.1] - 2026-10-06
 

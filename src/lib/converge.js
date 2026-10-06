@@ -12,6 +12,7 @@
 // and a recomputable receipt. Pure and deterministic for a given repo state.
 
 import crypto from "node:crypto";
+import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { generateCodeMapFromSources } from "./code-map.js";
@@ -28,7 +29,9 @@ import { estimateTokens } from "./tokens.js";
 // 0.3.0: a test named for a confirmed file with a suffix (`mcp-dispatch.test.js`
 // for `mcp.js`), the change's changelog entry and its fixture or eval data are
 // in scope. Scores change again, so 0.2.0 receipts do not recompute here.
-export const convergenceEngineVersion = "0.3.0";
+// 0.4.0: a file the change wires to a confirmed one is in scope: a test or
+// source file whose added lines import it, and a doc whose added lines name it.
+export const convergenceEngineVersion = "0.4.0";
 
 // Sub-score weights. Coverage (did intent happen?) leads, scope discipline (did
 // only intent happen?) is next, risk alignment (did drift land somewhere
@@ -60,6 +63,10 @@ const MAX_LISTED_UNTRACKED = 25;
 // Test stems too common to identify their subject from anywhere in the repo:
 // `tests/index.test.ts` says nothing about which `index.ts` it covers, so these
 // only match a test beside the file or in a test directory directly under it.
+// Bounds on reading the lines a change adds, per candidate file and overall.
+const MAX_ADDED_LINES = 2000;
+const MAX_ADDED_LINE_FILES = 200;
+
 const CHANGELOG_NAMES = new Set(["changelog.md", "changes.md", "history.md", "release-notes.md", "release_notes.md"]);
 
 const GENERIC_STEMS = new Set(["__init__", "app", "config", "constants", "helpers", "index", "lib", "main", "mod", "types", "util", "utils"]);
@@ -142,12 +149,14 @@ export function generateConvergence(query, options = {}) {
   // not drift, so they are moved out of the drift and advisory buckets under a
   // named rule before scope and risk alignment are computed.
   const addedFiles = subject ? addedFilesForSubject(root, subject) : [...addedFilesInWorkingTree(root, base), ...(includeUntracked ? (untracked ?? []) : [])];
+  const candidates = [...(validation.missedChangedFiles ?? []), ...(validation.advisoryChangedFiles ?? [])];
   const inferredRelated = inferInScopeFiles({
     confirmedDirect,
     confirmedRelated,
-    candidates: [...(validation.missedChangedFiles ?? []), ...(validation.advisoryChangedFiles ?? [])],
+    candidates,
     addedFiles,
     mappedFiles: impact.diffEvidence?.mappedFiles ?? [],
+    addedLines: addedLinesFor(root, base, subject, candidates, includeUntracked ? (untracked ?? []) : []),
   });
   const inferredFiles = new Set(inferredRelated.map((entry) => entry.file));
   const missedChangedFiles = (validation.missedChangedFiles ?? []).filter((/** @type {string} */ file) => !inferredFiles.has(file));
@@ -252,7 +261,7 @@ export function generateConvergence(query, options = {}) {
 /**
  * @typedef {Object} InferredFile
  * @property {string} file
- * @property {"owner-sibling" | "owner-test" | "owner-changelog" | "owner-test-data"} rule
+ * @property {"owner-sibling" | "owner-test" | "owner-import" | "owner-changelog" | "owner-test-data" | "owner-doc"} rule
  * @property {string} anchor the confirmed file that brought `file` into scope
  */
 
@@ -277,11 +286,23 @@ export function generateConvergence(query, options = {}) {
  *
  * The last two only apply once a confirmed owner anchors the change.
  *
+ * Three more read the lines the change adds (`addedLines`), so they hold for
+ * what this change did rather than for what a file already contained:
+ *
+ * - `owner-test` also covers a test whose added lines import a confirmed
+ *   file, whatever its name (`registered-names.test.js` importing
+ *   `context-engine.js`).
+ * - `owner-import`: a source file whose added lines import a confirmed file,
+ *   carrying no risk flag that file lacks: the change wired them together
+ *   (`ast.js` importing a helper moved into `text.js`).
+ * - `owner-doc`: a doc whose added lines name a confirmed or inferred file by
+ *   path or file name: the change's own documentation.
+ *
  * Pure and order-independent for a given input.
- * @param {{ confirmedDirect: string[], confirmedRelated: string[], candidates: string[], addedFiles: string[], mappedFiles: string[] }} input
+ * @param {{ confirmedDirect: string[], confirmedRelated: string[], candidates: string[], addedFiles: string[], mappedFiles: string[], addedLines?: Map<string, string[]> }} input
  * @returns {InferredFile[]}
  */
-export function inferInScopeFiles({ confirmedDirect, confirmedRelated, candidates, addedFiles, mappedFiles }) {
+export function inferInScopeFiles({ confirmedDirect, confirmedRelated, candidates, addedFiles, mappedFiles, addedLines = new Map() }) {
   const added = new Set(addedFiles);
   const mapped = new Set(mappedFiles);
   const pending = [...new Set(candidates)].filter((file) => !isSecretPath(file)).sort();
@@ -304,6 +325,20 @@ export function inferInScopeFiles({ confirmedDirect, confirmedRelated, candidate
     if (anchor) inferred.push({ file, rule: "owner-test", anchor });
   }
 
+  const confirmed = [...new Set([...confirmedDirect, ...confirmedRelated])].sort();
+  for (const file of pending) {
+    if (inferred.some((entry) => entry.file === file) || isDocPath(file)) continue;
+    const imported = importedFiles(file, addedLines.get(file) ?? [], confirmed);
+    if (isTestFilePath(file)) {
+      const anchor = imported.find((source) => !isTestFilePath(source));
+      if (anchor) inferred.push({ file, rule: "owner-test", anchor });
+      continue;
+    }
+    const flags = riskFlagsFor(file);
+    const anchor = imported.find((source) => flags.every((flag) => riskFlagsFor(source).includes(flag)));
+    if (anchor) inferred.push({ file, rule: "owner-import", anchor });
+  }
+
   const owner = [...confirmedDirect].sort()[0];
   if (owner) {
     const taken = new Set(inferred.map((entry) => entry.file));
@@ -314,7 +349,111 @@ export function inferInScopeFiles({ confirmedDirect, confirmedRelated, candidate
     }
   }
 
+  // A doc names the change's code before its fixtures: `converge.js` is the
+  // engine, not `evals/fixtures/…/converge.js`.
+  const documented = [...new Set([...confirmed, ...inferred.map((entry) => entry.file)])]
+    .filter((file) => !isDocPath(file))
+    .sort((left, right) => Number(isTestDataPath(left)) - Number(isTestDataPath(right)) || left.localeCompare(right));
+  if (documented.length) {
+    const taken = new Set(inferred.map((entry) => entry.file));
+    for (const file of pending) {
+      if (taken.has(file) || !isDocPath(file)) continue;
+      const anchor = namedFile(addedLines.get(file) ?? [], documented);
+      if (anchor) inferred.push({ file, rule: "owner-doc", anchor });
+    }
+  }
+
   return inferred.sort((left, right) => left.file.localeCompare(right.file));
+}
+
+const IMPORT_SPECIFIERS = [/\bfrom\s+["']([^"']+)["']/g, /\bimport\s+["']([^"']+)["']/g, /\b(?:require|import)\(\s*["']([^"']+)["']\s*\)/g];
+const SOURCE_EXTENSION = /\.(?:[cm]?[jt]sx?)$/;
+
+/**
+ * The files among `targets` that `lines` import by a relative specifier.
+ * `./converge.js` from `src/lib/mcp.js` resolves to `src/lib/converge.js`, or
+ * to `converge.ts` in a TypeScript ESM repository.
+ * @param {string} file
+ * @param {string[]} lines
+ * @param {string[]} targets
+ * @returns {string[]}
+ */
+function importedFiles(file, lines, targets) {
+  if (lines.length === 0) return [];
+  const stems = new Map(targets.map((target) => [target.replace(SOURCE_EXTENSION, ""), target]));
+  /** @type {Set<string>} */
+  const found = new Set();
+  for (const line of lines) {
+    for (const pattern of IMPORT_SPECIFIERS) {
+      for (const match of line.matchAll(pattern)) {
+        const specifier = match[1];
+        if (!specifier.startsWith(".")) continue;
+        const joined = path.posix.normalize(path.posix.join(path.posix.dirname(file), specifier)).replace(SOURCE_EXTENSION, "");
+        const target = stems.get(joined) ?? stems.get(`${joined}/index`);
+        if (target) found.add(target);
+      }
+    }
+  }
+  return [...found].sort();
+}
+
+/**
+ * The first of `targets` that `lines` name by path or by file name. A generic
+ * file name (`index.ts`) names nothing on its own.
+ * @param {string[]} lines
+ * @param {string[]} targets
+ * @returns {string | undefined}
+ */
+function namedFile(lines, targets) {
+  if (lines.length === 0) return undefined;
+  const text = lines.join("\n");
+  return targets.find((target) => {
+    if (text.includes(target)) return true;
+    const base = path.posix.basename(target);
+    if (!base.includes(".") || GENERIC_STEMS.has(base.replace(/\.[^.]+$/, "").toLowerCase())) return false;
+    const escaped = base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(^|[^\\w.-])${escaped}($|[^\\w-])`).test(text);
+  });
+}
+
+/**
+ * The lines each file gains in the change: `+` lines of a zero-context diff
+ * against the base, or the whole file when it is untracked and scored.
+ * @param {string} root
+ * @param {string} base
+ * @param {Record<string, string | number> | null} subject
+ * @param {string[]} files
+ * @param {string[]} untracked
+ * @returns {Map<string, string[]>}
+ */
+function addedLinesFor(root, base, subject, files, untracked) {
+  /** @type {Map<string, string[]>} */
+  const lines = new Map();
+  const wanted = [...new Set(files)].filter((file) => !isSecretPath(file)).slice(0, MAX_ADDED_LINE_FILES);
+  if (wanted.length === 0) return lines;
+  const untrackedSet = new Set(untracked);
+  const range = subject ? subjectDiffRange(root, subject) : [resolveGitObject(root, `${base}^{commit}`, "base commit")];
+  for (const file of wanted) {
+    if (untrackedSet.has(file)) {
+      try {
+        const body = fs.readFileSync(path.join(root, file), "utf8");
+        lines.set(file, body.split("\n").slice(0, MAX_ADDED_LINES));
+      } catch {
+        // An unreadable file adds nothing to infer from.
+      }
+      continue;
+    }
+    const result = runCommand("git", ["--no-replace-objects", "diff", "--no-ext-diff", "--no-textconv", "--no-color", "--unified=0", ...range, "--", file], {
+      cwd: root,
+    });
+    if (!result.ok) continue;
+    const added = result.stdout
+      .split("\n")
+      .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
+      .map((line) => line.slice(1));
+    lines.set(file, added.slice(0, MAX_ADDED_LINES));
+  }
+  return lines;
 }
 
 /**
@@ -476,10 +615,20 @@ function changedFilesForTree(root, baseSha, treeSha) {
  * @returns {string[]}
  */
 function addedFilesForSubject(root, subject) {
+  return gitNullLines(root, [...diffNameArgs("--diff-filter=A"), ...subjectDiffRange(root, subject), "--"], "files added by the change subject");
+}
+
+/**
+ * The two sides a change subject is diffed between.
+ * @param {string} root
+ * @param {Record<string, string | number>} subject
+ * @returns {[string, string]}
+ */
+function subjectDiffRange(root, subject) {
   const baseSha = String(subject.baseSha);
   const from = subject.kind === "github-pr" ? gitValue(root, ["merge-base", baseSha, String(subject.headSha)], "GitHub PR merge base") : baseSha;
   const to = subject.kind === "github-pr" ? String(subject.headSha) : String(subject.treeSha);
-  return gitNullLines(root, [...diffNameArgs("--diff-filter=A"), from, to, "--"], "files added by the change subject");
+  return [from, to];
 }
 
 /**
@@ -915,6 +1064,8 @@ function formatList(items) {
 const INFERRED_RULE_LABELS = {
   "owner-sibling": "new file beside",
   "owner-test": "test of",
+  "owner-import": "imports",
+  "owner-doc": "documents",
   "owner-changelog": "changelog for",
   "owner-test-data": "test data for",
 };
