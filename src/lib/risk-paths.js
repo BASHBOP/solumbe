@@ -191,6 +191,21 @@ const DOC_SEGMENTS = new Set(["docs", "doc", "documentation"]);
 // a fixture repository the evals run against, not how this repository ships.
 const TEST_DATA_SEGMENTS = new Set(["fixtures", "__fixtures__", "testdata", "test-data", "evals", "eval"]);
 
+const FIXTURE_SEGMENTS = new Set(["fixtures", "__fixtures__", "testdata", "test-data"]);
+
+/**
+ * True when the path lives in a fixture directory.
+ * @param {string} filePath
+ * @returns {boolean}
+ */
+export function isFixturePath(filePath) {
+  return String(filePath ?? "")
+    .toLowerCase()
+    .replaceAll("\\", "/")
+    .split("/")
+    .some((segment) => FIXTURE_SEGMENTS.has(segment));
+}
+
 // Threshold used by `classifyPath` when a file's additions+deletions are passed
 // in. Keeps the 300-line boundary used by the existing pr-review heuristic.
 export const LARGE_DIFF_LINES = 300;
@@ -537,6 +552,10 @@ export function isGateRiskPath(filePath) {
   if (!path.trim()) return false;
   if (isTestFilePath(path)) return false;
   if (isDocPath(path)) return false;
+  // A fixture repository's `middleware/admin-auth.ts` is test input, not this
+  // repository's auth code. Only fixture directories: an `evals/` or `eval/`
+  // folder can hold real product code.
+  if (isFixturePath(path)) return false;
   const weights = /** @type {Record<string, number>} */ (RISK_SCORE_WEIGHTS);
   return classifyPath(path).some((flag) => (weights[flag] ?? 1) > 0);
 }

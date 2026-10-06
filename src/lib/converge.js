@@ -25,7 +25,10 @@ import { estimateTokens } from "./tokens.js";
 // 0.2.0: owner-adjacent inference (new files beside a confirmed owner, tests
 // of confirmed files) and working-tree scoring that ignores untracked files by
 // default. Both change scores, so receipts from 0.1.0 do not recompute here.
-export const convergenceEngineVersion = "0.2.0";
+// 0.3.0: a test named for a confirmed file with a suffix (`mcp-dispatch.test.js`
+// for `mcp.js`), the change's changelog entry and its fixture or eval data are
+// in scope. Scores change again, so 0.2.0 receipts do not recompute here.
+export const convergenceEngineVersion = "0.3.0";
 
 // Sub-score weights. Coverage (did intent happen?) leads, scope discipline (did
 // only intent happen?) is next, risk alignment (did drift land somewhere
@@ -57,6 +60,8 @@ const MAX_LISTED_UNTRACKED = 25;
 // Test stems too common to identify their subject from anywhere in the repo:
 // `tests/index.test.ts` says nothing about which `index.ts` it covers, so these
 // only match a test beside the file or in a test directory directly under it.
+const CHANGELOG_NAMES = new Set(["changelog.md", "changes.md", "history.md", "release-notes.md", "release_notes.md"]);
+
 const GENERIC_STEMS = new Set(["__init__", "app", "config", "constants", "helpers", "index", "lib", "main", "mod", "types", "util", "utils"]);
 
 /**
@@ -247,7 +252,7 @@ export function generateConvergence(query, options = {}) {
 /**
  * @typedef {Object} InferredFile
  * @property {string} file
- * @property {"owner-sibling" | "owner-test"} rule
+ * @property {"owner-sibling" | "owner-test" | "owner-changelog" | "owner-test-data"} rule
  * @property {string} anchor the confirmed file that brought `file` into scope
  */
 
@@ -264,7 +269,13 @@ export function generateConvergence(query, options = {}) {
  *   file or an inferred sibling, e.g. `PersonDialog.test.tsx` or
  *   `SmartTable.selection.test.tsx` for `SmartTable.tsx`. Generic stems such
  *   as `index` must sit beside the file or in a test directory directly under
- *   its directory.
+ *   its directory. A suffix after a hyphen or underscore also names it:
+ *   `mcp-dispatch.test.js` tests `mcp.js`.
+ * - `owner-changelog`: the changelog, which records the change.
+ * - `owner-test-data`: fixture or eval data (`evals/fixtures/…`,
+ *   `evals/corpus.json`), the input the change's tests run on.
+ *
+ * The last two only apply once a confirmed owner anchors the change.
  *
  * Pure and order-independent for a given input.
  * @param {{ confirmedDirect: string[], confirmedRelated: string[], candidates: string[], addedFiles: string[], mappedFiles: string[] }} input
@@ -293,6 +304,16 @@ export function inferInScopeFiles({ confirmedDirect, confirmedRelated, candidate
     if (anchor) inferred.push({ file, rule: "owner-test", anchor });
   }
 
+  const owner = [...confirmedDirect].sort()[0];
+  if (owner) {
+    const taken = new Set(inferred.map((entry) => entry.file));
+    for (const file of pending) {
+      if (taken.has(file)) continue;
+      if (CHANGELOG_NAMES.has(path.posix.basename(file).toLowerCase())) inferred.push({ file, rule: "owner-changelog", anchor: owner });
+      else if (isTestDataPath(file) && !isTestFilePath(file)) inferred.push({ file, rule: "owner-test-data", anchor: owner });
+    }
+  }
+
   return inferred.sort((left, right) => left.file.localeCompare(right.file));
 }
 
@@ -307,7 +328,10 @@ function testCovers(testFile, sourceFile) {
     .basename(sourceFile)
     .replace(/\.[^.]+$/, "")
     .toLowerCase();
-  if (!subject || !source || (subject !== source && !subject.startsWith(`${source}.`))) return false;
+  if (!subject || !source) return false;
+  const named = subject === source || subject.startsWith(`${source}.`);
+  const suffixed = !GENERIC_STEMS.has(source) && (subject.startsWith(`${source}-`) || subject.startsWith(`${source}_`));
+  if (!named && !suffixed) return false;
   if (!GENERIC_STEMS.has(source)) return true;
   const sourceDir = path.posix.dirname(sourceFile);
   const testDir = path.posix.dirname(testFile);
@@ -887,9 +911,17 @@ function formatList(items) {
   return items && items.length ? items.map((item) => `\`${item}\``).join(", ") : "none";
 }
 
+/** @type {Record<InferredFile["rule"], string>} */
+const INFERRED_RULE_LABELS = {
+  "owner-sibling": "new file beside",
+  "owner-test": "test of",
+  "owner-changelog": "changelog for",
+  "owner-test-data": "test data for",
+};
+
 /** @param {InferredFile} entry @returns {string} */
 function formatInferred(entry) {
-  return `\`${entry.file}\` (${entry.rule === "owner-sibling" ? "new file beside" : "test of"} \`${entry.anchor}\`)`;
+  return `\`${entry.file}\` (${INFERRED_RULE_LABELS[entry.rule] ?? "related to"} \`${entry.anchor}\`)`;
 }
 
 /** @param {Record<string, any>} subject @returns {string} */

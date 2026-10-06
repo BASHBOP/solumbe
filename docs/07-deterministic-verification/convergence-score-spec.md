@@ -62,7 +62,7 @@ confirmed owners' own fan-out). `missedChangedFiles`, files that changed but not
 task predicted, are scope drift. An empty diff converges on nothing, so Scope is 0.
 
 `inferredRelated` moves a changed file out of drift (or out of the advisory bucket) under
-one of two named rules, each anchored on a file the diff already confirmed:
+one of four named rules, each anchored on a file the diff already confirmed:
 
 - **`owner-sibling`**: a file the change *adds* in the same directory as a confirmed
   required owner. It must be a mapped source file, must not be a secret path, and must
@@ -72,7 +72,15 @@ one of two named rules, each anchored on a file the diff already confirmed:
   an inferred sibling: `PersonDialog.test.tsx` for `PersonDialog.tsx`,
   `SmartTable.selection.test.tsx` for `SmartTable.tsx`, `test_converge.py` for
   `converge.py`. Generic stems (`index`, `utils`, `types`, …) must sit beside the file or in
-  a `__tests__`/`test`/`tests` directory directly under it.
+  a `__tests__`/`test`/`tests` directory directly under it. A suffix after a hyphen or
+  underscore also names a non-generic file: `mcp-dispatch.test.js` for `mcp.js`.
+- **`owner-changelog`**: the changelog (`CHANGELOG.md`, `CHANGES.md`, `HISTORY.md`,
+  release notes), which records the change.
+- **`owner-test-data`**: fixture or eval data (`evals/fixtures/…`, `evals/corpus.json`,
+  `testdata/…`), the input the change's tests run on.
+
+The last two need at least one confirmed owner; a diff that is only a changelog or only
+fixtures stays drift.
 
 Each entry records its rule and anchor, so the inference is visible rather than silent.
 
@@ -127,7 +135,9 @@ was inferred into scope, so a payload without inference hashes exactly as before
 
 `engine` is `convergenceEngineVersion`. Engine `0.2.0` added owner-adjacent inference and
 stopped scoring untracked files by default; both change scores, so a receipt issued by
-`0.1.0` does not recompute under `0.2.0`. Re-issue it with the current engine.
+`0.1.0` does not recompute under `0.2.0`. Engine `0.3.0` added suffixed test names, the
+changelog and test data to that inference, so a `0.2.0` receipt does not recompute under
+`0.3.0` either. Re-issue it with the current engine.
 
 Calls without an exact subject retain the byte-for-byte v1 canonical payload and receipt
 shape for compatibility. A subject-bound receipt uses v2 and adds both of these fields to
@@ -170,7 +180,7 @@ full 64-character `inputsHash`. The receipt is hashed but not yet cryptographica
 ```jsonc
 {
   "ok": true,
-  "convergenceEngineVersion": "0.2.0",
+  "convergenceEngineVersion": "0.3.0",
   "task": "add Stripe refunds",
   "base": "origin/main",
   "head": "HEAD",

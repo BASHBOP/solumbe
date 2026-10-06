@@ -184,6 +184,11 @@ export function indexRepositories(repoPaths = ["."], options = {}) {
     }
   }
 
+  // A repository deleted from disk can never be searched again, so indexing
+  // drops it instead of carrying it forward as an error on every search.
+  const pruned = catalog.repositories.filter((repository) => !fs.existsSync(repository.root)).map((repository) => repository.root);
+  catalog.repositories = catalog.repositories.filter((repository) => !pruned.includes(repository.root));
+
   catalog.updatedAt = indexedAt;
   saveCatalog(catalog, { catalogPath });
 
@@ -194,6 +199,7 @@ export function indexRepositories(repoPaths = ["."], options = {}) {
     repositoryCount: catalog.repositories.length,
     indexedCount: repositories.length,
     repositories,
+    pruned,
     errors,
   };
 }
@@ -229,12 +235,20 @@ export function searchCatalog(query, options = {}) {
   const loaded = [];
   /** @type {{ root: string, error: string }[]} */
   const errors = [];
+  /** @type {string[]} */
+  const stale = [];
 
   // One signature for the whole sweep: it is a pure hash of the running
   // indexer's probe answers, identical for every repository in the loop.
   const capabilities = options.offline ? codeMapCapabilitySignature() : "";
 
   for (const repository of catalog.repositories) {
+    // A deleted repository is stale, not failing: say so once, and the next
+    // `solumbe index` drops it.
+    if (!fs.existsSync(repository.root)) {
+      stale.push(repository.root);
+      continue;
+    }
     try {
       const map = options.offline ? readIndexedMap(repository, capabilities) : getCachedCodeMap(repository.root);
       loaded.push({ repository, map });
@@ -269,7 +283,7 @@ export function searchCatalog(query, options = {}) {
 
   matches.sort((a, b) => b.score - a.score || a.repository.name.localeCompare(b.repository.name) || a.file.path.localeCompare(b.file.path));
 
-  /** @type {{ ok: boolean, query: string, tokens: string[], catalogPath: string, repositoryCount: number, matchCount: number, matches: ReturnType<typeof scoreFile>[], errors: { root: string, error: string }[], tokenEstimate?: object }} */
+  /** @type {{ ok: boolean, query: string, tokens: string[], catalogPath: string, repositoryCount: number, matchCount: number, matches: ReturnType<typeof scoreFile>[], errors: { root: string, error: string }[], stale?: string[], staleHint?: string, tokenEstimate?: object }} */
   const result = {
     ok: true,
     query,
@@ -279,6 +293,7 @@ export function searchCatalog(query, options = {}) {
     matchCount: matches.length,
     matches: matches.slice(0, limit),
     errors,
+    ...(stale.length ? { stale, staleHint: "These repositories no longer exist on disk; run `solumbe index` to drop them." } : {}),
   };
   result.tokenEstimate = {
     fullJson: estimateTokens(result),

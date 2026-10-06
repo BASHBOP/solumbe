@@ -412,3 +412,49 @@ test("working-tree mode lists untracked files instead of scoring them, unless as
   assert.ok(withUntracked.drivers.missedChangedFiles.includes("dump.rdb"));
   assert.ok(withUntracked.subScores.scope < tracked.subScores.scope);
 });
+
+test("inferInScopeFiles keeps a change's suffixed tests, changelog and eval data in scope", () => {
+  const inferred = inferInScopeFiles({
+    confirmedDirect: ["src/lib/mcp.js"],
+    confirmedRelated: [],
+    candidates: [
+      "tests/mcp-dispatch.test.js",
+      "CHANGELOG.md",
+      "evals/corpus.json",
+      "evals/fixtures/telemetry-web/middleware/admin-auth.ts",
+      "docs/EVALS.md",
+      "src/lib/billing.js",
+    ],
+    addedFiles: [],
+    mappedFiles: [],
+  }).map((entry) => `${entry.rule}:${entry.file}`);
+
+  assert.deepEqual(inferred, [
+    "owner-changelog:CHANGELOG.md",
+    "owner-test-data:evals/corpus.json",
+    "owner-test-data:evals/fixtures/telemetry-web/middleware/admin-auth.ts",
+    "owner-test:tests/mcp-dispatch.test.js",
+  ]);
+});
+
+test("inferInScopeFiles needs a confirmed owner before the changelog or eval data count", () => {
+  const inferred = inferInScopeFiles({
+    confirmedDirect: [],
+    confirmedRelated: [],
+    candidates: ["CHANGELOG.md", "evals/corpus.json"],
+    addedFiles: [],
+    mappedFiles: [],
+  });
+  assert.deepEqual(inferred, []);
+});
+
+test("inferInScopeFiles does not read a suffix after a generic stem as naming the file", () => {
+  const inferred = inferInScopeFiles({
+    confirmedDirect: ["src/lib/index.js"],
+    confirmedRelated: [],
+    candidates: ["tests/index-cache.test.js"],
+    addedFiles: [],
+    mappedFiles: [],
+  });
+  assert.deepEqual(inferred, []);
+});

@@ -163,3 +163,29 @@ test("defaultCatalogPath defaults to the solumbe catalog", () => {
     }
   }
 });
+
+test("a repository deleted from disk is stale in search and dropped by the next index", () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "solumbe-stale-"));
+  const catalogPath = path.join(home, "catalog.json");
+  const live = path.join(home, "live");
+  const gone = path.join(home, "gone");
+  for (const root of [live, gone]) {
+    fs.mkdirSync(path.join(root, "src"), { recursive: true });
+    fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: path.basename(root) }));
+    fs.writeFileSync(path.join(root, "src", "rsvp.ts"), "export function submitRsvp() { return true; }\n");
+  }
+  indexRepositories([live, gone], { catalog: catalogPath });
+  fs.rmSync(gone, { recursive: true, force: true });
+
+  const search = searchCatalog("submit rsvp", { catalog: catalogPath });
+  assert.deepEqual(search.errors, []);
+  assert.deepEqual(search.stale, [gone]);
+  assert.ok(search.matches.length > 0);
+
+  const reindexed = indexRepositories([live], { catalog: catalogPath });
+  assert.deepEqual(reindexed.pruned, [gone]);
+  assert.deepEqual(
+    listCatalog({ catalog: catalogPath }).repositories.map((repository) => repository.root),
+    [live],
+  );
+});
