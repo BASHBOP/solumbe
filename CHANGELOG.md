@@ -6,6 +6,10 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-10-06
+
+The MCP server tells every host which tool to call at each stage of a task, and `convergence_score` stops calling a change's own tests, changelog, fixtures and docs drift. No command, field or schema was removed. Convergence receipts move to engine `0.4.0`, and the index cache moves to version 12, so existing indexes rebuild once.
+
 ### Added
 
 - **The MCP server sends its workflow to every host.** `initialize` now returns `instructions` that say which tool to call at each stage of a task: `context_pack` first, a `repo_search` retry when the pack is weak, `change_impact` before editing, `convergence_score` before each commit and `review_gate` before a pull request. The workflow used to live only in one host's instruction file, so an agent on another host never saw it. The text is defined once in `src/lib/agent-workflow.js`, and a test fails if it names a tool the server does not list.

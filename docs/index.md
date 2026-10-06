@@ -4,7 +4,7 @@
 
 > For teams that want any coding agent to produce evidence a human can trust before merge.
 
-**v4.2.1** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
+**v4.3.0** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
 
 Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep -->
 
@@ -20,6 +20,16 @@ Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep
 ---
 
 ## What's New
+
+!!! tip "v4.3.0 published (2026-10-06)"
+    The MCP server tells every host which tool to call at each stage of a task, and convergence stops calling a change's own tests, changelog, fixtures and docs drift. No command, field or schema was removed.
+
+    - `initialize` returns `instructions` with the agent workflow: `context_pack` first, a `repo_search` retry when the pack is weak, `change_impact` before editing, `convergence_score` before each commit and `review_gate` before a pull request.
+    - `convergence_score` places a file by the lines the change adds to it: a test or source file that imports a confirmed file, a doc that names one, and the change's changelog entry and fixture data are in scope. The engine moves to `0.4.0`.
+    - A request that names a tool reaches the module that implements it, through the registry's `{ name: "…" }` entries and `case "…":` dispatch. The index cache moves to version 12 and rebuilds once.
+    - Fixture directories no longer trip the gate's risk paths, a repository deleted from disk is reported as `stale` instead of failing every search, and a failing accuracy eval says FAIL instead of crashing.
+
+    [npm v4.3.0](https://www.npmjs.com/package/@bashbop/solumbe/v/4.3.0) · [GitHub Release](https://github.com/BASHBOP/solumbe/releases/tag/v4.3.0) · [MCP Registry](https://registry.modelcontextprotocol.io/?q=io.github.BASHBOP%2Fsolumbe)
 
 !!! tip "v4.2.1 published (2026-10-06)"
     Context packs rank by distinct request words, and a failing gate says what failed. No command or schema was removed.
@@ -227,7 +237,7 @@ flowchart LR
 === "Install"
 
     ```bash
-    npm install -g @bashbop/solumbe@4.2.1
+    npm install -g @bashbop/solumbe@4.3.0
     solumbe doctor
     solumbe context "review this change" --path .
     ```
@@ -235,7 +245,7 @@ flowchart LR
 === "No Global Install"
 
     ```bash
-    npx -y @bashbop/solumbe@4.2.1 doctor
+    npx -y @bashbop/solumbe@4.3.0 doctor
     ```
 
 === "Source Checkout"
