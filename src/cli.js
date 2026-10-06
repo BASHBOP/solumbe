@@ -237,12 +237,15 @@ function gateClose(data, validated = false) {
 
 /**
  * An eval that enforces thresholds is verified when they hold.
- * @param {{ passed?: boolean, checks?: { name?: string, pass?: boolean }[], cases?: { name?: string, pass?: boolean }[] }} data
+ * @param {{ passed?: boolean, checks?: { name?: string, pass?: boolean }[], cases?: { name?: string, pass?: boolean }[] | Record<string, { name?: string, pass?: boolean }[]> }} data
  * @returns {ClosingLine}
  */
 function evalClose(data) {
   if (data.passed) return { status: "verified" };
-  const failing = data.checks?.find((entry) => !entry.pass)?.name ?? data.cases?.find((entry) => !entry.pass)?.name;
+  // The accuracy eval groups its cases by suite (`{ retrieval, risk }`); a
+  // failing run crashed here on `.find` instead of naming the failing case.
+  const cases = Array.isArray(data.cases) ? data.cases : Object.values(data.cases ?? {}).flat();
+  const failing = data.checks?.find((entry) => !entry.pass)?.name ?? cases.find((entry) => !entry.pass)?.name;
   return { status: "not-verified", detail: failing ?? "the eval thresholds" };
 }
 

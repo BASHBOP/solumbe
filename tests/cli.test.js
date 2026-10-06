@@ -1258,3 +1258,22 @@ test("TERM=dumb gets ASCII glyphs without any flag", async (t) => {
   const emoji = await runCli(["doctor", "--emoji"]);
   assert.match(emoji.stdout, /📋/);
 });
+
+test("a failing accuracy eval names the failure instead of crashing", async () => {
+  // The accuracy eval groups its cases by suite, and the closing line called
+  // `.find` on that object, so a run below threshold threw instead of saying FAIL.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "solumbe-eval-fail-"));
+  const corpus = JSON.parse(fs.readFileSync(path.resolve("evals/corpus.json"), "utf8"));
+  corpus.thresholds.retrieval.precisionAtK = 1.01;
+  const corpusPath = path.join(dir, "corpus.json");
+  fs.writeFileSync(corpusPath, JSON.stringify(corpus));
+  try {
+    const result = await runCli(["eval", "--accuracy", "--corpus", corpusPath, "--no-emoji", "--no-color"]);
+    const output = `${result.stdout}${result.stderr}`;
+    assert.notEqual(result.exitCode, 0);
+    assert.ok(!output.includes("is not a function"), output);
+    assert.ok(/FAIL/.test(output), output);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
