@@ -151,21 +151,29 @@ the older floor.)
 
 ## Current baseline
 
-Recorded **2026-10-05** by running `runRetrievalEval()` against the committed
-corpus (24 retrieval + 22 risk cases):
+Recorded **2026-10-06** by running `runRetrievalEval()` against the committed
+corpus (25 retrieval + 22 risk cases):
 
 ```
 | Group     | Metric       | Value | Threshold | Pass |
 |-----------|--------------|------:|----------:|:----:|
-| retrieval | precisionAtK | 0.87  |      0.85 | yes  |
+| retrieval | precisionAtK | 0.861 |      0.85 | yes  |
 | retrieval | recallAtK    | 1.0   |      0.9  | yes  |
-| retrieval | mrr          | 0.978 |      0.9  | yes  |
+| retrieval | mrr          | 0.979 |      0.9  | yes  |
 | risk      | accuracy     | 1.0   |      0.96 | yes  |
 
-Retrieval: p@5=0.87, r@5=1.0, mrr=0.978 (24/24 cases pass)
+Retrieval: p@5=0.861, r@5=1.0, mrr=0.979 (25/25 cases pass)
 Risk:      accuracy=1.0 (22/22 cases pass)
 Overall:   PASS (exit 0)
 ```
+
+The 2026-10-06 change (string names a registry gives tools indexed as
+`registered` symbols, and a named tool's implementing module pinned) left the
+24 earlier cases with the same aggregate (p@5=0.87, r@5=1.0, mrr=0.978). It
+added `registered-tool-implementation` on the new `tool-registry` fixture,
+which returns a third, unlabeled primary file (p@5=0.667). The engine before
+that change fails it: the request reaches neither `src/lib/converge.js` nor
+the registry `src/lib/mcp.js`.
 
 The 2026-10-05 change (each request word counted once, the words of a
 camelCase name such as `OpenPanel` counted only together, and an action verb

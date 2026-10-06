@@ -90,7 +90,7 @@ const defaultLimit = 8;
 // imports (that one is pinned): a local copy, an export nothing uses.
 const NAMED_DEFINER_BONUS = 60;
 // How far a named file sits above the best candidate the request did not name.
-const PIN_MARGIN = { path: 20, symbol: 10 };
+const PIN_MARGIN = { path: 20, symbol: 10, implements: 10 };
 // Enough to put the definition of a named symbol ahead of every hotspot that
 // only shares words with the request.
 const NAMED_HOTSPOT_BONUS = 200;
@@ -628,7 +628,13 @@ function liftPinnedFiles(scored, pinned) {
     const pin = pinned.get(fileKey(file));
     if (!pin) continue;
     file.score = Math.max(file.score, ceiling) + PIN_MARGIN[pin.rule];
-    file.reasons.push(pin.rule === "path" ? "named in request" : `defines ${pin.literal}, named in request`);
+    file.reasons.push(
+      pin.rule === "path"
+        ? "named in request"
+        : pin.rule === "implements"
+          ? `implements ${pin.literal}, registered in ${pin.via}`
+          : `defines ${pin.literal}, named in request`,
+    );
   }
 }
 

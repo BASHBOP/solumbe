@@ -3,7 +3,7 @@
   "description": "Labeled evaluation corpus for solumbe retrieval, risk classification, fixture-backed harness command execution, and gate effectiveness. Gate cases initialize an isolated Git repository from a committed base, apply one committed change-set, and assert both the verdict and deterministic check reason. See docs/EVALS.md for how to add a case and how thresholds work.",
   "k": 5,
   "thresholds": {
-    "comment": "Floors set to current-baseline-minus-slack so the suite is green today but a regression trips it. Baseline (2026-10-05): retrieval p@5=0.87 r@5=1.0 mrr=0.978 (24/24); risk accuracy=1.0 (22/22). Aggregate metrics must be >= these floors for exit code 0. The risk floor is 0.96 so that a single failing case (21/22 = 0.955) still trips the gate. Re-record both baseline and floors in docs/EVALS.md after any intentional behavior change.",
+    "comment": "Floors set to current-baseline-minus-slack so the suite is green today but a regression trips it. Baseline (2026-10-06): retrieval p@5=0.861 r@5=1.0 mrr=0.979 (25/25); risk accuracy=1.0 (22/22). Aggregate metrics must be >= these floors for exit code 0. The risk floor is 0.96 so that a single failing case (21/22 = 0.955) still trips the gate. Re-record both baseline and floors in docs/EVALS.md after any intentional behavior change.",
     "retrieval": {
       "precisionAtK": 0.85,
       "recallAtK": 0.9,
@@ -29,7 +29,8 @@
     "campaign-email": "evals/fixtures/campaign-email",
     "gate-node": "evals/fixtures/gate-node",
     "multi-locale-web": "evals/fixtures/multi-locale-web",
-    "telemetry-web": "evals/fixtures/telemetry-web"
+    "telemetry-web": "evals/fixtures/telemetry-web",
+    "tool-registry": "evals/fixtures/tool-registry"
   },
   "retrieval": [
     {
@@ -201,6 +202,13 @@
       "query": "add session replay to the OpenPanel analytics provider",
       "repoFixture": "telemetry-web",
       "expectedPrimary": ["components/providers/openpanel-provider.tsx"]
+    },
+    {
+      "name": "registered-tool-implementation",
+      "comment": "A request naming an MCP tool (2026-10-06). The name is a string in the registry (`name: \"convergence_score\"`, `case \"convergence_score\":`), never a declaration, so before registered names were indexed the request reached neither the registry nor converge.js, which implements the tool, and convergence_score called converge.js drift.",
+      "query": "fix convergence_score so a renamed test still counts",
+      "repoFixture": "tool-registry",
+      "expectedPrimary": ["src/lib/converge.js", "src/lib/mcp.js"]
     }
   ],
   "risk": [

@@ -189,7 +189,7 @@ const W_CONFIG_HINT = 4.0;
 const W_NAMED_DEFINER = 30.0;
 // How far a named file sits above the best candidate the request did not
 // name. A named path outranks a named symbol's definition.
-const PIN_MARGIN = { path: 20.0, symbol: 10.0 };
+const PIN_MARGIN = { path: 20.0, symbol: 10.0, implements: 10.0 };
 
 const CONFIG_HINTS = {
   docker: ["dockerfile", "docker-compose"],
@@ -730,7 +730,9 @@ function liftPinnedFiles(scored, pinned) {
     entry.reasons.push(
       pin.rule === "path"
         ? `named in the request as \`${pin.literal}\`, ${lift}`
-        : `defines \`${pin.literal}\`${pin.line ? ` (line ${pin.line})` : ""}, named in the request; exported and imported by ${pin.importers} file(s), ${lift}`,
+        : pin.rule === "implements"
+          ? `implements \`${pin.literal}\`, named in the request and registered in \`${pin.via}\`, ${lift}`
+          : `defines \`${pin.literal}\`${pin.line ? ` (line ${pin.line})` : ""}, named in the request; exported and imported by ${pin.importers} file(s), ${lift}`,
     );
     entry.score = lifted;
   }

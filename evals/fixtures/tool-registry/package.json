@@ -1,0 +1,6 @@
+{
+  "name": "tool-registry",
+  "scripts": {
+    "test": "node --test"
+  }
+}

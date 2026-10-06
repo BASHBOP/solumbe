@@ -12,6 +12,8 @@
 /// <reference types="node" />
 import path from "node:path";
 import { localeCatalogKey, localeOf } from "./code-map/classify.js";
+import { isIdentifierShaped } from "./code-map/text.js";
+import { isTestDataPath } from "./risk-paths.js";
 
 /**
  * @typedef {import('./index-cache.js').CodeMapFile} CodeMapFile
@@ -22,8 +24,9 @@ import { localeCatalogKey, localeOf } from "./code-map/classify.js";
  * definition of a symbol the request names (`rule: "symbol"`).
  * @typedef {object} NamedFile
  * @property {string} path
- * @property {"path" | "symbol"} rule
+ * @property {"path" | "symbol" | "implements"} rule
  * @property {string} literal - the text in the request that named it
+ * @property {string} [via] - for `implements`, the registry file that names it
  * @property {number} [line] - the defining line, for a named symbol
  * @property {number} [importers] - non-test files importing the definer
  * @property {boolean} [exported]
@@ -175,22 +178,15 @@ export function requestLiterals(request) {
   return { paths: [...paths], symbols: [...symbols] };
 }
 
-/**
- * camelCase, PascalCase with a second hump, an acronym run into a word, or
- * snake_case: the shapes code names things in and prose does not.
- * @param {string} word
- * @returns {boolean}
- */
-function isIdentifierShaped(word) {
-  return /[a-z0-9][A-Z]/.test(word) || /[A-Z]{2}[a-z]/.test(word) || /[A-Za-z0-9]_[A-Za-z0-9]/.test(word);
-}
-
 // A literal that resolves to more files than this is a common name
 // (`index.ts`, `page.tsx`), not a reference to one of them.
 const MAX_FILES_PER_LITERAL = 3;
 // A symbol defined in more files than this is a common helper name
 // (`formatDate` has twelve definitions in bashbop-event-web).
 const MAX_DEFINERS_PER_SYMBOL = 3;
+// A registered name followed into more modules than this calls helpers too
+// widely to say which one implements it.
+const MAX_IMPLEMENTERS_PER_NAME = 3;
 // Symbols the indexer reads from data and prose rather than code: JSON and
 // YAML keys, Markdown headings and frontmatter, Handlebars references.
 const ARTIFACT_SYMBOL_TYPES = new Set(["config", "heading", "frontmatter", "template"]);
@@ -230,7 +226,15 @@ export function resolveNamedFiles(files, request, options = {}) {
   let importers;
   for (const literal of symbols) {
     const owners = candidates.filter(
-      (file) => file.kind !== "test" && (file.symbols ?? []).some((symbol) => symbol.name === literal && !ARTIFACT_SYMBOL_TYPES.has(symbol.type)),
+      (file) =>
+        file.kind !== "test" &&
+        (file.symbols ?? []).some(
+          (symbol) =>
+            symbol.name === literal &&
+            !ARTIFACT_SYMBOL_TYPES.has(symbol.type) &&
+            // A fixture repository's registry names the same tools as the real one.
+            !(symbol.type === "registered" && isTestDataPath(file.path)),
+        ),
     );
     if (owners.length === 0 || owners.length > MAX_DEFINERS_PER_SYMBOL) continue;
     importers ??= countImporters(files);
@@ -247,10 +251,71 @@ export function resolveNamedFiles(files, request, options = {}) {
         definers.set(file.path, named);
       }
     }
+
+    // A registry names a tool as a string and calls the module that does the
+    // work: `case "convergence_score":` calls `generateConvergence`, which
+    // `converge.js` exports. That module implements the name the request used,
+    // so it is pinned like a named file: the most likely owner of the change.
+    const implementers = owners.flatMap((owner) => implementersOf(owner, literal, candidates)).slice(0, MAX_IMPLEMENTERS_PER_NAME);
+    for (const { file, via } of implementers) {
+      if (taken.has(file.path)) continue;
+      taken.add(file.path);
+      definers.delete(file.path);
+      pinned.push({ path: file.path, rule: "implements", literal, via });
+    }
   }
 
   const limit = options.limit ?? pinned.length;
   return { pinned: pinned.slice(0, limit), definers: [...definers.values()].filter((named) => !taken.has(named.path)), symbols };
+}
+
+/**
+ * The files a registry imports a registered name's work from: the modules,
+ * among those the registry imports, that export a function its entry calls.
+ * @param {CodeMapFile} registry
+ * @param {string} literal
+ * @param {CodeMapFile[]} files
+ * @returns {{ file: CodeMapFile, via: string }[]}
+ */
+function implementersOf(registry, literal, files) {
+  // A fixture repository's registry names the same tools as the real one; its
+  // modules implement nothing in this repository.
+  if (isTestDataPath(registry.path)) return [];
+  const calls = (registry.symbols ?? []).find((symbol) => symbol.type === "registered" && symbol.name === literal)?.terms ?? [];
+  if (calls.length === 0) return [];
+  const byPath = new Map(files.map((file) => [file.path, file]));
+  const fileSet = new Set(byPath.keys());
+  const nameWords = new Set(identifierWords(literal));
+  /** @type {{ file: CodeMapFile, via: string, overlap: number }[]} */
+  const found = [];
+  for (const specifier of registry.imports ?? []) {
+    const target = resolveImportSpecifier(registry.path, specifier, fileSet);
+    const file = target && target !== registry.path ? byPath.get(target) : undefined;
+    if (!file || file.kind === "test" || isTestDataPath(file.path) || found.some((entry) => entry.file === file)) continue;
+    const called = calls.filter((call) => (file.exports ?? []).includes(call));
+    if (called.length === 0) continue;
+    const overlap = Math.max(...called.map((call) => identifierWords(call).filter((word) => nameWords.has(word)).length));
+    found.push({ file, via: registry.path, overlap });
+  }
+  // A branch also calls shared helpers (`contextRepoPaths` beside
+  // `generateContextPack`). The module whose function shares the most words
+  // with the name does the work; with no shared word at all, none is preferred.
+  const best = Math.max(0, ...found.map((entry) => entry.overlap));
+  return found.filter((entry) => entry.overlap === best).map(({ file, via }) => ({ file, via }));
+}
+
+/**
+ * The lowercase words of an identifier: `generateContextPack` and
+ * `context_pack` both give `context` and `pack`.
+ * @param {string} identifier
+ * @returns {string[]}
+ */
+function identifierWords(identifier) {
+  return identifier
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
 }
 
 /**

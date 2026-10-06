@@ -21,6 +21,13 @@ This project follows SemVer.
 - **A repository deleted from disk no longer fails every search.**
   - `repo_search` lists it under `stale`, with a hint, instead of `errors`.
   - The next `solumbe index` drops it from the catalog and reports it under `pruned`.
+- **A request that names a tool reaches the code that implements it.**
+  - A registry names its tools as strings: `{ name: "convergence_score" }` in a tool table, and `case "convergence_score":` in the switch that dispatches it. The indexer only knew declarations, so `context_pack` missed `src/lib/mcp.js` for a request about MCP tools, and `convergence_score` called `converge.js` drift in a change to it.
+  - Identifier-shaped strings in those two places are now indexed as `registered` symbols, together with the functions their entry calls.
+  - A request naming one pins the module that exports the called function, through the registry's own imports (`converge.js` for `convergence_score`). The registry is surfaced as its definer.
+  - Display names such as "Convergence Score" are not indexed.
+  - The index cache moves to version 12, so existing indexes rebuild once.
+- **A failing accuracy eval says FAIL instead of crashing.** The closing line called `.find` on the accuracy eval's cases, which are grouped by suite (`{ retrieval, risk }`), so a run below threshold threw `data.cases?.find is not a function`.
 
 ## [4.2.1] - 2026-10-06
 

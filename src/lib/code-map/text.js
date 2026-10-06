@@ -257,3 +257,13 @@ function isQuote(char) {
 function isIdentifierChar(char) {
   return Boolean(char && /[A-Za-z0-9_$]/.test(char));
 }
+
+/**
+ * camelCase, PascalCase with a second hump, an acronym run into a word, or
+ * snake_case: the shapes code names things in and prose does not.
+ * @param {string} word
+ * @returns {boolean}
+ */
+export function isIdentifierShaped(word) {
+  return /[a-z0-9][A-Z]/.test(word) || /[A-Z]{2}[a-z]/.test(word) || /[A-Za-z0-9]_[A-Za-z0-9]/.test(word);
+}
