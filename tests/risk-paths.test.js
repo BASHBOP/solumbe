@@ -338,3 +338,11 @@ test("classifyPath flags fee, pricing and payout code as money flow", () => {
   }
   assert.ok(!classifyPath("src/feedback/feedback.service.ts").includes(RISK_FLAGS.moneyFlow));
 });
+
+test("isGateRiskPath ignores a fixture repository's auth and payment files", () => {
+  assert.equal(isGateRiskPath("evals/fixtures/telemetry-web/middleware/admin-auth.ts"), false);
+  assert.equal(isGateRiskPath("test/__fixtures__/stripe/checkout.ts"), false);
+  assert.equal(isGateRiskPath("src/middleware/admin-auth.ts"), true);
+  // An eval folder can hold real product code; only fixture folders are test input.
+  assert.equal(isGateRiskPath("src/eval/auth/session.ts"), true);
+});

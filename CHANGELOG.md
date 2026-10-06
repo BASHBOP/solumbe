@@ -10,6 +10,18 @@ This project follows SemVer.
 
 - **The MCP server sends its workflow to every host.** `initialize` now returns `instructions` that say which tool to call at each stage of a task: `context_pack` first, a `repo_search` retry when the pack is weak, `change_impact` before editing, `convergence_score` before each commit and `review_gate` before a pull request. The workflow used to live only in one host's instruction file, so an agent on another host never saw it. The text is defined once in `src/lib/agent-workflow.js`, and a test fails if it names a tool the server does not list.
 
+### Fixed
+
+- **`convergence_score` no longer calls a change's own tests, changelog and eval data drift.**
+  - A test whose name adds a suffix to a confirmed file (`mcp-dispatch.test.js` for `mcp.js`) counts as its test.
+  - With at least one confirmed owner, the changelog entry and fixture or eval data (`evals/fixtures/…`, `evals/corpus.json`) are in scope under the new `owner-changelog` and `owner-test-data` rules.
+  - A ranking fix that added an eval fixture and recorded its changelog scored 52/100, with every fixture file listed as drift.
+  - The convergence engine moves to `0.3.0`, so `0.2.0` receipts are not recomputed.
+- **The gate no longer treats fixture files as risk-sensitive.** `isGateRiskPath` skips `fixtures`, `__fixtures__`, `testdata` and `test-data` directories, as it already did for tests and docs. A fixture repository's `middleware/admin-auth.ts` had made `review_gate` warn. Real code under an `eval/` or `evals/` folder still gates.
+- **A repository deleted from disk no longer fails every search.**
+  - `repo_search` lists it under `stale`, with a hint, instead of `errors`.
+  - The next `solumbe index` drops it from the catalog and reports it under `pruned`.
+
 ## [4.2.1] - 2026-10-06
 
 Context packs rank by distinct request words, and a failing gate says what failed. No command or schema was removed. The gate check gains one optional field, and `gate --out` prints a verdict line.
