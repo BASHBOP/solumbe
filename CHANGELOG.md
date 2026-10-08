@@ -6,6 +6,14 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`convergence_score` follows root-alias imports.**
+  - The `owner-import` rule, and tests placed by import, now resolve `@/…`, `~/…` and `#/…` specifiers from the repository root or `src/`, the form Next.js and Vite apps use. They only followed relative imports before.
+  - On the bashbop-event-web analytics change (BASHBOP/bashbop-event-web#622), every screen wired to the confirmed `utils/analytics.ts` through `@/utils/analytics` counted as drift: 25 drift files, scope 16, 51/100. Now 10 drift files remain, scope is 68 and the score is 69/100. The ten that remain are six risk-flagged files, which still need their own review by design, and four that changed without adding an import.
+  - The convergence engine moves to `0.5.0`, so `0.4.0` receipts are not recomputed.
+- **A request naming a camelCase product reaches the file named after it.** "OpenPanel" splits into `open` and `panel`, while the file is `lib/openpanel.ts` and the package `@openpanel/react-native`. `context_pack` and `change_impact` now also weigh the joined spelling. On the bashbop-mobile-app request, `lib/openpanel.ts` rose from ninth to third in `context_pack`, and into `change_impact`'s top eight from outside its top twelve.
+
 ## [4.3.0] - 2026-10-06
 
 The MCP server tells every host which tool to call at each stage of a task, and `convergence_score` stops calling a change's own tests, changelog, fixtures and docs drift. No command, field or schema was removed. Convergence receipts move to engine `0.4.0`, and the index cache moves to version 12, so existing indexes rebuild once.

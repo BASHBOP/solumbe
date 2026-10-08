@@ -10,6 +10,7 @@ import { companionRepos } from "./config.js";
 import { getCachedCodeMap } from "./index-cache.js";
 import { conceptsFromQuery, classifyPath, CONCEPT_SYNONYMS, RISK_FLAGS, glyphFor, isDocPath, isTestDataPath, singularizeToken } from "./risk-paths.js";
 import { isRunnableTestPath, isTestFilePath } from "./code-map/classify.js";
+import { joinedCamelCaseWords } from "./code-map/text.js";
 import { collapseLocaleSiblings, formatLocales, isCopyRequest, resolveNamedFiles, stripFileExtensions, TRANSLATION_DEMOTION } from "./ranking-rules.js";
 import { estimateTokens, estimateTokenSections } from "./tokens.js";
 import { runCommand } from "./tools.js";
@@ -1463,6 +1464,10 @@ export function weightedQueryTerms(request) {
     if (singular !== term) {
       weighted.set(singular, Math.max(weighted.get(singular) ?? 0, Math.max(1, weight - 1)));
     }
+  }
+  // "OpenPanel" also reaches `lib/openpanel.ts`; see joinedCamelCaseWords.
+  for (const joined of joinedCamelCaseWords(request)) {
+    if (!weighted.has(joined)) weighted.set(joined, joined.length >= 6 ? 2 : 1);
   }
   return weighted;
 }

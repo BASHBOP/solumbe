@@ -366,12 +366,15 @@ function countImporters(files) {
 }
 
 /**
+ * The file in `fileSet` an import specifier names: a relative specifier from
+ * `fromPath`, or a root alias (`@/lib/x`, `~/lib/x`, `#/lib/x`) from the
+ * repository root or `src/`.
  * @param {string} fromPath
  * @param {string} specifier
  * @param {Set<string>} fileSet
  * @returns {string | undefined}
  */
-function resolveImportSpecifier(fromPath, specifier, fileSet) {
+export function resolveImportSpecifier(fromPath, specifier, fileSet) {
   /** @type {string[]} */
   let bases;
   if (specifier.startsWith(".")) {
