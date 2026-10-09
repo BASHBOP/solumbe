@@ -1,11 +1,11 @@
 {
   "ok": true,
-  "generatedAt": "2026-10-05T23:22:48.302Z",
+  "generatedAt": "2026-10-09T21:59:36.764Z",
   "schemaVersion": 2,
   "reviewEngineVersion": 1,
   "request": "review this change",
   "verdict": "WARN",
-  "confidence": 55,
+  "confidence": 70,
   "repo": {
     "root": "/home/runner/work/solumbe/solumbe",
     "name": "solumbe"
@@ -14,30 +14,28 @@
     "concepts": [],
     "topFiles": [
       {
-        "path": "src/cli.js",
-        "score": 8.3,
+        "path": "src/lib/review.js",
+        "score": 22.6,
         "riskFlags": []
       },
       {
-        "path": "src/lib/pass-local.js",
-        "score": 5.5,
+        "path": "src/lib/pr-review.js",
+        "score": 19.8,
         "riskFlags": []
       },
       {
-        "path": "CHANGELOG.md",
-        "score": 0,
+        "path": "codex/skills/solumbe-review/SKILL.md",
+        "score": 17.7,
         "riskFlags": []
       },
       {
-        "path": "codex/skills/solumbe-self-improve/gaps/2026-10-05-session-replay.md",
-        "score": 0,
-        "riskFlags": [
-          "auth/security"
-        ]
+        "path": "src/lib/agent-tools.js",
+        "score": 12.1,
+        "riskFlags": []
       },
       {
-        "path": "codex/skills/solumbe-self-improve/SKILL.md",
-        "score": 0,
+        "path": "src/lib/args.js",
+        "score": 12.1,
         "riskFlags": []
       }
     ],
@@ -46,16 +44,12 @@
     ]
   },
   "prReviewSummary": {
-    "changedFiles": 33,
-    "additions": 778,
-    "deletions": 57,
-    "riskLevel": "high",
+    "changedFiles": 1,
+    "additions": 6,
+    "deletions": 6,
+    "riskLevel": "low",
     "riskFlags": [
-      "auth/security",
-      "dependency",
-      "large PR",
-      "money flow",
-      "request surface"
+      "dependency"
     ],
     "reviewTargetsCount": 0
   },
@@ -67,7 +61,7 @@
       {
         "name": "Changed files",
         "status": "PASS",
-        "summary": "33 changed files found."
+        "summary": "1 changed file found."
       },
       {
         "name": "Commit snapshot",
@@ -81,13 +75,13 @@
       },
       {
         "name": "Risk review",
-        "status": "WARN",
-        "summary": "Risk-sensitive files changed; maintainer review should be explicit."
+        "status": "PASS",
+        "summary": "No obvious risk-sensitive file paths changed."
       },
       {
         "name": "Release discipline",
         "status": "PASS",
-        "summary": "Version metadata is SemVer and changelog was updated."
+        "summary": "Version metadata changed but the project version is unchanged (dependency or lockfile update)."
       },
       {
         "name": "Validation commands",
@@ -112,6 +106,6 @@
     ]
   },
   "tokenEstimate": {
-    "fullJson": 506
+    "fullJson": 483
   }
 }
