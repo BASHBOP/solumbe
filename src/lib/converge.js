@@ -19,6 +19,7 @@ import { generateCodeMapFromSources } from "./code-map.js";
 import { isTestFilePath } from "./code-map/classify.js";
 import { isSourceFilePath } from "./code-map/generate.js";
 import { DIFF_RENAME_LIMIT, generateImpact } from "./impact.js";
+import { resolveImportSpecifier } from "./ranking-rules.js";
 import { classifyPath, isDocPath, isSecretPath, isTestDataPath, RISK_FLAGS } from "./risk-paths.js";
 import { runCommand } from "./tools.js";
 import { estimateTokens } from "./tokens.js";
@@ -31,7 +32,7 @@ import { estimateTokens } from "./tokens.js";
 // in scope. Scores change again, so 0.2.0 receipts do not recompute here.
 // 0.4.0: a file the change wires to a confirmed one is in scope: a test or
 // source file whose added lines import it, and a doc whose added lines name it.
-export const convergenceEngineVersion = "0.4.0";
+export const convergenceEngineVersion = "0.5.0";
 
 // Sub-score weights. Coverage (did intent happen?) leads, scope discipline (did
 // only intent happen?) is next, risk alignment (did drift land somewhere
@@ -293,8 +294,9 @@ export function generateConvergence(query, options = {}) {
  *   file, whatever its name (`registered-names.test.js` importing
  *   `context-engine.js`).
  * - `owner-import`: a source file whose added lines import a confirmed file,
- *   carrying no risk flag that file lacks: the change wired them together
- *   (`ast.js` importing a helper moved into `text.js`).
+ *   relatively or through a root alias (`@/utils/analytics`), carrying no
+ *   risk flag that file lacks: the change wired them together (`ast.js`
+ *   importing a helper moved into `text.js`).
  * - `owner-doc`: a doc whose added lines name a confirmed or inferred file by
  *   path or file name: the change's own documentation.
  *
@@ -367,12 +369,13 @@ export function inferInScopeFiles({ confirmedDirect, confirmedRelated, candidate
 }
 
 const IMPORT_SPECIFIERS = [/\bfrom\s+["']([^"']+)["']/g, /\bimport\s+["']([^"']+)["']/g, /\b(?:require|import)\(\s*["']([^"']+)["']\s*\)/g];
-const SOURCE_EXTENSION = /\.(?:[cm]?[jt]sx?)$/;
 
 /**
- * The files among `targets` that `lines` import by a relative specifier.
- * `./converge.js` from `src/lib/mcp.js` resolves to `src/lib/converge.js`, or
- * to `converge.ts` in a TypeScript ESM repository.
+ * The files among `targets` that `lines` import. `./converge.js` from
+ * `src/lib/mcp.js` resolves to `src/lib/converge.js`, or to `converge.ts` in a
+ * TypeScript ESM repository; a root alias such as `@/utils/analytics`, the
+ * usual form in Next.js and Vite apps, resolves from the repository root or
+ * `src/`.
  * @param {string} file
  * @param {string[]} lines
  * @param {string[]} targets
@@ -380,16 +383,13 @@ const SOURCE_EXTENSION = /\.(?:[cm]?[jt]sx?)$/;
  */
 function importedFiles(file, lines, targets) {
   if (lines.length === 0) return [];
-  const stems = new Map(targets.map((target) => [target.replace(SOURCE_EXTENSION, ""), target]));
+  const targetSet = new Set(targets);
   /** @type {Set<string>} */
   const found = new Set();
   for (const line of lines) {
     for (const pattern of IMPORT_SPECIFIERS) {
       for (const match of line.matchAll(pattern)) {
-        const specifier = match[1];
-        if (!specifier.startsWith(".")) continue;
-        const joined = path.posix.normalize(path.posix.join(path.posix.dirname(file), specifier)).replace(SOURCE_EXTENSION, "");
-        const target = stems.get(joined) ?? stems.get(`${joined}/index`);
+        const target = resolveImportSpecifier(file, match[1], targetSet);
         if (target) found.add(target);
       }
     }

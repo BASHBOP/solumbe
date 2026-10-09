@@ -495,6 +495,41 @@ test("inferInScopeFiles keeps what the change wires to a confirmed file, from th
   ]);
 });
 
+test("inferInScopeFiles follows root-alias imports to a confirmed file", () => {
+  const inferred = inferInScopeFiles({
+    confirmedDirect: ["components/providers/openpanel-provider.tsx"],
+    confirmedRelated: ["utils/analytics.ts", "src/lib/session.ts"],
+    candidates: [
+      "app/dashboard/guests/GuestsTable.tsx",
+      "components/faq/FaqItem.tsx",
+      "app/(customer)/pricing/Pricing.tsx",
+      "components/billing/PayoutDialog.tsx",
+      "__tests__/utils/analytics.test.ts",
+      "app/dashboard/home/page.tsx",
+    ],
+    addedFiles: [],
+    mappedFiles: [],
+    addedLines: new Map([
+      ["app/dashboard/guests/GuestsTable.tsx", ["import { analytics } from '@/utils/analytics';"]],
+      ["components/faq/FaqItem.tsx", ['import { analytics } from "~/utils/analytics";']],
+      // `@/lib/session` resolves under `src/` when the root has no `lib/`.
+      ["app/dashboard/home/page.tsx", ["import { readSession } from '@/lib/session';"]],
+      // A money-flow file the change wired up still needs its own review.
+      ["components/billing/PayoutDialog.tsx", ["import { analytics } from '@/utils/analytics';"]],
+      ["__tests__/utils/analytics.test.ts", ["import { analytics } from '@/utils/analytics';"]],
+      // An alias to a file the change did not confirm wires nothing.
+      ["app/(customer)/pricing/Pricing.tsx", ["import { formatPrice } from '@/utils/price';"]],
+    ]),
+  }).map((entry) => `${entry.rule}:${entry.file}<-${entry.anchor}`);
+
+  assert.deepEqual(inferred, [
+    "owner-test:__tests__/utils/analytics.test.ts<-utils/analytics.ts",
+    "owner-import:app/dashboard/guests/GuestsTable.tsx<-utils/analytics.ts",
+    "owner-import:app/dashboard/home/page.tsx<-src/lib/session.ts",
+    "owner-import:components/faq/FaqItem.tsx<-utils/analytics.ts",
+  ]);
+});
+
 test("a doc naming only a generic file name names nothing", () => {
   const inferred = inferInScopeFiles({
     confirmedDirect: ["src/lib/index.js"],

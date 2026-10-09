@@ -87,9 +87,11 @@ whole file when an untracked file is scored), so they hold for what this change 
 
 - **`owner-test`** also covers a test whose added lines import a confirmed file, whatever
   its name.
-- **`owner-import`**: a source file whose added lines import a confirmed file by a relative
-  specifier, carrying no risk flag that file lacks. The change wired them together, as when
-  a helper moves into a shared module and its callers import it there.
+- **`owner-import`**: a source file whose added lines import a confirmed file, by a relative
+  specifier or a root alias (`@/utils/analytics`, `~/lib/x`, `#/lib/x`, resolved from the
+  repository root or `src/`), carrying no risk flag that file lacks. The change wired them
+  together, as when a helper moves into a shared module and its callers import it there, or
+  a feature calls a confirmed module from the screens it touches.
 - **`owner-doc`**: a doc whose added lines name a confirmed or inferred file by path or file
   name. Generic file names (`index.ts`) name nothing, and the change's code is preferred
   over its fixtures as the anchor.
@@ -151,7 +153,8 @@ stopped scoring untracked files by default; both change scores, so a receipt iss
 changelog and test data to that inference, so a `0.2.0` receipt does not recompute under
 `0.3.0` either. Engine `0.4.0` added the rules that read added lines (`owner-import`,
 `owner-doc`, and tests by import), so a `0.3.0` receipt does not recompute under `0.4.0`.
-Re-issue it with the current engine.
+Engine `0.5.0` follows root-alias imports in those rules, so a `0.4.0` receipt does not
+recompute under `0.5.0`. Re-issue it with the current engine.
 
 Calls without an exact subject retain the byte-for-byte v1 canonical payload and receipt
 shape for compatibility. A subject-bound receipt uses v2 and adds both of these fields to
@@ -194,7 +197,7 @@ full 64-character `inputsHash`. The receipt is hashed but not yet cryptographica
 ```jsonc
 {
   "ok": true,
-  "convergenceEngineVersion": "0.4.0",
+  "convergenceEngineVersion": "0.5.0",
   "task": "add Stripe refunds",
   "base": "origin/main",
   "head": "HEAD",

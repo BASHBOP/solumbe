@@ -1,6 +1,7 @@
 /// <reference types="node" />
 import path from "node:path";
 import { isRunnableTestPath } from "./code-map/classify.js";
+import { joinedCamelCaseWords } from "./code-map/text.js";
 import { generateHarness } from "./harness.js";
 import { getCachedCodeMap } from "./index-cache.js";
 import { collapseLocaleSiblings, formatLocales, isCopyRequest, resolveNamedFiles, stripFileExtensions, TRANSLATION_DEMOTION } from "./ranking-rules.js";
@@ -184,7 +185,7 @@ export function generateContextPack(query, options = {}) {
   // The words of a named file score; its extension, shared by every file of
   // that language, does not.
   const termsQuery = stripFileExtensions(normalizedQuery);
-  const tokens = uniqueConcepts(tokenize(termsQuery));
+  const tokens = uniqueConcepts([...tokenize(termsQuery), ...joinedCamelCaseWords(termsQuery)]);
   const phrases = extractPhrases(termsQuery);
   const intent = inferIntent(tokens);
   const tokenStats = { ...computeTokenDocFrequency(maps, tokens), partners: compoundPartners(termsQuery) };

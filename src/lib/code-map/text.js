@@ -267,3 +267,21 @@ function isIdentifierChar(char) {
 export function isIdentifierShaped(word) {
   return /[a-z0-9][A-Z]/.test(word) || /[A-Z]{2}[a-z]/.test(word) || /[A-Za-z0-9]_[A-Za-z0-9]/.test(word);
 }
+
+/**
+ * Each camelCase word of `text`, joined and lowercased: "OpenPanel" gives
+ * `openpanel`, "PostHog" gives `posthog`. Tokenizing splits such a name into
+ * `open` and `panel`, but file names and package scopes write it joined
+ * (`lib/openpanel.ts`, `@openpanel/web`), so a request naming the product
+ * matched neither.
+ * @param {string} text
+ * @returns {string[]}
+ */
+export function joinedCamelCaseWords(text) {
+  /** @type {Set<string>} */
+  const joined = new Set();
+  for (const word of String(text).match(/[A-Za-z0-9]+/g) ?? []) {
+    if (/[a-z0-9][A-Z]/.test(word)) joined.add(word.toLowerCase());
+  }
+  return [...joined];
+}
