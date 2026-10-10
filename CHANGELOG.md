@@ -6,12 +6,7 @@ This project follows SemVer.
 
 ## [Unreleased]
 
-### Fixed
-
-- **A user config from before the rename applies again.** The rename moved the user config from `~/.config/otito/config.json` to `~/.config/solumbe/config.json` with no fallback, so settings left in the old file, a telemetry opt-in among them, stopped applying and local usage capture went quiet with nothing reported. When the Solumbe file is missing, the old one is read; both honour `XDG_CONFIG_HOME`. The first `solumbe config set` or `solumbe telemetry` write starts from the old settings, and the old file is left in place. `solumbe doctor` warns while the old file is in use and prints the command that moves it, `solumbe config` names the file it read, and `doctor --json` carries a new `userConfig` field.
-- **`solumbe route` starts one git process instead of six.** AX inspected the whole repository (a file listing plus four git metadata calls) for four fields it reads from `package.json` and the top-level directories, and `route` runs AX on every routed prompt. Where each process launch is slow, the six launches pushed `route` past the `UserPromptSubmit` hook's six-second budget, so the hook gave no tier and logged no decision. AX now reads those fields through `inspectRepoBasics`, which runs no git; its score is unchanged.
-
-## [4.3.0] - 2026-10-09
+## [4.3.0] - 2026-10-10
 
 The MCP server tells every host which tool to call at each stage of a task, and `convergence_score` stops calling a change's own tests, changelog, fixtures and docs drift. It also follows `@/` alias imports and matches the joined spelling of a camelCase product name (`OpenPanel` → `lib/openpanel.ts`). No command, field or schema was removed. Convergence receipts move to engine `0.5.0`, and the index cache moves to version 12, so existing indexes rebuild once.
 
@@ -47,6 +42,8 @@ The MCP server tells every host which tool to call at each stage of a task, and 
   - On the bashbop-event-web analytics change (BASHBOP/bashbop-event-web#622), every screen wired to the confirmed `utils/analytics.ts` through `@/utils/analytics` counted as drift: 25 drift files, scope 16, 51/100. Now 10 drift files remain, scope is 68 and the score is 69/100. The ten that remain are six risk-flagged files, which still need their own review by design, and four that changed without adding an import.
   - The convergence engine moves to `0.5.0`, so `0.4.0` receipts are not recomputed.
 - **A request naming a camelCase product reaches the file named after it.** "OpenPanel" splits into `open` and `panel`, while the file is `lib/openpanel.ts` and the package `@openpanel/react-native`. `context_pack` and `change_impact` now also weigh the joined spelling. On the bashbop-mobile-app request, `lib/openpanel.ts` rose from ninth to third in `context_pack`, and into `change_impact`'s top eight from outside its top twelve.
+- **A user config from before the rename applies again.** The rename moved the user config from `~/.config/otito/config.json` to `~/.config/solumbe/config.json` with no fallback, so settings left in the old file, a telemetry opt-in among them, stopped applying and local usage capture went quiet with nothing reported. When the Solumbe file is missing, the old one is read; both honour `XDG_CONFIG_HOME`. The first `solumbe config set` or `solumbe telemetry` write starts from the old settings, and the old file is left in place. `solumbe doctor` warns while the old file is in use and prints the command that moves it, `solumbe config` names the file it read, and `doctor --json` carries a new `userConfig` field.
+- **`solumbe route` starts one git process instead of six.** AX inspected the whole repository (a file listing plus four git metadata calls) for four fields it reads from `package.json` and the top-level directories, and `route` runs AX on every routed prompt. Where each process launch is slow, the six launches pushed `route` past the `UserPromptSubmit` hook's six-second budget, so the hook gave no tier and logged no decision. AX now reads those fields through `inspectRepoBasics`, which runs no git; its score is unchanged.
 
 ## [4.2.1] - 2026-10-06
 
