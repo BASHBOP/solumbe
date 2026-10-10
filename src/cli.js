@@ -605,8 +605,36 @@ async function handleRoute(parsed) {
   );
 }
 
-/** @param {CliArgs} parsed */
+/**
+ * `solumbe calibrate <repo>` compares what solumbe said with what happened.
+ * Bare, it grades the risk flags against history. `--gate` replays the gate
+ * and the convergence score over history, `--follow-through` reads the usage
+ * log for what happened after a warning, and `--trial` grades the two arms of
+ * the check trial.
+ * @param {CliArgs} parsed
+ */
 async function handleCalibrate(parsed) {
+  const modes = ["gate", "follow_through", "trial"].filter((flag) => parsed.flags[flag]);
+  if (modes.length > 1) throw new Error("calibrate takes one of --gate, --follow-through or --trial");
+  // `calibrate --gate <repo>` leaves the repository as the flag's value.
+  const afterFlag = modes.length && typeof parsed.flags[modes[0]] === "string" ? parsed.flags[modes[0]] : undefined;
+  const repoPath = parsed.positionals[0] ?? afterFlag ?? parsed.flags.path ?? ".";
+  if (modes.length) {
+    const { data, markdown, title } = await calibrateMode(modes[0], repoPath, parsed);
+    noteResult(data);
+    if (parsed.flags.json) {
+      printJson(data);
+      return;
+    }
+    if (parsed.flags.out) {
+      const artifact = writeArtifact(parsed.flags.out, markdown);
+      printText(`${title} written: ${artifact.path}`);
+      return;
+    }
+    await printDocument(parsed, markdown, { title: `${title.toUpperCase()}   ${data.repo?.name ?? ""}`, glyph: "\u{1F4CF}", close: { status: "runs" } });
+    return;
+  }
+
   const { formatCalibrationMarkdown, generateCalibration } = await import("./lib/calibrate.js");
   const data = generateCalibration(parsed.positionals[0] ?? parsed.flags.path ?? ".", {
     window: parsed.flags.window,
@@ -626,6 +654,53 @@ async function handleCalibrate(parsed) {
     glyph: "\u{1F4CF}",
     close: { status: "runs" },
   });
+}
+
+/**
+ * @param {string} mode
+ * @param {string} repoPath
+ * @param {CliArgs} parsed
+ * @returns {Promise<{ data: Record<string, any>, markdown: string, title: string }>}
+ */
+async function calibrateMode(mode, repoPath, parsed) {
+  if (mode === "follow_through") {
+    const { formatFollowThroughMarkdown, generateFollowThrough } = await import("./lib/follow-through.js");
+    const data = generateFollowThrough(repoPath, { windowMin: parsed.flags.window_min, minSample: parsed.flags.min_sample, all: parsed.flags.all === true });
+    return { data, markdown: formatFollowThroughMarkdown(data), title: "Follow-through" };
+  }
+  if (mode === "trial") {
+    const { formatCheckTrialMarkdown, generateCheckTrial } = await import("./lib/check-trial.js");
+    const data = generateCheckTrial(repoPath, {
+      window: parsed.flags.window,
+      minSample: parsed.flags.min_sample,
+      log: typeof parsed.flags.log === "string" ? parsed.flags.log : undefined,
+    });
+    return { data, markdown: formatCheckTrialMarkdown(data), title: "Check trial" };
+  }
+  const { formatGateCalibrationMarkdown, generateGateCalibration } = await import("./lib/gate-calibrate.js");
+  const quiet = parsed.flags.quiet === true;
+  try {
+    const data = await generateGateCalibration(repoPath, {
+      window: parsed.flags.window,
+      minSample: parsed.flags.min_sample,
+      since: parsed.flags.since,
+      max: parsed.flags.max,
+      policy: parsed.flags.policy,
+      governance: parsed.flags.governance,
+      // Progress goes to stderr so `--json` on stdout stays parseable.
+      onProgress: quiet ? undefined : ({ done, total, sha }) => process.stderr.write(`calibrate: ${done}/${total} ${sha.slice(0, 7)}\n`),
+    });
+    return { data, markdown: formatGateCalibrationMarkdown(data), title: "Gate calibration" };
+  } catch (error) {
+    // The replay has already removed its worktree; exit the way a shell
+    // expects an interrupted command to, not as a failed one.
+    const signal = /** @type {any} */ (error)?.signal;
+    if (signal === "SIGINT" || signal === "SIGTERM") {
+      process.stderr.write(`solumbe: calibrate interrupted by ${signal}; the replay worktree was removed\n`);
+      process.exit(signal === "SIGTERM" ? 143 : 130);
+    }
+    throw error;
+  }
 }
 
 /** @param {CliArgs} parsed */

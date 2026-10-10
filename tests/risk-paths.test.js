@@ -9,6 +9,7 @@ import {
   isGateRiskPath,
   isProseFile,
   isSecretPath,
+  isTemplatePath,
   isTestDataPath,
   matchRiskPaths,
   matchSecretPaths,
@@ -58,6 +59,27 @@ test("isSecretPath leaves committed env templates to the content scan", () => {
   }
   assert.equal(isSecretPath(".env.production"), true);
   assert.equal(isSecretPath(".env.example.local"), true);
+});
+
+test("isSecretPath treats a qualified env template as a template, not a secret file", () => {
+  // The backtest FAILed two real PRs on `.env.production.local.example`, whose
+  // password fields are placeholders: the name is a template, not a secret.
+  for (const file of [
+    ".env.production.local.example",
+    ".env.local.sample",
+    "apps/api/.env.staging.template",
+    "config/server.pem.example",
+    "secrets/prod.env.example",
+  ]) {
+    assert.equal(isSecretPath(file), false, file);
+    assert.equal(isTemplatePath(file), true, file);
+  }
+  // The real files the templates describe stay secret.
+  for (const file of [".env.production.local", ".env.local", "config/server.pem"]) {
+    assert.equal(isSecretPath(file), true, file);
+    assert.equal(isTemplatePath(file), false, file);
+  }
+  assert.equal(isTemplatePath("src/example.ts"), false);
 });
 
 test("matchSecretPaths and matchRiskPaths filter cleanly", () => {

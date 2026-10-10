@@ -18,8 +18,10 @@ const reviewEngineVersion = 1;
  * field is added, removed or changes meaning.
  * 2: `impactSummary.companions`, leads in the companion repositories, present
  *    only when the repository's .solumberc.json lists any and a request is given.
+ * 3: a check's `status` may be `SKIPPED`: the check could not be evaluated in
+ *    this run, and it does not affect `verdict`.
  */
-export const VERDICT_SCHEMA_VERSION = 2;
+export const VERDICT_SCHEMA_VERSION = 3;
 
 /** @typedef {import('./pass-pr.js').Runner} Runner */
 
@@ -203,6 +205,7 @@ export function formatReviewTerminal(data, rendererFactory) {
   }
   const failing = data.pass.checks.filter((c) => c.status === "FAIL");
   const warning = data.pass.checks.filter((c) => c.status === "WARN");
+  const skipped = data.pass.checks.filter((c) => c.status === "SKIPPED");
   if (failing.length) {
     lines.push(`  ${renderer.glyphs.status.fail}  Blocking checks`);
     for (const check of failing) lines.push(`     ${renderer.glyphs.box.arrow} ${check.name}: ${check.summary}`);
@@ -211,6 +214,11 @@ export function formatReviewTerminal(data, rendererFactory) {
   if (warning.length) {
     lines.push(`  ${renderer.glyphs.status.warn} Warnings`);
     for (const check of warning) lines.push(`     ${renderer.glyphs.box.arrow} ${check.name}: ${check.summary}`);
+    lines.push("");
+  }
+  if (skipped.length) {
+    lines.push(`  ${renderer.glyphs.status.info} Not checked here`);
+    for (const check of skipped) lines.push(`     ${renderer.glyphs.box.arrow} ${check.name}: ${check.summary}`);
     lines.push("");
   }
   return lines.join("\n");
@@ -259,7 +267,7 @@ export function formatReviewMermaid(data) {
 
   const checks = data.pass?.checks ?? [];
   for (const [ci, check] of checks.entries()) {
-    const glyph = check.status === "PASS" ? "✅" : check.status === "WARN" ? "⚠️" : "❌";
+    const glyph = check.status === "PASS" ? "✅" : check.status === "WARN" ? "⚠️" : check.status === "SKIPPED" ? "➖" : "❌";
     const label = `${glyph} ${String(check.name).slice(0, 40)}`.replace(/"/g, "'");
     lines.push(`    G${ci}["${label}"]`);
     lines.push(`    I --> G${ci}`);

@@ -14,6 +14,7 @@ import { generateRoute, hostModelFor, TIERS } from "./model-route.js";
 import { formatRouteMarkdown } from "./render/route.js";
 import { appendEvent, extractSignals, redactError, shareEvent } from "./telemetry.js";
 import { forwardToCanvas } from "./canvas-tap.js";
+import { applyCheckTrial } from "./check-trial.js";
 import { contextRepoPaths, gatePolicy } from "./config.js";
 import { evaluateLocal } from "./pass-local.js";
 import { evaluatePR } from "./pass-pr.js";
@@ -297,7 +298,7 @@ export const tools = [
       "The merge gate, from repository state alone: changed files, secret safety, risk paths, release discipline, validation, dependency audit, policy profile and a convergence floor. With pr, adds review decision, CODEOWNERS, branch protection and checks through your own gh login.",
     title: "Review Gate",
     description:
-      "Gate a change for merge and return a PASS / WARN / FAIL verdict. Omit pr to run the local, no-GitHub gate against a base ref (changed files, secret safety, risk-sensitive paths, release discipline, validation commands, dependency audit, policy profile). Set pr to gate an open GitHub PR via `gh` (PR state, review decision, CODEOWNERS approvals, unresolved conversations, branch protection, status checks). Merges the old merge_readiness and pr_merge_readiness tools. Use review_verdict instead when you want the full impact + review + gate composite, or review_context when you want diff/comment context with no verdict.",
+      "Gate a change for merge and return a PASS / WARN / FAIL verdict. Omit pr to run the local, no-GitHub gate against a base ref (changed files, secret safety, risk-sensitive paths, release discipline, validation commands, dependency audit, policy profile). Set pr to gate an open GitHub PR via `gh` (PR state, review decision, CODEOWNERS approvals, unresolved conversations, branch protection, status checks). A check that cannot be evaluated in the chosen mode (review state locally, compliance controls that only run in CI) is reported as SKIPPED and never changes the verdict. Merges the old merge_readiness and pr_merge_readiness tools. Use review_verdict instead when you want the full impact + review + gate composite, or review_context when you want diff/comment context with no verdict.",
     annotations: { readOnlyHint: false },
     inputSchema: {
       type: "object",
@@ -309,12 +310,12 @@ export const tools = [
         staged: {
           type: "boolean",
           description:
-            "Use the exact Git index for changed-path, risk, secret, and convergence evidence. Release, validation-command, and optional analyzer checks still inspect the working tree. May create Git object or index-cache metadata; source files are unchanged. Ignored in GitHub PR mode.",
+            "Use the exact Git index for changed-path, risk, secret, and convergence evidence. Release discipline reads version metadata from that same exact tree; validation-command and optional analyzer checks still inspect the working tree. May create Git object or index-cache metadata; source files are unchanged. Ignored in GitHub PR mode.",
         },
         head: {
           type: "string",
           description:
-            "Gate exactly base..head: changed-path, risk, secret, and convergence evidence come from the head commit's tree, so uncommitted and untracked files play no part. Release, validation-command, and optional analyzer checks still inspect the working tree. Cannot be combined with staged. Ignored in GitHub PR mode.",
+            "Gate exactly base..head: changed-path, risk, secret, and convergence evidence come from the head commit's tree, so uncommitted and untracked files play no part. Release discipline reads version metadata from that same exact tree; validation-command and optional analyzer checks still inspect the working tree. Cannot be combined with staged. Ignored in GitHub PR mode.",
         },
         path: { type: "string", description: "Repository path. Defaults to current working directory." },
         base: { type: "string", description: "Base ref for the local gate. Defaults to origin/main, then HEAD. Ignored in PR mode." },
@@ -637,11 +638,14 @@ async function callTool(params = {}) {
   }
 
   recordToolEvent(name, args, startedAt, "ok", { result });
+  // Off unless SOLUMBE_CHECK_MODE=trial. The usage log above already holds the
+  // real result; in the withheld arm the agent is told only that it was recorded.
+  const shown = applyCheckTrial(LEGACY_TOOL_ALIASES[name]?.tool ?? name, args, result).result;
   return {
     content: [
       {
         type: "text",
-        text: toolResultText(result),
+        text: toolResultText(shown),
       },
     ],
     isError: false,

@@ -49,7 +49,8 @@ test("evaluateLocal returns PASS when nothing risky changed and tests are presen
   writeAndCommit(root, { "src/index.ts": "export const greet = () => 'hello';\n" }, "tweak");
 
   const result = evaluateLocal(root, { base: "HEAD~1" });
-  assert.equal(result.verdict, "WARN", "review state always warns in local mode");
+  assert.equal(result.verdict, "PASS", "a clean local change is not downgraded by checks that need a PR");
+  assert.equal(result.checks.find((check) => check.name === "Review state").status, "SKIPPED");
   const checkNames = result.checks.map((c) => c.name);
   assert.ok(checkNames.includes("Changed files"));
   assert.ok(checkNames.includes("Secret safety"));
@@ -732,8 +733,8 @@ test("evaluateLocal names the CI workflow that runs bouncer through npx without 
   try {
     const result = evaluateLocal(root, { base: "HEAD" });
     const compliance = result.checks.find((check) => check.name === "Compliance controls");
-    assert.equal(compliance.status, "WARN", "a workflow that runs bouncer is not evidence the controls pass for this change");
-    assert.match(compliance.summary, /^bouncer runs in CI \(\.github\/workflows\/bouncer\.yml\) but not locally/);
+    assert.equal(compliance.status, "SKIPPED", "a workflow that runs bouncer is not evidence either way, so the check is skipped, not passed");
+    assert.match(compliance.summary, /^Not checked locally: bouncer runs in CI \(\.github\/workflows\/bouncer\.yml\)/);
     const runLine = workflow.indexOf("        run: npx -y @nugehs/bouncer@latest check") + 1;
     assert.ok(compliance.details.includes(`CI workflow: .github/workflows/bouncer.yml:${runLine} · run: npx -y @nugehs/bouncer@latest check`));
     assert.ok(compliance.details.includes("Repair command: npm install --save-dev @nugehs/bouncer"));
@@ -1251,4 +1252,214 @@ test("evaluateLocal warns when a migration rewrites or drops existing data", () 
   assert.match(details, /drops columns of "Profile"/);
   assert.match(details, /deletes rows from "Session" \(every row: no WHERE\)/);
   assert.equal(risky.details.length, 3, details);
+});
+
+// --- Checks that cannot run locally are SKIPPED and never move the verdict ---
+
+function cleanLocalRepo(prefix, extra = {}) {
+  const root = initRepo(prefix);
+  writeAndCommit(
+    root,
+    {
+      "package.json": JSON.stringify({ name: "fixture", version: "1.0.0", scripts: { test: "node --test" } }),
+      "package-lock.json": JSON.stringify({ name: "fixture", version: "1.0.0", lockfileVersion: 3 }),
+      "src/index.ts": "export const greet = () => 'hi';\n",
+      ...extra,
+    },
+    "init",
+  );
+  return root;
+}
+
+test("evaluateLocal reports Review state as SKIPPED and a clean working-tree change as PASS", () => {
+  const root = cleanLocalRepo("skipped-review");
+  fs.writeFileSync(path.join(root, "src/index.ts"), "export const greet = () => 'hello';\n");
+
+  const result = evaluateLocal(root, { base: "HEAD" });
+  const review = result.checks.find((check) => check.name === "Review state");
+  assert.equal(review.status, "SKIPPED");
+  assert.match(review.summary, /^Not checked locally/);
+  assert.equal(result.verdict, "PASS");
+  assert.equal(formatPassOutcome(result), "PASS");
+});
+
+test("a SKIPPED check never hides a real finding", () => {
+  const root = cleanLocalRepo("skipped-with-fail");
+  fs.writeFileSync(path.join(root, ".env"), "TOKEN=abc\n");
+  git(root, "add", "-f", ".env");
+
+  const result = evaluateLocal(root, { base: "HEAD", staged: true });
+  assert.equal(result.checks.find((check) => check.name === "Secret safety").status, "FAIL");
+  assert.equal(result.verdict, "FAIL");
+  assert.match(formatPassOutcome(result), /^FAIL — blocked by Secret safety/);
+});
+
+test("the terminal and markdown reports name a SKIPPED check and do not call it a warning", () => {
+  const root = cleanLocalRepo("skipped-render");
+  fs.writeFileSync(path.join(root, "src/index.ts"), "export const greet = () => 'hello';\n");
+  const result = evaluateLocal(root, { base: "HEAD" });
+
+  const terminal = formatPassTerminal(result, (options) => createRenderer({ ...options, color: false, emoji: false }));
+  assert.match(terminal, /Review state/);
+  assert.match(terminal, /Not checked locally/);
+  assert.match(terminal, /ready for a PR; skipped checks run there/);
+  assert.doesNotMatch(terminal, /verify the missing review evidence/);
+
+  const markdown = formatPassMarkdown(result);
+  assert.match(markdown, /Verdict: \*\*PASS\*\*/);
+  assert.match(markdown, /### SKIPPED {2}· {2}Review state/);
+});
+
+test("staged mode is still ready to commit and keeps its PASS Review state", () => {
+  const root = cleanLocalRepo("skipped-staged");
+  fs.writeFileSync(path.join(root, "src/index.ts"), "export const greet = () => 'hello';\n");
+  git(root, "add", "src/index.ts");
+  const result = evaluateLocal(root, { base: "HEAD", staged: true });
+  assert.equal(result.checks.find((check) => check.name === "Review state").status, "PASS");
+  const terminal = formatPassTerminal(result, (options) => createRenderer({ ...options, color: false, emoji: false }));
+  assert.match(terminal, /ready to commit/);
+});
+
+test("a bouncer that runs only in CI is SKIPPED and leaves a clean change at PASS", () => {
+  const root = cleanLocalRepo("skipped-compliance", {
+    ".github/workflows/bouncer.yml":
+      "on: pull_request\njobs:\n  bouncer:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npx -y @nugehs/bouncer@latest check\n",
+  });
+  fs.writeFileSync(path.join(root, "bouncer.config.json"), JSON.stringify({ target: { adapter: "next", repo: "." }, packs: ["uk-osa"] }));
+  fs.writeFileSync(path.join(root, "src/index.ts"), "export const greet = () => 'hello';\n");
+
+  const result = evaluateLocal(root, { base: "HEAD" });
+  assert.equal(result.checks.find((check) => check.name === "Compliance controls").status, "SKIPPED");
+  assert.equal(result.verdict, "PASS");
+});
+
+test("a bouncer that is configured but cannot be found still warns", () => {
+  const root = cleanLocalRepo("skipped-compliance-broken");
+  fs.writeFileSync(path.join(root, "bouncer.config.json"), JSON.stringify({ target: { adapter: "next", repo: "." }, packs: ["uk-osa"] }));
+  const result = evaluateLocal(root, { base: "HEAD" });
+  assert.equal(result.checks.find((check) => check.name === "Compliance controls").status, "WARN", "a broken install is actionable, not skipped");
+  assert.equal(result.verdict, "WARN");
+});
+
+// --- Release discipline reads the exact subject, not the checkout ---
+
+test("--head judges Release discipline by the head commit, not by the checkout's later version", () => {
+  const root = cleanLocalRepo("release-head");
+  const manifest = (version, extra) => JSON.stringify({ name: "fixture", version, scripts: { test: "node --test" }, ...extra });
+  writeAndCommit(root, { "package.json": manifest("1.0.0", { dependencies: { left: "1.1.0" } }) }, "bump a dependency");
+  const headSha = git(root, "rev-parse", "HEAD").trim();
+  // The checkout has since moved on to a release; the commit under review has not.
+  writeAndCommit(root, { "package.json": manifest("2.0.0", { dependencies: { left: "1.1.0" } }), "CHANGELOG.md": "# Changelog\n" }, "release 2.0.0");
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).version, "2.0.0");
+
+  const result = evaluateLocal(root, { base: "HEAD~2", head: headSha });
+  assert.deepEqual(result.changedFiles, ["package.json"]);
+  const release = result.checks.find((check) => check.name === "Release discipline");
+  assert.equal(release.status, "PASS", release.summary);
+  assert.match(release.summary, /project version is unchanged/);
+});
+
+test("--head still fails a real version bump with no changelog", () => {
+  const root = cleanLocalRepo("release-head-bump");
+  writeAndCommit(root, { "package.json": JSON.stringify({ name: "fixture", version: "1.1.0", scripts: { test: "node --test" } }) }, "bump version");
+  const result = evaluateLocal(root, { base: "HEAD~1", head: "HEAD" });
+  const release = result.checks.find((check) => check.name === "Release discipline");
+  assert.equal(release.status, "FAIL");
+  assert.match(release.summary, /without a changelog/);
+});
+
+test("--staged judges Release discipline by the index, not by unstaged edits", () => {
+  const root = cleanLocalRepo("release-staged");
+  const manifest = (version, extra) => JSON.stringify({ name: "fixture", version, scripts: { test: "node --test" }, ...extra });
+  fs.writeFileSync(path.join(root, "package.json"), manifest("1.0.0", { dependencies: { left: "1.1.0" } }));
+  git(root, "add", "package.json");
+  fs.writeFileSync(path.join(root, "package.json"), manifest("1.5.0", { dependencies: { left: "1.1.0" } }));
+
+  const result = evaluateLocal(root, { base: "HEAD", staged: true });
+  assert.equal(result.checks.find((check) => check.name === "Release discipline").status, "PASS");
+});
+
+test("a dependency edit to package.json is not a release", () => {
+  const root = cleanLocalRepo("release-dependency");
+  fs.writeFileSync(
+    path.join(root, "package.json"),
+    JSON.stringify({ name: "fixture", version: "1.0.0", scripts: { test: "node --test" }, dependencies: { left: "1.1.0" } }),
+  );
+  const result = evaluateLocal(root, { base: "HEAD" });
+  assert.equal(result.checks.find((check) => check.name === "Release discipline").status, "PASS");
+});
+
+test("in a Release Please repository a hand-made bump is the finding and the release branch is not", () => {
+  const root = cleanLocalRepo("release-please", { "release-please-config.json": JSON.stringify({ packages: { ".": {} } }) });
+  fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "fixture", version: "1.1.0", scripts: { test: "node --test" } }));
+
+  const manual = evaluateLocal(root, { base: "HEAD" });
+  const finding = manual.checks.find((check) => check.name === "Release discipline");
+  assert.equal(finding.status, "FAIL");
+  assert.match(finding.summary, /bumped by hand in a Release Please repository/);
+  assert.doesNotMatch(finding.summary, /changelog update/);
+
+  git(root, "checkout", "-q", "-b", "release-please--branches--main");
+  const release = evaluateLocal(root, { base: "main" });
+  assert.equal(release.checks.find((check) => check.name === "Release discipline").status, "PASS");
+});
+
+// --- Secret safety: templates, tests and docs ---
+
+test("a qualified env template is not a secret file and its placeholders are not credentials", () => {
+  const root = cleanLocalRepo("secret-template");
+  fs.writeFileSync(
+    path.join(root, ".env.production.local.example"),
+    ["DATABASE_PASSWORD=your-password-here", "JWT_SECRET=changeme", 'ADMIN_PASSWORD="replace-with-a-long-random-value"'].join("\n") + "\n",
+  );
+  git(root, "add", "-A");
+  const result = evaluateLocal(root, { base: "HEAD", staged: true });
+  assert.deepEqual(result.changedFiles, [".env.production.local.example"]);
+  assert.equal(result.checks.find((check) => check.name === "Secret safety").status, "PASS");
+});
+
+test("credential-shaped test fixtures and doc placeholders do not warn, but a known secret format still fails", () => {
+  const root = cleanLocalRepo("secret-fixtures");
+  const fixtureLine = "const accessToken = " + "'valid-access-token-9xQ2mLp7';";
+  fs.mkdirSync(path.join(root, "src/auth"), { recursive: true });
+  fs.mkdirSync(path.join(root, "docs"), { recursive: true });
+  fs.writeFileSync(path.join(root, "src/auth/auth.controller.spec.ts"), `${fixtureLine}\n`);
+  fs.writeFileSync(path.join(root, "docs/guest-account-system.md"), `${"password = " + '"Xq7$mR2vLp9!zKw4Tb8"'}\n`);
+  git(root, "add", "-A");
+  const clean = evaluateLocal(root, { base: "HEAD", staged: true });
+  assert.equal(clean.checks.find((check) => check.name === "Secret safety").status, "PASS");
+
+  const stripeLive = "sk_live_" + "51H8xQwR2mNpLkJ4TvBc9Yd7";
+  fs.writeFileSync(path.join(root, "src/auth/auth.controller.spec.ts"), `const key = "${stripeLive}";\n`);
+  git(root, "add", "-A");
+  const leaked = evaluateLocal(root, { base: "HEAD", staged: true });
+  const secret = leaked.checks.find((check) => check.name === "Secret safety");
+  assert.equal(secret.status, "FAIL");
+  assert.match(secret.details.join(" "), /Stripe live secret key/);
+});
+
+test("the real env file next to its template still fails Secret safety", () => {
+  const root = cleanLocalRepo("secret-real-env");
+  fs.writeFileSync(path.join(root, ".env.production.local"), "DATABASE_PASSWORD=hunter2\n");
+  fs.writeFileSync(path.join(root, ".env.production.local.example"), "DATABASE_PASSWORD=your-password-here\n");
+  git(root, "add", "-f", "-A");
+  const result = evaluateLocal(root, { base: "HEAD", staged: true });
+  const secret = result.checks.find((check) => check.name === "Secret safety");
+  assert.equal(secret.status, "FAIL");
+  assert.match(secret.details.join("\n"), /^\.env\.production\.local$/m);
+  assert.doesNotMatch(secret.details.join("\n"), /\.example/);
+});
+
+test("analyzers: false leaves the optional analyzers out, for a replay over historical trees", () => {
+  const root = initRepo("analyzers-off");
+  writeAndCommit(
+    root,
+    { "package.json": JSON.stringify({ name: "fixture", version: "1.0.0", scripts: { test: "node --test" } }), "src/index.ts": "export const a = 1;\n" },
+    "init",
+  );
+  fs.writeFileSync(path.join(root, "bouncer.config.json"), JSON.stringify({ target: { adapter: "next", repo: "." }, packs: ["uk-osa"] }));
+  writeAndCommit(root, { "src/index.ts": "export const a = 2;\n" }, "tweak");
+  const names = (options) => evaluateLocal(root, { base: "HEAD~1", ...options }).checks.map((check) => check.name);
+  assert.ok(names({}).includes("Compliance controls"));
+  assert.ok(!names({ analyzers: false }).includes("Compliance controls"));
 });

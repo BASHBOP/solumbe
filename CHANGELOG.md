@@ -6,6 +6,49 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+## [4.4.0] - 2026-10-10
+
+A check the gate cannot run reports `SKIPPED` instead of `WARN`, so a clean change can return `PASS`, and `solumbe calibrate` grades the gate's verdict against what happened next. No command or field was removed. A check's `status` gains the value `SKIPPED` and the verdict `schemaVersion` moves to 3, so a client that reads `checks[].status` must accept it.
+
+### Added
+
+- **`solumbe calibrate --gate` grades the gate's verdict and the convergence band against history.**
+  - It replays the real local gate and the real convergence score on each commit, checked out into a temporary worktree, and joins the result to the same `repaired` outcome `solumbe calibrate` uses for risk flags.
+  - It reports the repair rate for PASS, WARN and FAIL, the alarm rate, the share of alarms on changes nothing repaired, a row for each check that warned, and the rate for each convergence band. Rates carry a Wilson 95% interval and are withheld under 30 commits.
+  - On this repository: 111 commits, PASS repaired 16.0%, WARN 36.7%, with overlapping intervals, and an alarm on 27.0% of changes.
+  - It shows whether a verdict separates repaired changes from the rest, not whether the gate prevents a repair. The optional analyzers are not run against historical trees.
+- **`solumbe calibrate --follow-through` reports how often a warning had cleared on the next run.**
+  - It reads the local usage log, pairs each WARN or FAIL with the next gate run on the same repository inside 60 minutes, and reports per check how often that check then passed. A convergence score below `aligned` is paired with the next score of the same task.
+  - Gate and convergence events in the usage log now record each check's status under its name, whether the gate was local or a pull request, and hashes of the repository root, the changed-file set and the request. No path or request text is logged, and none of it is shared.
+- **`SOLUMBE_CHECK_MODE=trial` runs a trial with a control arm on the checks an agent makes before it commits.**
+  - Off by default. Each change falls in a shown or a withheld arm by a hash of the repository root and its head commit; `SOLUMBE_CHECK_SHOWN_SHARE` sets the split.
+  - In the withheld arm the MCP `convergence_score` and local `review_gate` tools compute and log the result and tell the agent only that it was recorded. A blocking FAIL is shown in both arms. The command line, the pre-commit hook, CI and the pull request gate are unaffected.
+  - `solumbe calibrate --trial` grades the arms on the first commit made on each head. `scripts/hooks/check-outcomes.mjs` grades them on corrections and rework in the same Claude Code session.
+
+### Changed
+
+- **A check that cannot run in the current mode is `SKIPPED`, not `WARN`, and never moves the verdict.**
+  - Local `review_gate` reported `Review state` as a `WARN` on every run, and `Compliance controls` as a `WARN` whenever bouncer runs only in CI. A clean local change could never return `PASS`.
+  - Both now report `status: "SKIPPED"` with a "Not checked locally" summary. `verdict` is still `PASS`, `WARN` or `FAIL`; only a check's `status` can be `SKIPPED`, so a client that reads `checks[].status` must accept the new value.
+  - A configured bouncer whose binary cannot be found stays a `WARN`: that install is actionable. Staged mode still reports `Review state` as `PASS`.
+  - The terminal, markdown, `review_verdict`, `solumbe pass-pr` and herdr trust-pane reports show a skipped check on its own line (info, not warning). A clean local run now ends "ready for a PR; skipped checks run there".
+  - `solumbe eval --gate-effectiveness` accepts `SKIPPED` in `expectedChecks`.
+  - The pull request gate reports it too, for evidence GitHub did not supply: `Review decision` when GitHub returns none, `CODEOWNERS` when the file cannot be read or an owner cannot be matched to a reviewer, and `Branch protection` when the base branch or the protection API is unavailable. A clean pull request ends "ready to merge once review decision is confirmed".
+  - The `company` and `high-risk` profiles are unchanged: they require those checks to be `PASS`, so a `SKIPPED` one still fails them. An unprotected base branch, a missing CODEOWNERS file, missing status checks and a missing approval under solo governance still `WARN`.
+  - The verdict `schemaVersion` is now 3, for the new check status.
+
+### Fixed
+
+- **`Release discipline` fires only when a `version` field changes.**
+  - It read the version from the working tree and compared it with the base, so under `--head`, `--staged` or a PR whose checkout had moved on, any `package.json` edit looked like a version bump. 20 of the 22 `FAIL`s in a 495-PR backtest were dependency edits.
+  - It now reads the version from the exact subject: the head commit tree, the staged index tree, or the PR head commit. It falls back to the working tree only when that copy is unavailable.
+  - A `package.json` with no `version`, and a version mismatch or non-SemVer value the change did not introduce, no longer trip it.
+  - In a Release Please repository (a `release-please-config.json` or `.release-please-manifest.json` at the base), a version change outside a release PR is reported as "Version bumped by hand in a Release Please repository", not as a missing changelog entry. A release PR is recognised by its `release-please--*` branch or by a change to the manifest.
+- **`Secret safety` stops flagging placeholders.**
+  - `.env.production.local.example` and every other `*.example`, `*.sample`, `*.template` or `*.dist` file are templates, not secret files. Only `.env.example` and its three siblings were exempt before.
+  - The heuristic `hardcoded credential` rule no longer runs on test files (`*.spec.*`, `*.test.*`, `__tests__/`), documentation, fixture directories or templates, where `accessToken: 'valid-access-token'` is a made-up value.
+  - Known secret formats (AWS, Stripe live, GitHub, Slack and the rest) still fail in every file, test files included.
+
 ## [4.3.0] - 2026-10-10
 
 The MCP server tells every host which tool to call at each stage of a task, and `convergence_score` stops calling a change's own tests, changelog, fixtures and docs drift. It also follows `@/` alias imports and matches the joined spelling of a camelCase product name (`OpenPanel` → `lib/openpanel.ts`). No command, field or schema was removed. Convergence receipts move to engine `0.5.0`, and the index cache moves to version 12, so existing indexes rebuild once.

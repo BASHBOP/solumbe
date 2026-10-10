@@ -651,15 +651,17 @@ function git(cwd, args) {
 
 /**
  * Check `sha` out into `dir`, which the caller created with mkdtemp and will
- * remove; git accepts an existing empty directory.
+ * remove; git accepts an existing empty directory. Shared with the gate
+ * calibration replay, which names itself in `label`.
  * @param {string} root
  * @param {string} sha
  * @param {string} dir
+ * @param {string} [label]
  */
-function addWorktree(root, sha, dir) {
+export function addWorktree(root, sha, dir, label = "regret") {
   const result = git(root, ["worktree", "add", "--detach", "--quiet", dir, sha]);
   if (!result.ok) {
-    throw new Error(`regret could not check out ${sha.slice(0, 7)} into a worktree: ${result.stderr || result.stdout}`);
+    throw new Error(`${label} could not check out ${sha.slice(0, 7)} into a worktree: ${result.stderr || result.stdout}`);
   }
 }
 
@@ -667,11 +669,12 @@ function addWorktree(root, sha, dir) {
  * @param {string} root
  * @param {string} worktree
  * @param {string} sha
+ * @param {string} [label]
  */
-function checkout(root, worktree, sha) {
+export function checkout(root, worktree, sha, label = "regret") {
   const result = git(worktree, ["checkout", "--quiet", "--detach", sha]);
   if (!result.ok) {
-    throw new Error(`regret could not check out ${sha.slice(0, 7)} in ${root}: ${result.stderr || result.stdout}`);
+    throw new Error(`${label} could not check out ${sha.slice(0, 7)} in ${root}: ${result.stderr || result.stdout}`);
   }
 }
 
@@ -679,7 +682,7 @@ function checkout(root, worktree, sha) {
  * @param {string} root
  * @param {string} worktree
  */
-function removeWorktree(root, worktree) {
+export function removeWorktree(root, worktree) {
   // Only this run's worktree is touched. No `git worktree prune`: it would
   // also drop the user's own entries whose directories happen to be absent,
   // for instance a worktree on an unmounted drive.

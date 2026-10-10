@@ -29,20 +29,32 @@ export const STATUS = {
 };
 
 // `options.baseContent(file)` may return the content of a version file at the
-// comparison base (or null/undefined when unavailable). When supplied, the
-// changelog requirement only applies if the project version actually changed —
-// dependency or lockfile bumps that leave the version untouched are not a
-// release and must not be blocked.
+// comparison base (or null/undefined when unavailable). When supplied, every
+// rule below only applies if a `version` field actually changed: a dependency
+// or lockfile edit that leaves every version untouched is not a release and
+// must not be blocked. That includes a package.json with no `version` at all.
+//
+// `options.headContent(file)` returns the file as it is in the change under
+// review (the exact head tree for `--head`/`--staged`, the PR head commit in
+// PR mode). It matters because the working tree is not that change: reading
+// it there compared a historic base against whatever the checkout happened to
+// contain and called every package.json edit a version bump. When it returns
+// null the working tree is read, which is right only for working-tree scope.
 //
 // `options.governance` ("team" or "solo") relaxes only the missing-changelog
-// rule: a private (`"private": true`) package under solo governance is not
-// publishing releases, so a version bump without a changelog entry is a WARN
-// instead of a FAIL. SemVer violations and version-file mismatches stay FAIL
-// in every configuration.
+// and manual-bump rules: a private (`"private": true`) package under solo
+// governance is not publishing releases, so those findings are a WARN instead
+// of a FAIL. SemVer violations and version-file mismatches stay FAIL in every
+// configuration.
+//
+// In a Release Please repository the release PR owns `version` and the
+// changelog, so a version change anywhere else is the finding ("bumped by
+// hand"), not a missing changelog entry. `options.headRefName` identifies a
+// release PR by its `release-please--*` branch.
 /**
  * @param {string} root
  * @param {string[]} files
- * @param {{ baseContent?: (file: string) => string | null, governance?: string }} [options]
+ * @param {{ baseContent?: (file: string) => string | null, headContent?: (file: string) => string | null, governance?: string, headRefName?: string }} [options]
  * @returns {Check}
  */
 export function checkRelease(root, files, options = {}) {
@@ -51,10 +63,21 @@ export function checkRelease(root, files, options = {}) {
     return check("Release discipline", STATUS.pass, "No version metadata changes found.");
   }
 
-  const { values, warnings } = readVersions(root, versionFiles);
+  const { values, warnings } = readVersions(root, versionFiles, options.headContent);
   if (warnings.length > 0) {
     return check("Release discipline", STATUS.warn, "Version metadata changed, but some files could not be inspected.", warnings);
   }
+
+  const changes = typeof options.baseContent === "function" ? collectVersionChanges(versionFiles, values, options.baseContent) : null;
+  if (changes && changes.length === 0) {
+    return check(
+      "Release discipline",
+      STATUS.pass,
+      "Version metadata changed but the project version is unchanged (dependency or lockfile update).",
+      formatValues(values),
+    );
+  }
+
   if (values.length === 0) {
     return check("Release discipline", STATUS.warn, "Version metadata changed, but no supported version value was found.", versionFiles);
   }
@@ -69,16 +92,16 @@ export function checkRelease(root, files, options = {}) {
     return check("Release discipline", STATUS.fail, "Version metadata files do not agree.", mismatches);
   }
 
-  if (typeof options.baseContent === "function") {
-    const baseVersion = readBaseVersion(versionFiles, options.baseContent);
-    if (baseVersion !== null && baseVersion === values[0].version) {
-      return check(
-        "Release discipline",
-        STATUS.pass,
-        "Version metadata changed but the project version is unchanged (dependency or lockfile update).",
-        formatValues(values),
-      );
+  if (changes && usesReleasePlease(root, options.baseContent)) {
+    if (isReleasePleaseRelease(files, options.headRefName)) {
+      return check("Release discipline", STATUS.pass, "Version change comes from a Release Please release PR.", formatValues(values));
     }
+    const summary = "Version bumped by hand in a Release Please repository; Release Please owns the version and CHANGELOG.md.";
+    const details = [...changes.map(describeChange), "Remove the version change; Release Please bumps it in its own release PR."];
+    if (isPrivateSoloRepo(root, options.governance)) {
+      return check("Release discipline", STATUS.warn, `${summary} (private package, solo governance)`, details);
+    }
+    return check("Release discipline", STATUS.fail, summary, details);
   }
 
   if (!changedChangelog(files)) {
@@ -111,32 +134,94 @@ function isPrivateSoloRepo(root, governance) {
   }
 }
 
-// Resolve the project version at the base ref, preferring the manifest over the
-// lockfile. Returns null when no base version can be determined.
+/**
+ * @typedef {{ source: string, from: string | null, to: string | null }} VersionChange
+ */
+
+// Every version value that differs between the base and the change under
+// review, per source (`package.json`, `server.json#packages[0]`, ...). A value
+// that only exists on one side counts as changed. When the base cannot be read
+// at all the head values all count as changed, which keeps the strict path.
 /**
  * @param {string[]} versionFiles
+ * @param {VersionValue[]} headValues
  * @param {(file: string) => string | null} baseContent
- * @returns {string | null}
+ * @returns {VersionChange[]}
  */
-function readBaseVersion(versionFiles, baseContent) {
-  const priority = ["package.json", "server.json", "package-lock.json", "npm-shrinkwrap.json", "pyproject.toml", "cargo.toml"];
-  const ordered = [...versionFiles].sort((a, b) => priority.indexOf(normalize(a)) - priority.indexOf(normalize(b)));
-  for (const file of ordered) {
-    let content;
-    try {
-      content = baseContent(file);
-    } catch {
-      content = null;
-    }
-    if (content == null) continue;
-    try {
-      const parsed = parseVersionFile(file, content);
-      if (parsed.length > 0) return parsed[0].version;
-    } catch {
-      // Unparseable base content — try the next file.
-    }
+function collectVersionChanges(versionFiles, headValues, baseContent) {
+  const head = new Map(headValues.map((item) => [item.source, item.version]));
+  /** @type {Map<string, string>} */
+  const base = new Map();
+  for (const file of versionFiles) {
+    for (const item of readBaseValues(file, baseContent)) base.set(item.source, item.version);
   }
-  return null;
+  /** @type {VersionChange[]} */
+  const changes = [];
+  for (const source of [...new Set([...head.keys(), ...base.keys()])].sort()) {
+    const from = base.get(source) ?? null;
+    const to = head.get(source) ?? null;
+    if (from !== to) changes.push({ source, from, to });
+  }
+  return changes;
+}
+
+/**
+ * @param {string} file
+ * @param {(file: string) => string | null} baseContent
+ * @returns {VersionValue[]}
+ */
+function readBaseValues(file, baseContent) {
+  let content;
+  try {
+    content = baseContent(file);
+  } catch {
+    content = null;
+  }
+  if (content == null) return [];
+  try {
+    return parseVersionFile(file, content);
+  } catch {
+    // Unparseable base content has no comparable version.
+    return [];
+  }
+}
+
+/** @param {VersionChange} change */
+function describeChange(change) {
+  return `${change.source}: ${change.from ?? "(none)"} -> ${change.to ?? "(none)"}`;
+}
+
+const RELEASE_PLEASE_FILES = ["release-please-config.json", ".release-please-manifest.json"];
+
+// A repository is a Release Please repository when its config or manifest
+// exists at the base (the policy the change is judged against) or, failing
+// that, in the working tree.
+/**
+ * @param {string} root
+ * @param {((file: string) => string | null) | undefined} baseContent
+ * @returns {boolean}
+ */
+function usesReleasePlease(root, baseContent) {
+  return RELEASE_PLEASE_FILES.some((file) => {
+    try {
+      if (typeof baseContent === "function" && baseContent(file) != null) return true;
+    } catch {
+      // Fall through to the working tree.
+    }
+    return fs.existsSync(path.join(root, file));
+  });
+}
+
+// The release PR is the one change that is supposed to move the version: it
+// lives on a `release-please--*` branch and rewrites the manifest.
+/**
+ * @param {string[]} files
+ * @param {string | undefined} headRefName
+ * @returns {boolean}
+ */
+function isReleasePleaseRelease(files, headRefName) {
+  if (/^release-please--/.test(String(headRefName ?? ""))) return true;
+  return files.some((file) => normalize(file) === ".release-please-manifest.json");
 }
 
 /**
@@ -170,18 +255,18 @@ function changedChangelog(files) {
 /**
  * @param {string} root
  * @param {string[]} files
+ * @param {((file: string) => string | null) | undefined} headContent
  * @returns {{ values: VersionValue[], warnings: string[] }}
  */
-function readVersions(root, files) {
+function readVersions(root, files, headContent) {
   /** @type {VersionValue[]} */
   const values = [];
   /** @type {string[]} */
   const warnings = [];
   for (const file of files) {
-    const absolute = path.join(root, file);
     let data;
     try {
-      data = fs.readFileSync(absolute, "utf8");
+      data = readHeadFile(root, file, headContent);
     } catch (error) {
       warnings.push(`${file} -> ${/** @type {Error} */ (error)?.message ?? String(error)}`);
       continue;
@@ -194,6 +279,27 @@ function readVersions(root, files) {
     }
   }
   return { values, warnings };
+}
+
+// The change's own copy of `file` when the caller can supply it, the working
+// tree otherwise.
+/**
+ * @param {string} root
+ * @param {string} file
+ * @param {((file: string) => string | null) | undefined} headContent
+ * @returns {string}
+ */
+function readHeadFile(root, file, headContent) {
+  if (typeof headContent === "function") {
+    let content;
+    try {
+      content = headContent(file);
+    } catch {
+      content = null;
+    }
+    if (typeof content === "string") return content;
+  }
+  return fs.readFileSync(path.join(root, file), "utf8");
 }
 
 /**
@@ -231,9 +337,7 @@ function parseVersionFile(file, data) {
  */
 function parseJsonVersion(data) {
   const parsed = JSON.parse(data);
-  const version = String(parsed?.version ?? "").trim();
-  if (!version) throw new Error("version is empty");
-  return version;
+  return String(parsed?.version ?? "").trim();
 }
 
 /**
@@ -245,9 +349,7 @@ function parseLockVersion(data) {
   const rootEntry = parsed?.packages?.[""];
   const rootVersion = String(rootEntry?.version ?? "").trim();
   if (rootVersion) return rootVersion;
-  const topVersion = String(parsed?.version ?? "").trim();
-  if (!topVersion) throw new Error("version is empty");
-  return topVersion;
+  return String(parsed?.version ?? "").trim();
 }
 
 /**
@@ -268,9 +370,6 @@ function parseServerManifestVersions(file, data) {
     if (packageVersion) {
       values.push({ source: `${file}#packages[${index}]`, version: packageVersion });
     }
-  }
-  if (values.length === 0) {
-    throw new Error("version is empty");
   }
   return values;
 }

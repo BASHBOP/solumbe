@@ -58,6 +58,12 @@ naive-savings number is a relative cross-build delta, not an absolute guarantee)
   arguments (key names only, never flag values, paths, or queries), latency,
   outcome, and the value signals the command already produced. Error text is
   reduced to a code/class (e.g. `ENOENT`), never the raw message.
+- **Gate runs carry what a follow-up join needs.** A gate verdict or convergence
+  score also records each check's status under its name, whether the gate was
+  local or a pull request, and three 12-character hashes: of the repository
+  root, of the changed-file set, and of the request. `solumbe calibrate
+  --follow-through` reads them to say how often a warning had cleared on the
+  next run. They stay in the local log and are not part of what sharing sends.
 - **Never on a deterministic channel.** Telemetry is a side file. It is never
   written to stdout or the MCP JSON-RPC stream, and wall-clock timestamps never
   feed a token estimate or a convergence receipt, enforced by a test that

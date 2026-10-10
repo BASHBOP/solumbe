@@ -17,11 +17,15 @@ export const GOVERNANCE = {
   solo: "solo",
 };
 
-/** @type {{ pass: "PASS", warn: "WARN", fail: "FAIL" }} */
+// `skipped` is a per-check status only, never a verdict: a check that cannot be
+// evaluated in this mode (a local run has no PR to review) says so honestly
+// instead of warning, and `aggregateVerdict` ignores it.
+/** @type {{ pass: "PASS", warn: "WARN", fail: "FAIL", skipped: "SKIPPED" }} */
 export const STATUS = {
   pass: "PASS",
   warn: "WARN",
   fail: "FAIL",
+  skipped: "SKIPPED",
 };
 
 const PROFILE_ALIASES = {
@@ -175,7 +179,8 @@ function companyIssues({ governance, checks, remote }) {
 }
 
 // Roll the per-check statuses into a single verdict. FAIL beats WARN beats
-// PASS. Matches pullpass/rules/Verdict.
+// PASS. SKIPPED checks carry no evidence either way, so they never move the
+// verdict. Matches pullpass/rules/Verdict.
 /**
  * @param {import('./pass-local.js').Check[]} checks
  * @returns {import('./pass-local.js').Verdict}

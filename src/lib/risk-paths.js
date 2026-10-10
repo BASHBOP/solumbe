@@ -171,9 +171,11 @@ export const SECRET_BASENAME_PATTERNS = [
   /^secrets?\.ya?ml$/, // secret.yaml / secrets.yml
 ];
 
-// Committed env templates (`.env.example`, `.env.sample`, `.env.template`,
-// `.env.dist`): the documented shape of `.env`, checked in by design.
-const ENV_TEMPLATE_BASENAME = /^\.env\.(example|sample|template|dist)$/;
+// Committed templates (`.env.example`, `.env.production.local.example`,
+// `.env.sample`, `.env.template`, `.env.dist`): the documented shape of a
+// credential file, checked in by design. Matched on the final suffix so a
+// qualified name such as `.env.production.local.example` is a template too.
+const TEMPLATE_SUFFIX = /\.(example|sample|template|dist)$/;
 
 // Whole path segments (directories) that signal a credential store. Matched
 // segment-wise so `secrets/aws.json` flags but `docs/secrets-management.md`
@@ -500,6 +502,21 @@ export function isTestDataPath(filePath) {
 }
 
 /**
+ * True for a committed template of a credential file (`*.example`, `*.sample`,
+ * `*.template`, `*.dist`). Its values are placeholders by convention, so
+ * heuristic credential detection stands down; known secret formats still fail.
+ * @param {string} filePath
+ * @returns {boolean}
+ */
+export function isTemplatePath(filePath) {
+  return TEMPLATE_SUFFIX.test(
+    String(filePath ?? "")
+      .toLowerCase()
+      .replaceAll("\\", "/"),
+  );
+}
+
+/**
  * @param {string} filePath
  * @returns {boolean}
  */
@@ -513,7 +530,7 @@ export function isSecretPath(filePath) {
   const basename = segments[segments.length - 1] ?? "";
   // A committed env template names variables, it does not hold them; the
   // content scan still fails one that carries a real credential value.
-  if (ENV_TEMPLATE_BASENAME.test(basename)) return false;
+  if (TEMPLATE_SUFFIX.test(basename)) return false;
   if (SECRET_BASENAME_PATTERNS.some((pattern) => pattern.test(basename))) return true;
   return segments.slice(0, -1).some((segment) => SECRET_SEGMENTS.has(segment));
 }

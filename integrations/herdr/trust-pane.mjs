@@ -148,7 +148,10 @@ export function formatTrustSummary(report, repo, base, options = {}) {
   const color = options.color ?? false;
   const width = options.width ?? MAX_CONTENT_WIDTH;
   const checks = report.pass?.checks ?? [];
-  const attention = checks.filter((check) => check.status !== "PASS");
+  // A skipped check has no evidence either way, so it is not "attention"; it is
+  // listed below as not checked here.
+  const attention = checks.filter((check) => check.status !== "PASS" && check.status !== "SKIPPED");
+  const skipped = checks.filter((check) => check.status === "SKIPPED");
   const verdict = glyph(report.verdict);
   const risk = String(report.prReviewSummary?.riskLevel ?? "unknown").toLowerCase();
   const changedFiles = report.prReviewSummary?.changedFiles ?? 0;
@@ -186,6 +189,14 @@ export function formatTrustSummary(report, repo, base, options = {}) {
       const summaryLines = wrapText(check.summary, Math.max(24, width - 8));
       lines.push(`${statusBadge(check.status, color)}  ${paint(check.name, [ANSI.bold], color)}`);
       lines.push(...summaryLines.map((line) => `        ${paint(line, [ANSI.muted], color)}`));
+    }
+  }
+
+  if (skipped.length) {
+    lines.push("", section(`NOT CHECKED HERE · ${skipped.length}`, width, color));
+    for (const check of skipped) {
+      lines.push(`${paint(" SKIP ", [ANSI.muted], color)}  ${paint(check.name, [ANSI.bold], color)}`);
+      lines.push(...wrapText(check.summary, Math.max(24, width - 8)).map((line) => `        ${paint(line, [ANSI.muted], color)}`));
     }
   }
 

@@ -178,7 +178,43 @@ export function extractSignals(data) {
   if (data.totals && typeof data.totals.savedTokens === "number") s.savedTokens = data.totals.savedTokens;
   if (data.totals && typeof data.totals.savedPct === "number") s.savedPct = data.totals.savedPct;
   if (typeof data.passed === "boolean") s.evalPassed = data.passed;
+  Object.assign(s, followUpSignals(data));
   return Object.keys(s).length ? s : null;
+}
+
+/** @param {unknown} value */
+function shortHash(value) {
+  return crypto.createHash("sha256").update(String(value)).digest("hex").slice(0, 12);
+}
+
+/**
+ * What `solumbe calibrate --follow-through` joins one run to the next on: each
+ * check's status under its name, and hashes that say which repository, change
+ * and request a gate verdict or convergence score was for. Check names are a
+ * fixed vocabulary; a path or a request reaches the log only as a hash.
+ * @param {any} data
+ * @returns {Record<string, any>}
+ */
+function followUpSignals(data) {
+  /** @type {Record<string, any>} */
+  const s = {};
+  const scored = typeof data.verdict === "string" || typeof data.convergence === "number";
+  if (!scored) return s;
+  const checks = Array.isArray(data.checks) ? data.checks : Array.isArray(data.pass?.checks) ? data.pass.checks : null;
+  if (checks) {
+    s.checks = Object.fromEntries(
+      checks
+        .filter((/** @type {any} */ check) => typeof check?.name === "string" && typeof check.status === "string")
+        .map((/** @type {any} */ check) => [check.name, check.status]),
+    );
+  }
+  if (typeof data.verdict === "string") s.gateMode = data.pr ? "pr" : "local";
+  if (typeof data.repo?.root === "string") s.repoId = shortHash(data.repo.root);
+  if (Array.isArray(data.changedFiles))
+    s.changeId = shortHash(JSON.stringify([data.scope ?? null, data.subject?.treeSha ?? null, [...data.changedFiles].sort()]));
+  const request = String(data.request ?? data.task ?? "").trim();
+  if (request) s.requestId = shortHash(request);
+  return s;
 }
 
 /** @type {Record<string, any> | null} */
