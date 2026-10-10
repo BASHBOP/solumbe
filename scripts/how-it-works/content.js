@@ -234,6 +234,8 @@ export const SURFACES = [
 export const SUPPORTING_COMMANDS = {
   discover: "repo_index with discover: true; the card covers it",
   catalog: "repo_search with no query; the card covers it",
+  declare: "change_impact with declare: true, which freezes its prediction as a scope contract; the card covers it",
+  amend: "change_impact with amend, which adds a file to that contract with a reason; the card covers it",
   "workspace-gate": "named on the workspace_report card",
   pass: "the older name of gate, kept for compatibility",
   "pass-pr": "the older name of gate --pr, kept for compatibility",

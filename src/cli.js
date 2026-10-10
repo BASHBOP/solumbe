@@ -50,6 +50,8 @@ const commandHandlers = {
   ax: handleAx,
   route: handleRoute,
   converge: handleConverge,
+  declare: handleDeclare,
+  amend: handleAmend,
   attest: handleAttest,
   calibrate: handleCalibrate,
   regret: handleRegret,
@@ -753,6 +755,58 @@ async function handleConverge(parsed) {
   });
 }
 
+/**
+ * `declare "<request>" [--path repo]` or `declare <repo> "<request>"`: record
+ * the files the request is expected to touch, before the edit.
+ * @param {CliArgs} parsed
+ */
+async function handleDeclare(parsed) {
+  const { DEFAULT_INTENT_PATH, declareIntent, formatIntentMarkdown, intentRoot, writeIntent } = await import("./lib/intent.js");
+  let repoPath;
+  let request;
+  if (parsed.flags.path) {
+    repoPath = parsed.flags.path;
+    request = parsed.positionals.join(" ").trim();
+  } else if (parsed.positionals.length >= 2) {
+    repoPath = parsed.positionals[0];
+    request = parsed.positionals.slice(1).join(" ").trim();
+  } else {
+    repoPath = ".";
+    request = parsed.positionals.join(" ").trim();
+  }
+  const intent = declareIntent(request, { path: repoPath, top: parsed.flags.top ? Number(parsed.flags.top) : undefined });
+  const file = writeIntent(intentRoot(repoPath), intent, typeof parsed.flags.out === "string" ? parsed.flags.out : DEFAULT_INTENT_PATH);
+
+  if (parsed.flags.json) {
+    printJson({ ok: true, path: file, intent });
+    return;
+  }
+  printText(formatIntentMarkdown(intent));
+  printText(`\nDeclared intent written: ${file}`);
+  printText("Gate the change against it with `solumbe gate . --staged --intent <file>`.");
+}
+
+/**
+ * `amend <file...> --reason "<why>" [--path repo] [--intent file]`: add files
+ * to the declared intent, with the reason they belong to the change.
+ * @param {CliArgs} parsed
+ */
+async function handleAmend(parsed) {
+  const { DEFAULT_INTENT_PATH, amendIntent, formatIntentMarkdown, intentRoot, readIntent, writeIntent } = await import("./lib/intent.js");
+  const root = intentRoot(typeof parsed.flags.path === "string" ? parsed.flags.path : ".");
+  const source = typeof parsed.flags.intent === "string" ? parsed.flags.intent : DEFAULT_INTENT_PATH;
+  const reason = typeof parsed.flags.reason === "string" ? parsed.flags.reason : "";
+  const intent = amendIntent(readIntent(root, source), parsed.positionals, reason);
+  const file = writeIntent(root, intent, source);
+
+  if (parsed.flags.json) {
+    printJson({ ok: true, path: file, intent });
+    return;
+  }
+  printText(formatIntentMarkdown(intent));
+  printText(`\nAmended intent written: ${file}`);
+}
+
 /** @param {CliArgs} parsed */
 async function handlePass(parsed) {
   const { evaluateLocal, formatPassMarkdown, formatPassOutcome, formatPassTerminal } = await import("./lib/pass-local.js");
@@ -768,6 +822,7 @@ async function handlePass(parsed) {
       request: parsed.flags.request,
       minConvergence: parsed.flags.min_convergence,
       receipt: parsed.flags.receipt,
+      intent: parsed.flags.intent,
       staged: parsed.flags.staged,
       runValidation: parsed.flags.run_validation,
     })
@@ -817,6 +872,7 @@ async function handlePassPr(parsed) {
       request: parsed.flags.request,
       minConvergence: parsed.flags.min_convergence,
       receipt: parsed.flags.receipt,
+      intent: parsed.flags.intent,
     })
   );
   noteResult(data);
@@ -1060,6 +1116,7 @@ async function handleReview(parsed) {
     governance,
     minConvergence: parsed.flags.min_convergence,
     receipt: parsed.flags.receipt,
+    intent: parsed.flags.intent,
     impactTop: parsed.flags.top,
   });
   noteResult(data);
@@ -1947,8 +2004,8 @@ function handleHelp(_parsed) {
   printText(
     [
       "Merge gate (v2):",
-      "  solumbe gate [repo | --path repo] [--base ref] [--head ref | --staged] [--run-validation] [--policy x] [--governance x] [--request text] [--min-convergence n] [--receipt hash|file] [--json]   # local gate",
-      "  solumbe gate --pr <selector> [repo | --path repo] [--policy x] [--governance x] [--request text] [--min-convergence n] [--receipt hash|file] [--json]            # GitHub PR gate",
+      "  solumbe gate [repo | --path repo] [--base ref] [--head ref | --staged] [--run-validation] [--policy x] [--governance x] [--request text] [--min-convergence n] [--receipt hash|file] [--intent file] [--json]   # local gate",
+      "  solumbe gate --pr <selector> [repo | --path repo] [--policy x] [--governance x] [--request text] [--min-convergence n] [--receipt hash|file] [--intent file] [--json]            # GitHub PR gate",
       "  solumbe workspace-gate <repo...> [--base ref] [--run-validation] [--policy x] [--governance x] [--request text] [--json]                           # one staged receipt across repositories",
       "",
       "Evaluation gates (v2):",

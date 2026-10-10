@@ -79,7 +79,7 @@ const GENERIC_STEMS = new Set(["__init__", "app", "config", "constants", "helper
 
 /**
  * @param {string} query
- * @param {{ path?: string, base?: string, head?: string, top?: number, staged?: boolean, includeUntracked?: boolean, subject?: Record<string, unknown>, diffFiles?: string[] }} [options]
+ * @param {{ path?: string, base?: string, head?: string, top?: number, staged?: boolean, includeUntracked?: boolean, subject?: Record<string, unknown>, diffFiles?: string[], declared?: { tip: string, owners: string[], related: string[] } }} [options]
  * @returns {Record<string, any>}
  */
 export function generateConvergence(query, options = {}) {
@@ -145,17 +145,23 @@ export function generateConvergence(query, options = {}) {
     throw new Error(validation.error ?? "converge failed to read the git diff");
   }
 
-  const changedFiles = validation.changedFiles ?? [];
-  const confirmedDirect = validation.confirmedDirect ?? [];
-  const confirmedRelated = validation.confirmedRelated ?? [];
-  const unconfirmedCandidates = validation.unconfirmedCandidates ?? [];
+  // A scope contract (src/lib/intent.js) replaces the live prediction with the
+  // files declared before the edit, so the diff is held against what was
+  // promised and not against what the edited tree now predicts.
+  const declared = normalizeDeclaredScope(options.declared);
+  const compared = declared ? compareWithDeclared(validation.changedFiles ?? [], declared) : validation;
+
+  const changedFiles = compared.changedFiles ?? [];
+  const confirmedDirect = compared.confirmedDirect ?? [];
+  const confirmedRelated = compared.confirmedRelated ?? [];
+  const unconfirmedCandidates = compared.unconfirmedCandidates ?? [];
 
   // A confirmed owner rarely changes alone: a feature commit adds components
   // beside it and tests for what it touched. Those are the task's own fan-out,
   // not drift, so they are moved out of the drift and advisory buckets under a
   // named rule before scope and risk alignment are computed.
   const addedFiles = subject ? addedFilesForSubject(root, subject) : [...addedFilesInWorkingTree(root, base), ...(includeUntracked ? (untracked ?? []) : [])];
-  const candidates = [...(validation.missedChangedFiles ?? []), ...(validation.advisoryChangedFiles ?? [])];
+  const candidates = [...(compared.missedChangedFiles ?? []), ...(compared.advisoryChangedFiles ?? [])];
   const inferredRelated = inferInScopeFiles({
     confirmedDirect,
     confirmedRelated,
@@ -165,8 +171,8 @@ export function generateConvergence(query, options = {}) {
     addedLines: addedLinesFor(root, base, subject, candidates, includeUntracked ? (untracked ?? []) : []),
   });
   const inferredFiles = new Set(inferredRelated.map((entry) => entry.file));
-  const missedChangedFiles = (validation.missedChangedFiles ?? []).filter((/** @type {string} */ file) => !inferredFiles.has(file));
-  const advisoryChangedFiles = (validation.advisoryChangedFiles ?? []).filter((/** @type {string} */ file) => !inferredFiles.has(file));
+  const missedChangedFiles = (compared.missedChangedFiles ?? []).filter((/** @type {string} */ file) => !inferredFiles.has(file));
+  const advisoryChangedFiles = (compared.advisoryChangedFiles ?? []).filter((/** @type {string} */ file) => !inferredFiles.has(file));
 
   const predictedDirect = confirmedDirect.length + unconfirmedCandidates.length;
   const grounded = predictedDirect > 0;
@@ -235,10 +241,15 @@ export function generateConvergence(query, options = {}) {
       advisoryChangedFiles,
       riskyDrift,
       excludedUntracked: includeUntracked ? [] : (untracked ?? []),
+      contract: Boolean(declared),
     }),
     weights: WEIGHTS,
   };
   if (subject) data.subject = subject;
+  // Under a contract every changed file is declared, implied by a declared
+  // one, or undeclared. `undeclared` is what the gate's Scope contract check
+  // fails on.
+  if (declared) data.contract = { tip: declared.tip, undeclared: missedChangedFiles };
   if (untracked) {
     data.untracked = { included: includeUntracked, count: untracked.length, files: untracked.slice(0, MAX_LISTED_UNTRACKED) };
   }
@@ -261,6 +272,7 @@ export function generateConvergence(query, options = {}) {
     inferredRelated: inferredRelated.map((entry) => entry.file),
     unconfirmedCandidates,
     missedChangedFiles,
+    contract: declared?.tip,
   });
 
   data.tokenEstimate = { fullJson: estimateTokens(data) };
@@ -503,6 +515,42 @@ function testSubjectStem(file) {
 }
 
 /**
+ * @param {unknown} value
+ * @returns {{ tip: string, owners: string[], related: string[] } | null}
+ */
+function normalizeDeclaredScope(value) {
+  if (value === undefined || value === null) return null;
+  const scope = /** @type {any} */ (value);
+  const isFiles = (/** @type {unknown} */ list) => Array.isArray(list) && list.every((item) => typeof item === "string" && item.length > 0);
+  if (typeof scope !== "object" || !/^[0-9a-f]{64}$/.test(String(scope.tip ?? "")) || !isFiles(scope.owners) || !isFiles(scope.related)) {
+    throw new Error("converge received an invalid declared scope");
+  }
+  return { tip: scope.tip, owners: [...scope.owners], related: [...scope.related] };
+}
+
+/**
+ * The comparison `validateChangedFiles` makes against a live prediction, made
+ * against a declared scope instead. Nothing is advisory under a contract: a
+ * changed file was declared or it was not.
+ * @param {string[]} changedFiles
+ * @param {{ owners: string[], related: string[] }} declared
+ */
+function compareWithDeclared(changedFiles, declared) {
+  const owners = new Set(declared.owners);
+  const related = new Set(declared.related);
+  const changed = new Set(changedFiles);
+  return {
+    changedFiles,
+    confirmedDirect: changedFiles.filter((file) => owners.has(file)),
+    confirmedRelated: changedFiles.filter((file) => !owners.has(file) && related.has(file)),
+    unconfirmedCandidates: declared.owners.filter((file) => !changed.has(file)),
+    missedChangedFiles: changedFiles.filter((file) => !owners.has(file) && !related.has(file)),
+    /** @type {string[]} */
+    advisoryChangedFiles: [],
+  };
+}
+
+/**
  * Deterministic receipt over a canonical, timestamp-free payload. Same inputs →
  * same id, so a CI step (or a human) can recompute and verify it.
  * @param {Record<string, any>} payload
@@ -533,6 +581,9 @@ export function makeReceipt(payload) {
   // Present only when a file was inferred into scope, so a payload without
   // inference keeps the exact canonical bytes it had before the rule existed.
   if (payload.inferredRelated?.length) canonical.inferredRelated = [...payload.inferredRelated].sort();
+  // Present only when the diff was held against a declared intent, so the
+  // receipt names the contract it was measured under.
+  if (payload.contract) canonical.contract = String(payload.contract);
   // Subject-aware receipts are v2. When no subject is supplied, the canonical
   // v1 payload remains byte-for-byte compatible with existing receipt IDs.
   if (subject) {
@@ -976,10 +1027,18 @@ function riskWeightFor(file) {
 }
 
 /**
- * @param {{ grounded: boolean, unconfirmedCandidates: string[], missedChangedFiles: string[], advisoryChangedFiles?: string[], riskyDrift: {file: string}[], excludedUntracked?: string[] }} input
+ * @param {{ grounded: boolean, unconfirmedCandidates: string[], missedChangedFiles: string[], advisoryChangedFiles?: string[], riskyDrift: {file: string}[], excludedUntracked?: string[], contract?: boolean }} input
  * @returns {string[]}
  */
-function buildRecommendations({ grounded, unconfirmedCandidates, missedChangedFiles, advisoryChangedFiles = [], riskyDrift, excludedUntracked = [] }) {
+function buildRecommendations({
+  grounded,
+  unconfirmedCandidates,
+  missedChangedFiles,
+  advisoryChangedFiles = [],
+  riskyDrift,
+  excludedUntracked = [],
+  contract = false,
+}) {
   /** @type {string[]} */
   const recs = [];
   if (!grounded) {
@@ -1003,10 +1062,16 @@ function buildRecommendations({ grounded, unconfirmedCandidates, missedChangedFi
     );
   }
   if (missedChangedFiles.length) {
-    recs.push(`Unrequested changes (scope drift): ${formatList(missedChangedFiles)} — confirm they belong in this change or split them out.`);
+    recs.push(
+      contract
+        ? `Changed but never declared: ${formatList(missedChangedFiles)} — amend the intent with the reason they belong (\`solumbe amend\`), or take them out of this change.`
+        : `Unrequested changes (scope drift): ${formatList(missedChangedFiles)} — confirm they belong in this change or split them out.`,
+    );
   }
   if (unconfirmedCandidates.length) {
-    recs.push(`Predicted owner files were not changed: ${formatList(unconfirmedCandidates)} — verify the change landed in the right place.`);
+    recs.push(
+      `${contract ? "Declared" : "Predicted"} owner files were not changed: ${formatList(unconfirmedCandidates)} — verify the change landed in the right place.`,
+    );
   }
   recs.push(...untrackedRecommendation(excludedUntracked));
   if (recs.length === 0) {
@@ -1045,6 +1110,7 @@ export function formatConvergenceMarkdown(data) {
     `Receipt handle: ${data.receipt.id} (${data.receipt.algorithm})`,
     ...(data.receipt.receiptVersion === 2 ? [`Inputs hash: ${data.receipt.inputsHash}`] : []),
     ...(data.subject ? [`Subject: ${formatReceiptSubject(data.subject)}`] : []),
+    ...(data.contract ? [`Contract: ${data.contract.tip} (the diff is held against the declared intent, not a live prediction)`] : []),
     "",
     "## Sub-scores",
     "",
@@ -1064,7 +1130,7 @@ export function formatConvergenceMarkdown(data) {
     `- Confirmed related: ${formatList(d.confirmedRelated)}`,
     `- Inferred in scope: ${d.inferredRelated?.length ? d.inferredRelated.map(formatInferred).join(", ") : "none"}`,
     `- Unconfirmed candidates: ${formatList(d.unconfirmedCandidates)}`,
-    `- ${inconclusive ? "Changed, not predicted" : "Missed (scope drift)"}: ${formatList(d.missedChangedFiles)}`,
+    `- ${data.contract ? "Undeclared" : inconclusive ? "Changed, not predicted" : "Missed (scope drift)"}: ${formatList(d.missedChangedFiles)}`,
   ];
   if (d.riskyDrift.length) {
     lines.push(

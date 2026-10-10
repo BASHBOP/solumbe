@@ -6,6 +6,15 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+### Added
+
+- **A scope contract: declare what a request will touch before the edit, and the gate fails a file that was never declared.**
+  - `solumbe declare <repo> "<request>"` records the files Solumbe predicts for the request, the commit and a contract hash in `.solumbe/intent.json`. `solumbe amend <file...> --reason "<why>"` adds files, each amendment hashed onto the one before it.
+  - `solumbe gate`, `pass`, `pass-pr` and `review` take `--intent <file>` and add a `Scope contract` check. A changed file is declared, amended, implied by a declared file under convergence's existing rules (its test, a new sibling, an importer, the changelog), or undeclared, which fails with "Touched `src/auth/session.ts`, which was never declared."
+  - Over MCP no tool is added: `change_impact` takes `declare: true` and `amend`, and `review_gate`, `review_verdict` and `convergence_score` take `intent`. Declaring through a tool writes nothing.
+  - With an intent, `--min-convergence` and `--receipt` score against the declared files, and the convergence receipt carries the contract hash. A record whose request, files or amendments were edited afterwards does not verify and fails the gate.
+  - The check is opt-in. Without an intent the gate is unchanged.
+
 ### Changed
 
 - **A request that predicts no owner file is `inconclusive`, with no convergence score.**

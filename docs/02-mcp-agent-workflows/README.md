@@ -345,12 +345,12 @@ Solumbe exposes **14** MCP tools for deterministic repository context and merge 
 | `repo_index`       | Generate local `.solumbe/index.json` files and catalog entries; `dryRun:true` discovers read-only |
 | `repo_search`      | Search cataloged repositories by path, route, import, export, symbol, or domain; omit `query` to list the catalog |
 | `context_pack`     | Build a task-aware context packet                                                     |
-| `change_impact`    | Rank files most likely to own a plain-English change request                          |
+| `change_impact`    | Rank files most likely to own a plain-English change request; `declare: true` freezes them as a scope contract, `amend` adds a file with a reason |
 | `agent_experience` | Score Agent Experience (AX 0–100): changeability, containment, guardrails, clarity    |
 | `model_route`      | Advisory model tier before work starts; asks TypeSafe's Jev only when `TYPESAFE_API_KEY` is set |
 | `convergence_score`| Score intent vs. execution (0–100) with a recomputable receipt                        |
 | `review_context`   | Diff/comment review context (no verdict)                                              |
-| `review_gate`      | PASS/WARN/FAIL merge gate: local without `pr`, GitHub PR gate with `pr`; optionally enforces a convergence floor/receipt |
+| `review_gate`      | PASS/WARN/FAIL merge gate: local without `pr`, GitHub PR gate with `pr`; optionally enforces a convergence floor/receipt, and with `intent` fails a changed file that was never declared |
 | `review_verdict`   | Composite verdict: impact + review_context + review_gate                              |
 | `workspace_report` | Build product-level context across multiple repos                                     |
 | `repo_harness`     | Generate setup, validation, runtime, and context commands                             |

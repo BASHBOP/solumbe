@@ -37,6 +37,7 @@ export const VERDICT_SCHEMA_VERSION = 3;
  * @property {string} [governance]
  * @property {number | string} [minConvergence]
  * @property {string} [receipt]
+ * @property {unknown} [intent]
  * @property {Runner} [runner]
  */
 
@@ -49,6 +50,10 @@ export async function generateReview(repoPath, options = {}) {
   const request = asked || "review this change";
   const wantsPr = Boolean(options.prSelector || options.pr);
   const head = String(options.head ?? "").trim();
+  // A declared intent carries its own request. The placeholder is not one the
+  // caller gave, so it must not be read as a different request than the one
+  // declared.
+  const gateRequest = options.intent && !asked ? undefined : request;
 
   /** @type {any} */
   let passReport;
@@ -58,9 +63,10 @@ export async function generateReview(repoPath, options = {}) {
       head: head || undefined,
       policy: options.policy,
       governance: options.governance,
-      request,
+      request: gateRequest,
       minConvergence: options.minConvergence,
       receipt: options.receipt,
+      intent: options.intent,
     });
   }
 
@@ -85,9 +91,10 @@ export async function generateReview(repoPath, options = {}) {
     passReport = await evaluatePR(repoPath, options.prSelector ?? "", {
       policy: options.policy,
       governance: options.governance,
-      request,
+      request: gateRequest,
       minConvergence: options.minConvergence,
       receipt: options.receipt,
+      intent: options.intent,
       runner: options.runner,
     });
   }

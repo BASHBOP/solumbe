@@ -20,7 +20,7 @@ export const AGENT_WORKFLOW_STAGES = Object.freeze([
   Object.freeze({
     stage: "Before editing a specific change",
     tool: "change_impact",
-    how: "Use its risk flags and suggested tests.",
+    how: "Use its risk flags and suggested tests. To hold the change to its scope, pass declare: true and keep the intent it returns.",
   }),
   Object.freeze({
     stage: "Delegating to another agent",
@@ -35,7 +35,7 @@ export const AGENT_WORKFLOW_STAGES = Object.freeze([
   Object.freeze({
     stage: "Before opening a pull request",
     tool: "review_gate",
-    how: "Include its verdict in the pull request.",
+    how: "Include its verdict in the pull request. Pass the intent declared before the edit, so a changed file that was never declared fails.",
   }),
 ]);
 

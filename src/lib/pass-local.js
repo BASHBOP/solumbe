@@ -17,6 +17,7 @@ import { checkRelease } from "./release-check.js";
 import { aggregateVerdict, normalizeGovernance, normalizeProfile, policyCheck, STATUS } from "./policy.js";
 import { estimateTokens } from "./tokens.js";
 import { captureCommitSubject, captureStagedSubject, generateConvergence, INCONCLUSIVE_BAND } from "./converge.js";
+import { declaredScope, readIntent, verifyIntent } from "./intent.js";
 import { executeValidationPlan } from "./validation-attestation.js";
 
 /**
@@ -26,8 +27,9 @@ import { executeValidationPlan } from "./validation-attestation.js";
  * @property {CheckStatus} status
  * @property {string} summary
  * @property {string[]} [details]
- * @property {number} [convergence]
+ * @property {number | null} [convergence]
  * @property {string} [band]
+ * @property {{ tip: string, request: string, amendments: number, undeclared: string[] }} [contract]
  * @property {Record<string, any>} [receipt]
  * @property {Record<string, any>} [subject]
  * @property {import("./validation-attestation.js").OutputExcerpt[]} [excerpts]
@@ -57,7 +59,7 @@ const MAX_FINDINGS = 40;
 
 /**
  * @param {string} repoPath
- * @param {{ policy?: unknown, governance?: unknown, base?: string, head?: string, request?: string, minConvergence?: number | string, receipt?: string, staged?: boolean, runValidation?: boolean, analyzers?: boolean }} [options]
+ * @param {{ policy?: unknown, governance?: unknown, base?: string, head?: string, request?: string, minConvergence?: number | string, receipt?: string, intent?: unknown, staged?: boolean, runValidation?: boolean, analyzers?: boolean }} [options]
  */
 export function evaluateLocal(repoPath, options = {}) {
   const profile = normalizeProfile(options.policy);
@@ -129,11 +131,14 @@ export function evaluateLocal(repoPath, options = {}) {
     const aiGovernance = aiGovernanceCheck(root);
     if (aiGovernance) checks.push(aiGovernance);
   }
-  const convergence = convergenceCheck(root, base, options.request, options.minConvergence, options.receipt, {
-    staged,
-    subject,
-    subjectError,
-    diffFiles: scope !== "working-tree" ? files : undefined,
+  const exactDiff = { staged, subject, subjectError, diffFiles: scope !== "working-tree" ? files : undefined };
+  const contract = scopeContractCheck(root, base, options.request, options.intent, exactDiff);
+  if (contract) checks.push(contract.check);
+  // A declared intent supplies the request when none was passed, and its
+  // declared files in place of the live prediction.
+  const convergence = convergenceCheck(root, base, options.request ?? contract?.request, options.minConvergence, options.receipt, {
+    ...exactDiff,
+    declared: contract?.declared,
   });
   if (convergence) checks.push(convergence);
   checks.push(localReviewCheck({ staged }));
@@ -159,6 +164,7 @@ export function evaluateLocal(repoPath, options = {}) {
     checks,
   };
   if (subject) data.subject = subject;
+  if (contract?.check.contract) data.contract = contract.check.contract;
   if (convergence?.receipt) {
     data.convergence = convergence.convergence;
     data.band = convergence.band;
@@ -179,7 +185,7 @@ export function evaluateLocal(repoPath, options = {}) {
  * @param {string | undefined} request
  * @param {number | string | undefined} minConvergence
  * @param {string | undefined} receipt
- * @param {{ staged?: boolean, subject?: Record<string, unknown> | null, subjectError?: string, diffFiles?: string[], expectedHead?: string, requireClean?: boolean }} [options]
+ * @param {{ staged?: boolean, subject?: Record<string, unknown> | null, subjectError?: string, diffFiles?: string[], expectedHead?: string, requireClean?: boolean, declared?: { tip: string, owners: string[], related: string[] } }} [options]
  * @returns {Check | null}
  */
 export function convergenceCheck(root, base, request, minConvergence, receipt, options = {}) {
@@ -214,6 +220,7 @@ export function convergenceCheck(root, base, request, minConvergence, receipt, o
       staged: options.staged,
       subject: options.subject ?? undefined,
       diffFiles: options.diffFiles,
+      declared: options.declared,
     });
   } catch (/** @type {any} */ error) {
     return { name: "Convergence", status: STATUS.fail, summary: `Could not compute convergence: ${error.message ?? String(error)}` };
@@ -267,6 +274,108 @@ export function convergenceCheck(root, base, request, minConvergence, receipt, o
     };
   }
   return { name: "Convergence", status: STATUS.pass, summary: "Task and diff satisfy the convergence requirement.", details, ...evidence };
+}
+
+/**
+ * Hold the change against the intent declared before it was made
+ * (src/lib/intent.js). Every changed file must be declared, implied by a
+ * declared file under one of convergence's named rules, or named in an
+ * amendment that gives a reason. Opt-in: with no intent there is no check.
+ *
+ * @param {string} root
+ * @param {string | null} base
+ * @param {string | undefined} request
+ * @param {unknown} intentValue an intent record, its JSON, or a path to it
+ * @param {{ staged?: boolean, subject?: Record<string, unknown> | null, subjectError?: string, diffFiles?: string[], expectedHead?: string, requireClean?: boolean }} [options]
+ * @returns {{ check: Check, declared?: ReturnType<typeof declaredScope>, request?: string } | null}
+ */
+export function scopeContractCheck(root, base, request, intentValue, options = {}) {
+  if (intentValue === undefined || intentValue === null || (typeof intentValue === "string" && !intentValue.trim())) return null;
+  const name = "Scope contract";
+  /** @param {string} summary */
+  const fail = (summary) => ({ check: { name, status: STATUS.fail, summary } });
+
+  let intent;
+  try {
+    intent = readIntent(root, intentValue);
+  } catch (/** @type {any} */ error) {
+    return fail(`Could not read the declared intent: ${error.message ?? String(error)}.`);
+  }
+  const verified = verifyIntent(intent);
+  if (!verified.ok) return fail(`The declared intent does not verify: ${verified.error}.`);
+
+  const task = String(request ?? "").trim();
+  if (task && task !== intent.request) {
+    return fail(`The gate was given a different request than the one declared ("${intent.request}"). Declare the new request, or gate the declared one.`);
+  }
+  if (!base) return fail("A locally available base ref is required to hold the change against its declared intent.");
+  if (options.subjectError) return fail(`Could not identify the exact change subject: ${options.subjectError}`);
+  const checkoutMismatch = exactCheckoutFailure(root, options.expectedHead, options.requireClean);
+  if (checkoutMismatch) return { check: { ...checkoutMismatch, name } };
+
+  const declared = declaredScope(intent, verified.tip);
+  let data;
+  try {
+    data = generateConvergence(intent.request, {
+      path: root,
+      base,
+      staged: options.staged,
+      subject: options.subject ?? undefined,
+      diffFiles: options.diffFiles,
+      declared,
+    });
+  } catch (/** @type {any} */ error) {
+    return fail(`Could not compare the change with its declared intent: ${error.message ?? String(error)}`);
+  }
+
+  const d = data.drivers;
+  /** @type {string[]} */
+  const undeclared = d.missedChangedFiles;
+  const amendedChanged = d.confirmedRelated.filter((/** @type {string} */ file) => declared.amended.has(file));
+  const declaredChanged = d.confirmedDirect.length + d.confirmedRelated.length - amendedChanged.length;
+  const details = [
+    `Request: "${intent.request}"`,
+    `Contract: ${verified.tip}`,
+    `Declared at commit: ${intent.head ?? "none"}`,
+    `Changed files: ${d.changedFiles} (${declaredChanged} declared, ${amendedChanged.length} amended, ${d.inferredRelated.length} implied, ${undeclared.length} undeclared)`,
+    ...amendedChanged.map((/** @type {string} */ file) => `Amended #${declared.amended.get(file)?.seq}: ${file} (${declared.amended.get(file)?.reason})`),
+    ...d.inferredRelated.map(
+      (/** @type {{ file: string, rule: string, anchor: string }} */ entry) => `Implied: ${entry.file} (${entry.rule} of ${entry.anchor})`,
+    ),
+    ...d.riskyDrift.map(
+      (/** @type {{ file: string, flags: string[] }} */ entry) => `Undeclared on a risk-sensitive path: ${entry.file} [${entry.flags.join(", ")}]`,
+    ),
+  ];
+  if (d.unconfirmedCandidates.length) details.push(`Declared, not changed: ${d.unconfirmedCandidates.join(", ")}`);
+  if (intent.dirtyAtDeclaration.length) details.push(`Already changed when the intent was declared: ${intent.dirtyAtDeclaration.join(", ")}`);
+  const evidence = { contract: { tip: verified.tip, request: intent.request, amendments: intent.amendments.length, undeclared } };
+
+  if (undeclared.length > 0) {
+    const one = undeclared.length === 1;
+    const named = undeclared.map((file) => `\`${file}\``).join(", ");
+    return {
+      check: {
+        name,
+        status: STATUS.fail,
+        summary: `Touched ${named}, which ${one ? "was" : "were"} never declared. Amend the intent with the reason ${one ? "it belongs" : "they belong"} (\`solumbe amend <file> --reason "<why>"\`), or take ${one ? "it" : "them"} out of the change.`,
+        details,
+        ...evidence,
+      },
+      declared,
+      request: intent.request,
+    };
+  }
+  return {
+    check: {
+      name,
+      status: STATUS.pass,
+      summary: d.changedFiles > 0 ? "Every changed file is covered by the declared intent." : "No changed file to hold against the declared intent.",
+      details,
+      ...evidence,
+    },
+    declared,
+    request: intent.request,
+  };
 }
 
 /**

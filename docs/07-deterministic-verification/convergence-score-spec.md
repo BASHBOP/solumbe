@@ -317,7 +317,64 @@ outcomes plus output hashes without retaining raw output. A linked local `node_m
 when present, is reported as not attested. The Gate still reports every remaining working-tree
 boundary explicitly.
 
-## 9. Open questions
+## 9. Scope contract
+
+The score above predicts the owner files after the edit, from the tree the edit produced. A
+scope contract makes the prediction before the edit and freezes it, so the gate can say
+"touched `src/auth/session.ts`, which was never declared" rather than "78/100". The score
+stays as secondary evidence.
+
+```bash
+solumbe declare . "update the greeting message"        # writes .solumbe/intent.json
+# ... make the change ...
+solumbe gate . --staged --base HEAD --intent .solumbe/intent.json
+solumbe amend src/auth/session.ts --reason "the greeting now outlives the session"
+```
+
+Over MCP no tool is added: `change_impact` with `declare: true` returns the same record under
+`intent` and writes nothing, `change_impact` with `intent` and `amend: { files, reason }`
+returns the amended record, and `review_gate`, `review_verdict` and `convergence_score` take
+it as `intent` (the record, its JSON, or a path).
+
+**The record** (`solumbe.intent/v1`) holds the request, the commit it was declared at, the
+impact engine version, the declared files (`owners` and `supporting`, the required owners and
+predictable supporting files `solumbe impact` ranks for the request) and
+`dirtyAtDeclaration`, the tracked files that already differed from `HEAD`, so a contract
+written after the edit began says so.
+
+```
+contractHash   = sha256( canonical({ schema, request, head, impactEngineVersion,
+                                     owners, supporting, dirtyAtDeclaration }) )
+amendment.hash = sha256( prevHash + canonical({ seq, files, reason }) )
+```
+
+`prevHash` is the previous amendment's hash, or `contractHash` for the first. Editing the
+request, a declared file, or any amendment's files or reason breaks the chain, and the gate
+refuses a record that does not verify. `declaredAt` and `amendedAt` are outside the hashes:
+declaring the same request on the same tree gives the same contract.
+
+**The `Scope contract` check** runs when the gate is given an intent. Each changed file is one
+of four things:
+
+| Bucket | Meaning |
+| --- | --- |
+| declared | An owner or supporting file in the record. |
+| amended | Named in an amendment, which carries its reason. |
+| implied | Placed in scope by one of the rules in 3.2, anchored on a declared or amended file: its test, a new file beside it, a file whose added lines import it, the changelog entry. |
+| undeclared | None of the above. The check fails and names the file, with its risk flags when it sits on a risk-sensitive path. |
+
+A declared owner that was not changed is listed and does not fail the check. A gate given a
+`--request` other than the declared one fails, since it would be holding the change against a
+different promise. With an intent, `--min-convergence` and `--receipt` measure against the
+declared files too, and the convergence receipt carries the contract hash, so it names the
+contract it was scored under. A request that predicts no owner file declares nothing: every
+file then needs an amendment, which is the explicit way to name files by path.
+
+What the contract does not prove: that the declared files were the right ones, or that the
+code in them is correct. An agent can amend any file in; the amendment and its reason are what
+a reviewer reads.
+
+## 10. Open questions
 
 - **Weights & risk penalties**: defaults are placeholders; calibrate against known-good and
   known-drifted PRs before locking, then move into `config.js`.

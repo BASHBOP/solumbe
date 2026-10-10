@@ -104,6 +104,8 @@ Usage:
   solumbe ax <repo> <query> [--top n] [--out file] [--json]
   solumbe route <repo> <query> [--host id] [--tier-only] [--offline] [--top n] [--out file] [--json]   # recommend a model tier before spending on the task
   solumbe converge <repo> <query> --base <ref> [--head ref | --staged] [--include-untracked] [--top n] [--out file] [--json]
+  solumbe declare <repo> <request> [--top n] [--out file] [--json]                            # before the edit: record the files the request is expected to touch
+  solumbe amend <file...> --reason text [--path repo] [--intent file] [--json]                # add files to the declared intent, with the reason they belong
   solumbe attest [repo] --verdict file --merge sha [--prev sha] [--pr n] [--author name] [--committed iso] [--ledger file] [--json]   # append a hash-chained record of a merged commit
   solumbe attest [repo] --verify [--ledger file] [--json]                                     # recompute the chain; exits 1 if any record was altered
   solumbe calibrate <repo> [--window days] [--min-sample n] [--since date] [--max n] [--json]   # grade risk flags against this repo's own history
@@ -112,10 +114,10 @@ Usage:
   solumbe calibrate <repo> --trial [--log file] [--window days] [--min-sample n] [--out file] [--json]   # grade the shown and withheld arms of SOLUMBE_CHECK_MODE=trial
   solumbe regret <repo> [--window days] [--min-sample n] [--since date] [--max commits] [--offline] [--quiet] [--out file] [--json]   # grade route tiers against this repo's own history
   solumbe regret --rescore run.json [--out file] [--json]                                     # regrade a saved run with the current arithmetic; replays and calls nothing
-  solumbe pass <repo> [--base ref] [--head ref | --staged] [--run-validation] [--policy standard|company|high-risk] [--governance team|solo] [--request text] [--min-convergence n] [--receipt hash|file] [--out file] [--json]
-  solumbe gate [repo | --path repo] [--base ref] [--head ref | --staged] [--run-validation] [--policy standard|company|high-risk] [--governance team|solo] [--request text] [--min-convergence n] [--receipt hash|file] [--out file] [--json]
-  solumbe pass-pr [selector] [--path repo] [--policy x] [--governance x] [--request text] [--min-convergence n] [--receipt hash|file] [--out file] [--json]
-  solumbe review [repo | --path repo] [request] [--request text] [--base ref] [--pr selector] [--policy x] [--governance x] [--min-convergence n] [--receipt hash|file] [--json] [--mermaid]
+  solumbe pass <repo> [--base ref] [--head ref | --staged] [--run-validation] [--policy standard|company|high-risk] [--governance team|solo] [--request text] [--min-convergence n] [--receipt hash|file] [--intent file] [--out file] [--json]
+  solumbe gate [repo | --path repo] [--base ref] [--head ref | --staged] [--run-validation] [--policy standard|company|high-risk] [--governance team|solo] [--request text] [--min-convergence n] [--receipt hash|file] [--intent file] [--out file] [--json]
+  solumbe pass-pr [selector] [--path repo] [--policy x] [--governance x] [--request text] [--min-convergence n] [--receipt hash|file] [--intent file] [--out file] [--json]
+  solumbe review [repo | --path repo] [request] [--request text] [--base ref] [--pr selector] [--policy x] [--governance x] [--min-convergence n] [--receipt hash|file] [--intent file] [--json] [--mermaid]
   solumbe install|i [--global|--link] [--json]
   solumbe install --host all|claude-code,claude-desktop,codex,cursor,vscode,gemini,kimi [--dry-run] [--canvas url] [--json]   # connect the MCP server to agent hosts
   solumbe map <path> [--out file] [--json] [--mermaid]
