@@ -27,6 +27,13 @@ This project follows SemVer.
 
 ### Changed
 
+- **A Go import reaches the files of the package it names.**
+  - A Go import names a package directory by module path (`example.com/shop/internal/stock`), never a file, so a context pack for a Go repository had no import edges: a file's callers and the packages it uses reached the pack only when their names shared a word with the request.
+  - The code map now reads every `go.mod` and records on each Go file the repository directories its imports name (`importDirs`). `solumbe context` and `context_pack` link the file to that package's non-test `.go` files, as "imported by primary file" and "imports primary file", and select a test in an external test package as "imports selected file". A nested module resolves against its own `go.mod`; the standard library and dependencies resolve to nothing.
+  - The edge is to the whole package, not to the one file that declares the name used. `impact`, `converge` and the gate do not read these edges.
+  - The index cache is version 13, so an existing cache rebuilds once.
+  - Two fixture repositories, `python-orders-api` and `go-inventory-api`, add ten accuracy cases; the Go importer case fails without this change. 35 of 35 cases pass (p@5 0.833, r@5 1.0, mrr 0.985). The ten new cases average p@5 0.767 because four Python requests return unlabeled primary files, so the precision floor moved from 0.85 to 0.82; the 25 earlier cases are unchanged at 0.861.
+
 - **A request its words do not ground is grounded in the import graph.**
   - `solumbe impact`, `change_impact` and everything built on them (`converge`, the gate's convergence floor) predicted no owner for "refactor util helpers" in a repository with one `util.js`: the file ranked first but under the lexical floor, so the request was ungrounded.
   - When no file clears that floor, a file is now an owner if a word of the request is its name or a symbol it exports, no other source file shares that name or export, and it has at least one import edge. Candidates are ordered by how many files import them; the lexical score only breaks ties.

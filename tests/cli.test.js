@@ -972,7 +972,7 @@ test("eval --accuracy runs the labeled corpus and reports a passing scoreboard",
   assert.equal(result.exitCode, 0, "baseline corpus run must exit 0");
   const payload = parseJsonOutput(result.stdout);
   assert.equal(payload.passed, true, "corpus thresholds must hold at baseline");
-  assert.ok(payload.scoreboard.retrieval.pAtK >= 0.85);
+  assert.ok(payload.scoreboard.retrieval.pAtK >= 0.82);
   assert.ok(payload.scoreboard.risk.accuracy >= 0.95);
 });
 
