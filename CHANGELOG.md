@@ -9,6 +9,7 @@ This project follows SemVer.
 ### Fixed
 
 - **A user config from before the rename applies again.** The rename moved the user config from `~/.config/otito/config.json` to `~/.config/solumbe/config.json` with no fallback, so settings left in the old file, a telemetry opt-in among them, stopped applying and local usage capture went quiet with nothing reported. When the Solumbe file is missing, the old one is read; both honour `XDG_CONFIG_HOME`. The first `solumbe config set` or `solumbe telemetry` write starts from the old settings, and the old file is left in place. `solumbe doctor` warns while the old file is in use and prints the command that moves it, `solumbe config` names the file it read, and `doctor --json` carries a new `userConfig` field.
+- **`solumbe route` starts one git process instead of six.** AX inspected the whole repository (a file listing plus four git metadata calls) for four fields it reads from `package.json` and the top-level directories, and `route` runs AX on every routed prompt. Where each process launch is slow, the six launches pushed `route` past the `UserPromptSubmit` hook's six-second budget, so the hook gave no tier and logged no decision. AX now reads those fields through `inspectRepoBasics`, which runs no git; its score is unchanged.
 
 ## [4.3.0] - 2026-10-09
 
