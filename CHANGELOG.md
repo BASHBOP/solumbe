@@ -6,6 +6,10 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+## [4.4.0] - 2026-10-10
+
+A check the gate cannot run reports `SKIPPED` instead of `WARN`, so a clean change can return `PASS`, and `solumbe calibrate` grades the gate's verdict against what happened next. No command or field was removed. A check's `status` gains the value `SKIPPED` and the verdict `schemaVersion` moves to 3, so a client that reads `checks[].status` must accept it.
+
 ### Added
 
 - **`solumbe calibrate --gate` grades the gate's verdict and the convergence band against history.**

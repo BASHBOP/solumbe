@@ -4,7 +4,7 @@
 
 > For teams that want any coding agent to produce evidence a human can trust before merge.
 
-**v4.3.0** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
+**v4.4.0** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
 
 Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep -->
 
@@ -20,6 +20,16 @@ Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep
 ---
 
 ## What's New
+
+!!! tip "v4.4.0 published (2026-10-10)"
+    A check the gate cannot run reports `SKIPPED` instead of `WARN`, so a clean change can return `PASS`, and `solumbe calibrate` grades the gate's verdict against what happened next. No command or field was removed.
+
+    - Local `Review state`, CI-only `Compliance controls`, and a review decision, CODEOWNERS file or branch protection that GitHub did not return report `SKIPPED` and never move the verdict. The `company` and `high-risk` profiles still require them. The verdict `schemaVersion` is now 3 for the new check status.
+    - `Release discipline` fires only when a `version` field changes, read from the exact commit, staged tree or PR head, and `Secret safety` stops flagging templates and test placeholders. Known secret formats still fail everywhere.
+    - `solumbe calibrate <repo> --gate` replays the real gate and convergence score over history and reports the repair rate for PASS, WARN and FAIL, per check and per convergence band. On this repository PASS changes were repaired 16.0% of the time and WARN 36.7%, with overlapping intervals.
+    - `solumbe calibrate <repo> --follow-through` reads the local usage log for how often a warning had cleared on the next run, and `SOLUMBE_CHECK_MODE=trial` withholds the MCP `convergence_score` and local `review_gate` results from a control arm so `calibrate --trial` can grade whether showing them reduces repairs. A blocking FAIL is always shown.
+
+    [npm v4.4.0](https://www.npmjs.com/package/@bashbop/solumbe/v/4.4.0) · [GitHub Release](https://github.com/BASHBOP/solumbe/releases/tag/v4.4.0) · [MCP Registry](https://registry.modelcontextprotocol.io/?q=io.github.BASHBOP%2Fsolumbe)
 
 !!! tip "v4.3.0 published (2026-10-10)"
     The MCP server tells every host which tool to call at each stage of a task, and convergence stops calling a change's own tests, changelog, fixtures and docs drift. No command, field or schema was removed.
@@ -237,7 +247,7 @@ flowchart LR
 === "Install"
 
     ```bash
-    npm install -g @bashbop/solumbe@4.3.0
+    npm install -g @bashbop/solumbe@4.4.0
     solumbe doctor
     solumbe context "review this change" --path .
     ```
@@ -245,7 +255,7 @@ flowchart LR
 === "No Global Install"
 
     ```bash
-    npx -y @bashbop/solumbe@4.3.0 doctor
+    npx -y @bashbop/solumbe@4.4.0 doctor
     ```
 
 === "Source Checkout"
