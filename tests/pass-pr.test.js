@@ -702,3 +702,91 @@ test("formatPassPrTerminal and formatPassPrMarkdown render the verdict and check
   assert.match(markdown, /## Checks/);
   assert.match(markdown, /Branch protection/);
 });
+
+// --- Release discipline in PR mode reads the PR's own commits ---
+
+function releaseRepo(prefix, extra = {}) {
+  const root = gitInit(prefix, {
+    ".gitignore": ".solumbe/\n",
+    "package.json": JSON.stringify({ name: "fixture", version: "1.0.0", scripts: { test: "node --test" }, dependencies: { left: "1.0.0" } }),
+    "src/index.ts": "export const greeting = 'hi';\n",
+    ...extra,
+  });
+  const baseSha = git(root, "rev-parse", "HEAD");
+  git(root, "checkout", "-q", "-b", "feature");
+  return { root, baseSha };
+}
+
+function commitFiles(root, files, message) {
+  for (const [relative, content] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(root, relative)), { recursive: true });
+    fs.writeFileSync(path.join(root, relative), content);
+  }
+  git(root, "add", "-A");
+  git(root, "commit", "-q", "-m", message);
+  return git(root, "rev-parse", "HEAD");
+}
+
+function prRunner(baseSha, headSha, headRefName, files) {
+  return fakeRunner({
+    ...baselineCanned,
+    "pr view": JSON.stringify({
+      ...JSON.parse(baselineCanned["pr view"]),
+      baseRefOid: baseSha,
+      headRefOid: headSha,
+      headRefName,
+      changedFiles: files.length,
+      files: files.map((file) => ({ path: file })),
+    }),
+  });
+}
+
+test("evaluatePR judges Release discipline by the PR head commit, not by a later checkout", async () => {
+  const { root, baseSha } = releaseRepo("release-head");
+  const headSha = commitFiles(
+    root,
+    { "package.json": JSON.stringify({ name: "fixture", version: "1.0.0", scripts: { test: "node --test" }, dependencies: { left: "1.1.0" } }) },
+    "bump a dependency",
+  );
+  // The checkout has moved past the PR head onto a release.
+  commitFiles(root, { "package.json": JSON.stringify({ name: "fixture", version: "3.0.0" }) }, "release 3.0.0");
+
+  const data = await evaluatePR(root, "42", { runner: prRunner(baseSha, headSha, "feature", ["package.json"]) });
+  const release = data.checks.find((check) => check.name === "Release discipline");
+  assert.equal(release.status, "PASS", release.summary);
+  assert.match(release.summary, /project version is unchanged/);
+});
+
+test("evaluatePR flags a hand-made bump in a Release Please repository and passes the release PR", async () => {
+  const { root, baseSha } = releaseRepo("release-please", { "release-please-config.json": JSON.stringify({ packages: { ".": {} } }) });
+  const headSha = commitFiles(
+    root,
+    { "package.json": JSON.stringify({ name: "fixture", version: "1.1.0", scripts: { test: "node --test" }, dependencies: { left: "1.0.0" } }) },
+    "bump the version",
+  );
+
+  const manual = await evaluatePR(root, "42", { runner: prRunner(baseSha, headSha, "feature", ["package.json"]) });
+  const finding = manual.checks.find((check) => check.name === "Release discipline");
+  assert.equal(finding.status, "FAIL");
+  assert.match(finding.summary, /bumped by hand in a Release Please repository/);
+  assert.equal(manual.verdict, "FAIL");
+
+  const release = await evaluatePR(root, "42", { runner: prRunner(baseSha, headSha, "release-please--branches--main", ["package.json"]) });
+  assert.equal(release.checks.find((check) => check.name === "Release discipline").status, "PASS");
+});
+
+test("PR reports render a SKIPPED check without changing the verdict", async () => {
+  const root = gitInit("skipped-render", { "package.json": JSON.stringify({ name: "fixture", version: "1.0.0", scripts: { test: "node --test" } }) });
+  const data = await evaluatePR(root, "42", { runner: fakeRunner(baselineCanned) });
+  const withSkipped = { ...data, checks: [...data.checks, { name: "Compliance controls", status: "SKIPPED", summary: "Not checked here." }] };
+
+  const terminal = formatPassPrTerminal(withSkipped, (opts) => createRenderer({ ...opts, emoji: false, width: 80 }));
+  assert.match(terminal, /Compliance controls/);
+  assert.match(terminal, /Not checked here/);
+  assert.match(formatPassPrMarkdown(withSkipped), /### SKIPPED {2}· {2}Compliance controls/);
+  assert.equal(data.verdict, aggregateVerdictOf(withSkipped.checks));
+});
+
+function aggregateVerdictOf(checks) {
+  return checks.some((check) => check.status === "FAIL") ? "FAIL" : checks.some((check) => check.status === "WARN") ? "WARN" : "PASS";
+}

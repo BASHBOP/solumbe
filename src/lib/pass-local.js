@@ -23,7 +23,7 @@ import { executeValidationPlan } from "./validation-attestation.js";
  * A single check produced by the local/PR merge-readiness gates.
  * @typedef {Object} Check
  * @property {string} name
- * @property {Verdict} status
+ * @property {CheckStatus} status
  * @property {string} summary
  * @property {string[]} [details]
  * @property {number} [convergence]
@@ -36,6 +36,12 @@ import { executeValidationPlan } from "./validation-attestation.js";
 /**
  * Rolled-up gate result. Mirrors the STATUS values from policy.js.
  * @typedef {"PASS" | "WARN" | "FAIL"} Verdict
+ */
+
+/**
+ * Status of one check. SKIPPED means the check cannot be evaluated in this
+ * mode (a local run has no PR to review); it never changes the verdict.
+ * @typedef {Verdict | "SKIPPED"} CheckStatus
  */
 
 const passEngineVersion = 2;
@@ -90,6 +96,10 @@ export function evaluateLocal(repoPath, options = {}) {
   const subjectContent = subject?.treeSha
     ? treeContentReader(root, String(subject.treeSha), files)
     : (/** @type {string} */ file) => readWorkingTreeFile(root, file);
+  // Release discipline reads the version from the exact subject too. Reading it
+  // from the working tree compared a historic base against whatever the
+  // checkout contained and flagged every package.json edit as a version bump.
+  const releaseHead = subject?.treeSha ? (/** @type {string} */ file) => gitShowContent(root, String(subject.treeSha), file) : undefined;
   const validationExecution = options.runValidation ? executeValidationPlan({ root, subject }) : null;
   const checks = [
     changedFilesCheck(files),
@@ -97,7 +107,12 @@ export function evaluateLocal(repoPath, options = {}) {
     secretCheck(files, subjectContent),
     riskCheck(files, scope),
     ...migrationCheck(files, subjectContent),
-    checkRelease(root, files, { baseContent, governance }),
+    checkRelease(root, files, {
+      baseContent,
+      headContent: releaseHead,
+      governance,
+      headRefName: scope === "commit" ? undefined : currentBranch(root),
+    }),
     validationCommandsCheck(root),
     ...(validationExecution ? [{ name: "Validation execution", ...validationExecution }] : []),
   ];
@@ -289,7 +304,7 @@ function changeSubjectCheck(scope, subject, error) {
       `Tree: ${subject.treeSha}`,
       commit ? `Head: ${subject.headSha}` : `Parent: ${subject.parentSha}`,
       `Base: ${subject.baseSha}`,
-      "Release, validation-command, and optional analyzer checks still inspect the working tree and are not bound by this convergence receipt.",
+      "Validation-command and optional analyzer checks still inspect the working tree and are not bound by this convergence receipt.",
     ],
   };
 }
@@ -420,6 +435,17 @@ function runGit(cwd, args) {
 export function gitShowContent(cwd, base, file) {
   const result = runCommand("git", ["show", `${base}:${file}`], { cwd });
   return result.ok ? result.stdout : null;
+}
+
+/**
+ * The checked-out branch, or undefined when HEAD is detached or unreadable.
+ * @param {string} root
+ * @returns {string | undefined}
+ */
+function currentBranch(root) {
+  const result = runCommand("git", ["symbolic-ref", "--quiet", "--short", "HEAD"], { cwd: root });
+  const name = result.ok ? result.stdout.trim() : "";
+  return name || undefined;
 }
 
 /** @param {string} root */
@@ -748,10 +774,12 @@ function localReviewCheck(options) {
       summary: "Staged changes are ready for a local commit; GitHub review controls are verified after a PR exists.",
     };
   }
+  // Not evaluated is not the same as unsafe: a local run has no PR, so there is
+  // nothing to approve yet. Warning here made every clean local change WARN.
   return {
     name: "Review state",
-    status: STATUS.warn,
-    summary: "Local mode cannot verify approvals, CODEOWNERS, status checks, or unresolved conversations yet.",
+    status: STATUS.skipped,
+    summary: "Not checked locally: approvals, CODEOWNERS, status checks, and unresolved conversations are verified once a PR exists.",
   };
 }
 
@@ -821,14 +849,15 @@ function complianceControlsCheck(root) {
   if (!bin) {
     const repair = `Repair command: npm install --save-dev ${BOUNCER_PACKAGE}`;
     // A repository may run bouncer only in CI (npx, no devDependency). Say where
-    // instead of reporting a broken install, but keep the warning: the gate reads
-    // the workflow and never runs npx, so it has no evidence for this change.
+    // instead of reporting a broken install. The gate reads the workflow and
+    // never runs npx, so it has no evidence for this change either way: that is
+    // SKIPPED, not a warning, and CI remains the control that decides.
     const ci = findWorkflowReference(root, BOUNCER_PACKAGE);
     if (ci) {
       return {
         name: "Compliance controls",
-        status: STATUS.warn,
-        summary: `bouncer runs in CI (${ci.file}) but not locally, so compliance controls were not evaluated for this change; the gate does not run npx or install packages.`,
+        status: STATUS.skipped,
+        summary: `Not checked locally: bouncer runs in CI (${ci.file}), and the gate does not run npx or install packages.`,
         details: [cfg, `CI workflow: ${ci.file}:${ci.line} · ${ci.text}`, repair],
       };
     }
@@ -1149,6 +1178,7 @@ const STATUS_TO_RENDER = {
   PASS: "pass",
   WARN: "warn",
   FAIL: "fail",
+  SKIPPED: "info",
 };
 
 /**
@@ -1268,11 +1298,15 @@ function nextStepFor(data, blocked, warning) {
   }
   if (warning) {
     if (warning.name === "Risk review") return "record the maintainer decision before merge";
+    // This engine no longer warns here (local mode reports SKIPPED), but reports
+    // saved by an earlier version still carry the warning.
     if (warning.name === "Review state") return "verify the missing review evidence";
     return "review the warning before merge";
   }
   if (data.changedFiles.length === 0) return data.scope === "staged" ? "stage changes before committing" : "no changes vs base";
-  return data.scope === "staged" ? "ready to commit" : "ready to merge";
+  if (data.scope === "staged") return "ready to commit";
+  // A clean local run proves the local checks, not the PR controls it skipped.
+  return data.checks.some((entry) => entry.status === STATUS.skipped) ? "ready for a PR; skipped checks run there" : "ready to merge";
 }
 
 /**

@@ -6,6 +6,27 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+### Changed
+
+- **A check that cannot run in the current mode is `SKIPPED`, not `WARN`, and never moves the verdict.**
+  - Local `review_gate` reported `Review state` as a `WARN` on every run, and `Compliance controls` as a `WARN` whenever bouncer runs only in CI. A clean local change could never return `PASS`.
+  - Both now report `status: "SKIPPED"` with a "Not checked locally" summary. `verdict` is still `PASS`, `WARN` or `FAIL`; only a check's `status` can be `SKIPPED`, so a client that reads `checks[].status` must accept the new value.
+  - A configured bouncer whose binary cannot be found stays a `WARN`: that install is actionable. Staged mode still reports `Review state` as `PASS`.
+  - The terminal, markdown, `review_verdict`, `solumbe pass-pr` and herdr trust-pane reports show a skipped check on its own line (info, not warning). A clean local run now ends "ready for a PR; skipped checks run there".
+  - `solumbe eval --gate-effectiveness` accepts `SKIPPED` in `expectedChecks`.
+
+### Fixed
+
+- **`Release discipline` fires only when a `version` field changes.**
+  - It read the version from the working tree and compared it with the base, so under `--head`, `--staged` or a PR whose checkout had moved on, any `package.json` edit looked like a version bump. 20 of the 22 `FAIL`s in a 495-PR backtest were dependency edits.
+  - It now reads the version from the exact subject: the head commit tree, the staged index tree, or the PR head commit. It falls back to the working tree only when that copy is unavailable.
+  - A `package.json` with no `version`, and a version mismatch or non-SemVer value the change did not introduce, no longer trip it.
+  - In a Release Please repository (a `release-please-config.json` or `.release-please-manifest.json` at the base), a version change outside a release PR is reported as "Version bumped by hand in a Release Please repository", not as a missing changelog entry. A release PR is recognised by its `release-please--*` branch or by a change to the manifest.
+- **`Secret safety` stops flagging placeholders.**
+  - `.env.production.local.example` and every other `*.example`, `*.sample`, `*.template` or `*.dist` file are templates, not secret files. Only `.env.example` and its three siblings were exempt before.
+  - The heuristic `hardcoded credential` rule no longer runs on test files (`*.spec.*`, `*.test.*`, `__tests__/`), documentation, fixture directories or templates, where `accessToken: 'valid-access-token'` is a made-up value.
+  - Known secret formats (AWS, Stripe live, GitHub, Slack and the rest) still fail in every file, test files included.
+
 ## [4.3.0] - 2026-10-10
 
 The MCP server tells every host which tool to call at each stage of a task, and `convergence_score` stops calling a change's own tests, changelog, fixtures and docs drift. It also follows `@/` alias imports and matches the joined spelling of a camelCase product name (`OpenPanel` → `lib/openpanel.ts`). No command, field or schema was removed. Convergence receipts move to engine `0.5.0`, and the index cache moves to version 12, so existing indexes rebuild once.

@@ -137,7 +137,7 @@ import { runCommand } from "./tools.js";
 /**
  * @typedef {object} GateCheckExpectation
  * @property {string} name
- * @property {"PASS"|"WARN"|"FAIL"} status
+ * @property {"PASS"|"WARN"|"FAIL"|"SKIPPED"} status
  * @property {string} [summaryIncludes]
  * @property {string} [detailsInclude]
  */
@@ -145,7 +145,7 @@ import { runCommand } from "./tools.js";
 /**
  * @typedef {object} ScoredGateCheck
  * @property {string} name
- * @property {"PASS"|"WARN"|"FAIL"} expectedStatus
+ * @property {"PASS"|"WARN"|"FAIL"|"SKIPPED"} expectedStatus
  * @property {string|undefined} actualStatus
  * @property {string|undefined} summary
  * @property {boolean} pass
@@ -858,7 +858,7 @@ function validateGateEffectivenessCase(testCase) {
     throw new Error(`gateEffectiveness case "${testCase.name}" needs a non-empty expectedChecks[] array`);
   }
   for (const expected of testCase.expectedChecks) {
-    if (!expected?.name || !["PASS", "WARN", "FAIL"].includes(expected.status)) {
+    if (!expected?.name || !["PASS", "WARN", "FAIL", "SKIPPED"].includes(expected.status)) {
       throw new Error(`gateEffectiveness case "${testCase.name}" has an invalid check expectation`);
     }
   }

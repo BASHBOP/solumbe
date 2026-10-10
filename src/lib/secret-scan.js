@@ -12,8 +12,16 @@
 // value assigned to an obviously secret-bearing name. Anything that looks like
 // a placeholder, an environment lookup, or a template expression is ignored.
 //
+// Test files, documentation, fixtures and committed templates hold made-up
+// values by convention (`accessToken: 'valid-access-token'`), so the heuristic
+// rule stands down there. Vendor-format rules still run everywhere: a real
+// `sk_live_` key is a leak in a spec file too.
+//
 // Escape hatch: put `solumbe:allow-secret` on the matching line (or the line
 // above it) to silence a reviewed false positive.
+
+import { isTestFilePath } from "./code-map/classify.js";
+import { isDocPath, isFixturePath, isTemplatePath } from "./risk-paths.js";
 
 /** Marker that suppresses a finding on the line it appears on, or the next line. */
 export const ALLOW_MARKER = "solumbe:allow-secret";
@@ -65,6 +73,7 @@ const INDIRECTION_PATTERNS = [/process\s*\.\s*env/i, /import\.meta\.env/i, /os\.
  * @property {string} label
  * @property {RegExp} pattern
  * @property {"fail" | "warn"} severity
+ * @property {boolean} [heuristic] matches a shape, not an issuer format; skipped in test, doc, fixture and template files
  * @property {(match: RegExpMatchArray) => boolean} [accept] extra validation on a raw match
  */
 
@@ -152,6 +161,7 @@ export const SECRET_CONTENT_RULES = [
     pattern:
       /\b(?:password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|private[_-]?key)\b\s*[:=]\s*["'`]([^"'`\s\n]{16,})["'`]/gi,
     severity: "warn",
+    heuristic: true,
     accept: (match) => shannonEntropy(match[1] ?? "") >= 3.6,
   },
 ];
@@ -184,6 +194,7 @@ export function scanSecretContent(text, options = {}) {
   if (text.includes("\0")) return findings;
 
   const lines = text.split(/\r?\n/, MAX_SCAN_LINES);
+  const rules = isPlaceholderValuePath(file) ? SECRET_CONTENT_RULES.filter((rule) => !rule.heuristic) : SECRET_CONTENT_RULES;
   /** @type {Set<string>} */
   const seen = new Set();
   for (let index = 0; index < lines.length; index += 1) {
@@ -191,7 +202,7 @@ export function scanSecretContent(text, options = {}) {
     if (!line || line.length > MAX_LINE_LENGTH) continue;
     if (isAllowed(line) || isAllowed(lines[index - 1] ?? "")) continue;
 
-    for (const rule of SECRET_CONTENT_RULES) {
+    for (const rule of rules) {
       rule.pattern.lastIndex = 0;
       for (const match of line.matchAll(rule.pattern)) {
         const value = match[1] ?? match[0];
@@ -206,6 +217,16 @@ export function scanSecretContent(text, options = {}) {
     }
   }
   return findings;
+}
+
+/**
+ * Files whose credential-shaped values are placeholders by convention.
+ * @param {string} file
+ * @returns {boolean}
+ */
+function isPlaceholderValuePath(file) {
+  if (!file) return false;
+  return isTestFilePath(file) || isDocPath(file) || isFixturePath(file) || isTemplatePath(file);
 }
 
 /** @param {string} line */

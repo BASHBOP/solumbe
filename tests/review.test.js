@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { formatReviewTerminal, generateReview } from "../src/lib/review.js";
+import { formatReviewMermaid, formatReviewTerminal, generateReview } from "../src/lib/review.js";
 import { createRenderer } from "../src/lib/render/fancy.js";
 
 function gitInit(prefix, files) {
@@ -185,4 +185,26 @@ test("an attestation built from a companion verdict records schema 2 and only th
   );
   assert.ok(!JSON.stringify(record).includes("paystack"), "companion leads never enter the ledger record");
   fs.rmSync(parent, { recursive: true });
+});
+
+test("review_verdict keeps a clean local change at PASS and lists the SKIPPED Review state apart from warnings", async () => {
+  const root = gitInit("skipped", {
+    "package.json": JSON.stringify({ name: "review-fixture", version: "1.0.0", scripts: { test: "node --test" } }),
+    "package-lock.json": JSON.stringify({ name: "review-fixture", version: "1.0.0", lockfileVersion: 3 }),
+    "src/index.ts": "export const ok = 1;\n",
+  });
+  fs.writeFileSync(path.join(root, "src/index.ts"), "export const ok = 2;\n");
+  const { data } = await generateReview(root, { request: "tweak something", base: "HEAD" });
+
+  assert.equal(data.verdict, "PASS");
+  assert.equal(data.pass.verdict, "PASS");
+  assert.equal(data.pass.checks.find((check) => check.name === "Review state").status, "SKIPPED");
+
+  const plain = formatReviewTerminal(data, (opts) => createRenderer({ ...opts, emoji: false }));
+  assert.match(plain, /Not checked here\n\s+\S+ Review state: Not checked locally/);
+  assert.doesNotMatch(plain, /Warnings/);
+
+  const mermaid = formatReviewMermaid(data);
+  assert.match(mermaid, /➖ Review state/);
+  assert.match(mermaid, /VERDICT: PASS/);
 });

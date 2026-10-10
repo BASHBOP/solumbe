@@ -77,6 +77,7 @@ import { runCommand } from "./tools.js";
  * @property {string} [url]
  * @property {string} [baseRefName]
  * @property {string} [baseRefOid]
+ * @property {string} [headRefName]
  * @property {string} [headRefOid]
  * @property {number} [changedFiles]
  * @property {string} [state] OPEN, CLOSED or MERGED
@@ -130,7 +131,13 @@ export async function evaluatePR(repoPath, selector, options = {}) {
     secretCheck(files, prHeadContent),
     riskCheck(files),
     ...migrationCheck(files, prHeadContent),
-    checkRelease(root, files, { baseContent: prBaseContent(root, pr.baseRefOid, pr.baseRefName), governance }),
+    checkRelease(root, files, {
+      baseContent: prBaseContent(root, pr.baseRefOid, pr.baseRefName),
+      // The PR's own head blobs, when fetched; the checkout is read otherwise.
+      headContent: prHeadContent,
+      governance,
+      headRefName: pr.headRefName,
+    }),
     reviewDecisionCheck(pr.reviewDecision, governance),
     codeownersCheckPR(root, files, pr.reviews ?? [], runner, governance),
     unresolvedConversationsCheck(root, pr.number, runner),
@@ -237,7 +244,7 @@ function viewPR(root, selector, runner) {
   if (selector && String(selector).trim()) args.push(String(selector));
   args.push(
     "--json",
-    "number,title,url,state,mergedAt,baseRefName,baseRefOid,headRefOid,changedFiles,isDraft,mergeStateStatus,mergeable,reviewDecision,files,reviews,statusCheckRollup",
+    "number,title,url,state,mergedAt,baseRefName,baseRefOid,headRefName,headRefOid,changedFiles,isDraft,mergeStateStatus,mergeable,reviewDecision,files,reviews,statusCheckRollup",
   );
   const out = runner.run(root, args);
   try {
@@ -933,7 +940,7 @@ function isNotFound(error) {
 
 // Renderers reuse the pass-local layout, just with a richer header.
 /** @type {Record<string, string>} */
-const STATUS_TO_RENDER = { PASS: "pass", WARN: "warn", FAIL: "fail" };
+const STATUS_TO_RENDER = { PASS: "pass", WARN: "warn", FAIL: "fail", SKIPPED: "info" };
 
 /**
  * @param {PassPrData} data

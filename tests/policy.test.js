@@ -24,6 +24,24 @@ test("aggregateVerdict prefers FAIL over WARN over PASS", () => {
   assert.equal(aggregateVerdict([{ status: STATUS.warn }, { status: STATUS.fail }]), STATUS.fail);
 });
 
+test("aggregateVerdict ignores SKIPPED checks", () => {
+  assert.equal(aggregateVerdict([{ status: STATUS.pass }, { status: STATUS.skipped }]), STATUS.pass);
+  assert.equal(aggregateVerdict([{ status: STATUS.skipped }, { status: STATUS.skipped }]), STATUS.pass);
+  assert.equal(aggregateVerdict([{ status: STATUS.skipped }, { status: STATUS.warn }]), STATUS.warn);
+  assert.equal(aggregateVerdict([{ status: STATUS.skipped }, { status: STATUS.fail }]), STATUS.fail);
+});
+
+test("company policy does not accept a SKIPPED required control as evidence", () => {
+  const checks = ["Review decision", "CODEOWNERS", "Review conversations", "Branch protection", "Status checks"].map((name) => ({
+    name,
+    status: name === "CODEOWNERS" ? STATUS.skipped : STATUS.pass,
+    summary: "",
+  }));
+  const result = policyCheck({ profile: PROFILES.company, governance: "team", files: [], checks, remote: true });
+  assert.equal(result.status, STATUS.fail);
+  assert.ok(result.details.some((detail) => detail.startsWith("CODEOWNERS must be PASS, got SKIPPED")));
+});
+
 test("standard policyCheck always passes", () => {
   const result = policyCheck({ profile: PROFILES.standard, governance: "team", files: [], checks: [], remote: false });
   assert.equal(result.status, STATUS.pass);

@@ -118,3 +118,39 @@ test("trust status presents an accessible terminal hierarchy with optional brand
   assert.match(error, /REVIEW UNAVAILABLE/);
   assert.match(error, /Repository not found/);
 });
+
+test("trust status lists a SKIPPED check as not checked here, not as needing attention", () => {
+  const output = formatTrustSummary(
+    {
+      verdict: "PASS",
+      confidence: 85,
+      prReviewSummary: { changedFiles: 1, additions: 2, deletions: 1, riskLevel: "low" },
+      pass: {
+        checks: [
+          { status: "SKIPPED", name: "Review state", summary: "Not checked locally: reviews are verified once a PR exists." },
+          { status: "WARN", name: "Dependency audit", summary: "No lockfile." },
+        ],
+      },
+    },
+    "/tmp/repo",
+    "origin/main",
+  );
+  assert.match(output, /NEEDS ATTENTION · 1/);
+  assert.match(output, /NOT CHECKED HERE · 1/);
+  const attention = output.slice(output.indexOf("NEEDS ATTENTION"), output.indexOf("NOT CHECKED HERE"));
+  assert.match(attention, /Dependency audit/);
+  assert.doesNotMatch(attention, /Review state/);
+  assert.match(output.slice(output.indexOf("NOT CHECKED HERE")), /Review state/);
+
+  const clean = formatTrustSummary(
+    {
+      verdict: "PASS",
+      confidence: 90,
+      prReviewSummary: { changedFiles: 1, additions: 2, deletions: 1, riskLevel: "low" },
+      pass: { checks: [{ status: "SKIPPED", name: "Review state", summary: "Not checked locally." }] },
+    },
+    "/tmp/repo",
+    "origin/main",
+  );
+  assert.doesNotMatch(clean, /NEEDS ATTENTION/);
+});
