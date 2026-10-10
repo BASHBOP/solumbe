@@ -71,6 +71,23 @@ $ solumbe gate . --staged --base origin/main --request "add refund handling to c
 
 The convergence score is the part a model cannot grade for itself: it compares the stated intent against the files the diff actually changed, and produces a receipt bound to the exact base, parent, and staged-tree identity.
 
+**Hold the change to what was declared.** Record the files a request is expected to touch before the edit, and the gate names any file that was never declared:
+
+```console
+$ solumbe declare . "add refund handling to checkout"
+$ # ... the agent edits ...
+$ solumbe gate . --staged --base HEAD --intent .solumbe/intent.json
+
+  [FAIL]  Scope contract         Touched `src/auth/session.ts`, which was never declared. Amend the intent with the reason it belongs (`solumbe amend <file> --reason "<why>"`), or take it out of the change.
+     |- Request: "add refund handling to checkout"
+     |- Contract: fe655c2af2b31b7e3edec6aedd248b379235811d1228c829f87ff73796ace487
+     |- Changed files: 3 (1 declared, 0 amended, 1 implied, 1 undeclared)
+     |- Implied: tests/checkout.service.test.ts (owner-test of src/payment/checkout.service.ts)
+     |- Undeclared on a risk-sensitive path: src/auth/session.ts [auth/security]
+```
+
+An amendment adds a file with its reason, hashed onto the contract, so a reviewer reads why the scope grew. Over MCP it is `change_impact` with `declare: true`, and `review_gate` with `intent`.
+
 ## The core
 
 Three commands are the product. They call no model, open no socket, and read nothing outside the repository.

@@ -8,6 +8,7 @@ import { discoverRepositories, indexRepositories, listCatalog, searchCatalog } f
 import { generateContextPack } from "./context-engine.js";
 import { readContextPack } from "./context-read.js";
 import { generateImpact } from "./impact.js";
+import { amendIntent, declaredScope, formatIntentMarkdown, intentFromImpact, intentRoot, readIntent, verifyIntent } from "./intent.js";
 import { generateAxScore, formatAxMarkdown } from "./ax.js";
 import { generateConvergence, formatConvergenceMarkdown } from "./converge.js";
 import { generateRoute, hostModelFor, TIERS } from "./model-route.js";
@@ -209,6 +210,24 @@ export const tools = [
           type: "boolean",
           description: "With diffBase, also count untracked, non-ignored files as changed. Defaults to true; pass false to review only tracked changes.",
         },
+        declare: {
+          type: "boolean",
+          description:
+            "Also freeze the predicted owner and supporting files as a declared intent (a scope contract) and return it under intent. Call it before editing, then pass that record to review_gate as intent: a changed file that was never declared fails the gate. Nothing is written.",
+        },
+        intent: {
+          description: "With amend: the declared intent to add files to (the record, its JSON, or a path to it). Its request must be the query.",
+        },
+        amend: {
+          type: "object",
+          description:
+            "Add files to the declared intent passed as intent, with the reason they belong to the change. Returns the amended record under intent without ranking anything; nothing is written.",
+          properties: {
+            files: { type: "array", items: { type: "string" }, description: "Repository-relative paths to add." },
+            reason: { type: "string", description: "Why these files belong to the change." },
+          },
+          required: ["files", "reason"],
+        },
         includeMarkdown: { type: "boolean", description: "Return a compact human-readable markdown report instead of the full JSON. Defaults to false." },
       },
       required: ["query"],
@@ -287,6 +306,10 @@ export const tools = [
           description:
             "Working-tree mode only: also score untracked, non-ignored files. Defaults to false; untracked files are otherwise listed under untracked and not scored.",
         },
+        intent: {
+          description:
+            "Optional declared intent (from change_impact with declare: the record, its JSON, or a path to it). The diff is then scored against the files declared before the edit instead of a live prediction, and the receipt names the contract.",
+        },
         includeMarkdown: { type: "boolean", description: "Return a compact human-readable markdown report instead of the full JSON. Defaults to false." },
       },
       required: ["query", "base"],
@@ -334,6 +357,10 @@ export const tools = [
           description:
             "Optional convergence inputs hash, JSON object, or path to a JSON receipt artifact. Exact-subject v2 receipts require the full hash; legacy v1 display IDs remain accepted. A receipt bound to a head commit or the staged index verifies only in the same mode (head / staged); a JSON receipt names the mode it needs when they differ.",
         },
+        intent: {
+          description:
+            "Optional declared intent (from change_impact with declare: the record, its JSON, or a path to it). Adds a Scope contract check that fails when a changed file was never declared, implied by a declared file, or named in an amendment.",
+        },
       },
     },
   },
@@ -371,6 +398,10 @@ export const tools = [
           type: "string",
           description:
             "Optional convergence inputs hash, JSON object, or path to a JSON receipt artifact. Exact-subject v2 receipts require the full hash; legacy v1 display IDs remain accepted.",
+        },
+        intent: {
+          description:
+            "Optional declared intent (from change_impact with declare: the record, its JSON, or a path to it). Adds a Scope contract check that fails when a changed file was never declared, implied by a declared file, or named in an amendment.",
         },
       },
     },
@@ -744,13 +775,27 @@ async function dispatchTool(name, args) {
       return args.includeMarkdown ? result : result.data;
     }
     case "change_impact": {
-      const result = generateImpact(requiredString(args.query, "query"), {
+      const query = requiredString(args.query, "query");
+      if (args.amend !== undefined && args.amend !== null) {
+        // An amendment adds named files to a contract that already exists, so
+        // nothing is ranked again.
+        const intent = readIntent(intentRoot(args.path ?? "."), args.intent);
+        if (intent.request !== query) throw new Error(`the intent was declared for "${intent.request}", not for this query`);
+        const amended = amendIntent(intent, args.amend.files, args.amend.reason);
+        return args.includeMarkdown ? { data: { ok: true, intent: amended }, markdown: formatIntentMarkdown(amended) } : { ok: true, intent: amended };
+      }
+      const result = generateImpact(query, {
         path: args.path ?? ".",
         top: args.top,
         diffBase: args.diffBase,
         includeUntracked: args.includeUntracked,
         companions: true,
       });
+      if (args.declare) {
+        const intent = intentFromImpact(result.data);
+        /** @type {any} */ (result.data).intent = intent;
+        if (args.includeMarkdown) return { data: result.data, markdown: `${result.markdown}\n\n${formatIntentMarkdown(intent)}` };
+      }
       return args.includeMarkdown ? result : result.data;
     }
     case "agent_experience": {
@@ -778,13 +823,15 @@ async function dispatchTool(name, args) {
       return args.includeMarkdown ? { data, markdown: formatRouteMarkdown(data) } : data;
     }
     case "convergence_score": {
-      const data = generateConvergence(requiredString(args.query, "query"), {
+      const query = requiredString(args.query, "query");
+      const data = generateConvergence(query, {
         path: args.path ?? ".",
         base: requiredString(args.base, "base"),
         head: args.head,
         top: args.top,
         staged: args.staged,
         includeUntracked: args.includeUntracked,
+        declared: declaredScopeFor(args.path ?? ".", args.intent, query),
       });
       return args.includeMarkdown ? { data, markdown: formatConvergenceMarkdown(data) } : data;
     }
@@ -804,6 +851,7 @@ async function dispatchTool(name, args) {
           request: args.request,
           minConvergence: args.minConvergence,
           receipt: args.receipt,
+          intent: args.intent,
         });
       }
       return evaluateLocal(repoPath, {
@@ -814,6 +862,7 @@ async function dispatchTool(name, args) {
         request: args.request,
         minConvergence: args.minConvergence,
         receipt: args.receipt,
+        intent: args.intent,
         staged: args.staged,
       });
     }
@@ -832,6 +881,7 @@ async function dispatchTool(name, args) {
         governance,
         minConvergence: args.minConvergence,
         receipt: args.receipt,
+        intent: args.intent,
         impactTop: args.impactTop,
       });
       return data;
@@ -986,6 +1036,23 @@ function requirePaths(args = {}) {
     throw new McpProtocolError(-32602, "paths must contain at least two repository paths");
   }
   return args.paths;
+}
+
+/**
+ * The declared scope convergence scores against, from an intent passed to a
+ * tool. No intent is no scope; one that does not verify, or was declared for
+ * another request, is refused.
+ * @param {string} repoPath
+ * @param {unknown} value
+ * @param {string} query
+ */
+function declaredScopeFor(repoPath, value, query) {
+  if (value === undefined || value === null || value === "") return undefined;
+  const intent = readIntent(intentRoot(repoPath), value);
+  const verified = verifyIntent(intent);
+  if (!verified.ok) throw new Error(`the declared intent does not verify: ${verified.error}`);
+  if (intent.request !== query) throw new Error(`the intent was declared for "${intent.request}", not for this query`);
+  return declaredScope(intent, verified.tip);
 }
 
 /**

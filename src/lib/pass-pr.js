@@ -7,7 +7,7 @@
 import path from "node:path";
 import * as codeowners from "./codeowners.js";
 import { defaultGhRunner } from "./gh.js";
-import { convergenceCheck, gitRoot, gitShowContent, migrationCheck, secretCheck } from "./pass-local.js";
+import { convergenceCheck, gitRoot, gitShowContent, migrationCheck, scopeContractCheck, secretCheck } from "./pass-local.js";
 import { aggregateVerdict, normalizeGovernance, normalizeProfile, policyCheck, STATUS } from "./policy.js";
 import { checkRelease } from "./release-check.js";
 import { matchRiskPaths } from "./risk-paths.js";
@@ -97,7 +97,7 @@ const PR_BASE_LABEL = "GitHub PR";
 /**
  * @param {string} repoPath
  * @param {string} selector
- * @param {{ policy?: unknown, governance?: unknown, runner?: Runner, request?: string, minConvergence?: number | string, receipt?: string }} [options]
+ * @param {{ policy?: unknown, governance?: unknown, runner?: Runner, request?: string, minConvergence?: number | string, receipt?: string, intent?: unknown }} [options]
  */
 export async function evaluatePR(repoPath, selector, options = {}) {
   const profile = normalizeProfile(options.policy);
@@ -144,12 +144,13 @@ export async function evaluatePR(repoPath, selector, options = {}) {
     branchProtectionCheck(root, pr.baseRefName, runner),
     statusChecksCheck(pr.statusCheckRollup ?? []),
   ];
-  const convergence = convergenceCheck(root, subject?.baseSha ?? localBaseRef(root, pr.baseRefName), options.request, options.minConvergence, options.receipt, {
-    subject,
-    subjectError,
-    diffFiles: files,
-    expectedHead: subject?.headSha,
-    requireClean: true,
+  const exactDiff = { subject, subjectError, diffFiles: files, expectedHead: subject?.headSha, requireClean: true };
+  const convergenceBase = subject?.baseSha ?? localBaseRef(root, pr.baseRefName);
+  const contract = scopeContractCheck(root, convergenceBase, options.request, options.intent, exactDiff);
+  if (contract) checks.push(contract.check);
+  const convergence = convergenceCheck(root, convergenceBase, options.request ?? contract?.request, options.minConvergence, options.receipt, {
+    ...exactDiff,
+    declared: contract?.declared,
   });
   if (convergence) checks.push(convergence);
   checks.push(policyCheck({ profile, governance, files, checks, remote: true }));
@@ -184,6 +185,7 @@ export async function evaluatePR(repoPath, selector, options = {}) {
     checks,
   };
   if (subject) data.subject = subject;
+  if (contract?.check.contract) data.contract = contract.check.contract;
   if (convergence?.receipt) {
     data.convergence = convergence.convergence;
     data.band = convergence.band;
