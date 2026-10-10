@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { generateAxScore, changeabilityFromTokens, bandFor } from "../src/lib/ax.js";
+import { generateImpact } from "../src/lib/impact.js";
 
 /**
  * Build a minimal repo fixture. With no guardrail signals by default; callers
@@ -122,4 +123,33 @@ test("generateAxScore counts a Go module's _test.go files and toolchain as guard
   const data = generateAxScore("add a refund fee endpoint", { path: root });
   assert.equal(data.drivers.guardrails.tests, true);
   assert.equal(data.drivers.guardrails.validation, true);
+});
+
+// `solumbe route` hands AX its impact pass, and the UserPromptSubmit hook gives
+// route six seconds. AX used to inspect the whole repository for four fields,
+// which started five git processes (ls-files, rev-parse, branch, rev-parse,
+// status) on every routed prompt.
+test("generateAxScore with an impact handed in starts no git process", () => {
+  const root = makeRepo({ scripts: { test: "node --test" }, testsDir: true });
+  const query = "add an events endpoint";
+  const impact = generateImpact(query, { path: root }).data;
+  const expected = generateAxScore(query, { path: root, impact });
+
+  // A `git` first on PATH that records each call and fails.
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "solumbe-ax-git-"));
+  const log = path.join(bin, "calls.log");
+  fs.writeFileSync(path.join(bin, "git"), `#!/bin/sh\necho "$*" >> "${log}"\nexit 1\n`, { mode: 0o755 });
+  const savedPath = process.env.PATH;
+  process.env.PATH = `${bin}${path.delimiter}${savedPath}`;
+  let data;
+  try {
+    data = generateAxScore(query, { path: root, impact });
+  } finally {
+    process.env.PATH = savedPath;
+  }
+
+  assert.equal(fs.existsSync(log) ? fs.readFileSync(log, "utf8") : "", "", "AX ran git");
+  assert.deepEqual({ ...data, generatedAt: null }, { ...expected, generatedAt: null }, "the score does not depend on git");
+  fs.rmSync(bin, { recursive: true });
+  fs.rmSync(root, { recursive: true });
 });

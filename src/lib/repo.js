@@ -85,6 +85,29 @@ export function inspectRepo(repoPath = ".") {
   };
 }
 
+/**
+ * The part of an inspection read from package.json and the top-level
+ * directories alone. It lists no files and runs no git, so a caller that needs
+ * only these (AX's guardrails, on every `solumbe route`) does not start five
+ * git processes for fields it never reads.
+ * @param {string} [repoPath]
+ */
+export function inspectRepoBasics(repoPath = ".") {
+  const root = path.resolve(repoPath);
+  if (!fs.existsSync(root)) {
+    throw new Error(`repo path does not exist: ${root}`);
+  }
+
+  const packageJson = readJsonIfExists(path.join(root, "package.json"));
+  const scripts = packageJson?.scripts ?? {};
+  return {
+    root,
+    package: summarizePackage(packageJson),
+    scriptNames: Object.keys(scripts),
+    importantDirectories: detectImportantDirectories(root),
+  };
+}
+
 // The full scripts map can be the single heaviest part of an inspection on a
 // large monorepo (long build/test command bodies). Drop the bodies by default
 // so an agent still sees the script NAMES (via scriptNames) but pays no byte
