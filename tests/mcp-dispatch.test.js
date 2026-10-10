@@ -681,13 +681,13 @@ test("convergence_score scores intent vs diff against a real git fixture, with a
       jsonrpc: "2.0",
       id: 1,
       method: "tools/call",
-      params: { name: "convergence_score", arguments: { path: fixture, base: "HEAD~1", query: "update the greeting" } },
+      params: { name: "convergence_score", arguments: { path: fixture, base: "HEAD~1", query: "update greet in src/index.ts" } },
     },
     {
       jsonrpc: "2.0",
       id: 2,
       method: "tools/call",
-      params: { name: "convergence_score", arguments: { path: fixture, base: "HEAD~1", query: "update the greeting", includeMarkdown: true } },
+      params: { name: "convergence_score", arguments: { path: fixture, base: "HEAD~1", query: "update greet in src/index.ts", includeMarkdown: true } },
     },
     // Missing base and missing query are both -32602.
     { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "convergence_score", arguments: { path: fixture, query: "update the greeting" } } },
@@ -1261,7 +1261,7 @@ test("the check trial withholds a warning or a score in the withheld arm and lea
   });
   const call = (id, name, args) => ({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: { path: fixture, base: "HEAD~1", ...args } } });
   const requests = [
-    call(1, "convergence_score", { query: "add an events endpoint" }),
+    call(1, "convergence_score", { query: "update greet in src/index.ts" }),
     call(2, "review_gate", {}),
     call(3, "change_impact", { query: "add an events endpoint" }),
   ];

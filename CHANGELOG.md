@@ -6,6 +6,15 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+### Changed
+
+- **A request that predicts no owner file is `inconclusive`, with no convergence score.**
+  - `solumbe converge` and the MCP `convergence_score` tool scored such a request about 20 and banded it `drift`, the same for a correct change and an unrelated one. They now return `band: "inconclusive"`, `convergence: null` and `null` sub-scores, and the report prints "inconclusive" where the number was. A client that reads `convergence` as a number, or `band` as one of three values, must accept the new ones.
+  - The report lists the changed files as "changed, not predicted" rather than as scope drift, and still names any on a risk-sensitive path.
+  - With `--min-convergence` above 0, the gate's `Convergence` check reports `WARN` for an inconclusive result where it reported `FAIL`. A pipeline that blocks only on `FAIL` no longer blocks an ungrounded request. A floor of 0 passes, and a receipt that does not match still fails.
+  - `solumbe calibrate --gate` grades `inconclusive` as a fourth band. Its ordering claims still read `aligned`, `partial` and `drift`, and published band figures will move, since some `drift` commits were ungrounded.
+  - The convergence engine is 0.6.0, so receipts from 0.5.0 do not recompute.
+
 ### Fixed
 
 - **`Secret safety` stops flagging a placeholder in a source-file comment.**

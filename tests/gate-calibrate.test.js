@@ -102,8 +102,8 @@ test("gate calibration replays the gate on each commit and joins the verdict to 
   assert.equal(safeRow.repairedAfter, null);
   assert.deepEqual(safeRow.skipped, ["Review state"], "the review state the local gate cannot see does not make a verdict");
   for (const row of data.commits) {
-    assert.ok(["aligned", "partial", "drift"].includes(row.band), row.band);
-    assert.equal(typeof row.convergence, "number");
+    assert.ok(["aligned", "partial", "drift", "inconclusive"].includes(row.band), row.band);
+    assert.equal(typeof row.convergence, row.band === "inconclusive" ? "object" : "number");
   }
 
   // The gate read each commit's own tree: the lockfile did not exist yet when
