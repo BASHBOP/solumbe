@@ -16,7 +16,7 @@ import { MAX_SCAN_BYTES, scanSecretContent, summarizeSecretFindings } from "./se
 import { checkRelease } from "./release-check.js";
 import { aggregateVerdict, normalizeGovernance, normalizeProfile, policyCheck, STATUS } from "./policy.js";
 import { estimateTokens } from "./tokens.js";
-import { captureCommitSubject, captureStagedSubject, generateConvergence } from "./converge.js";
+import { captureCommitSubject, captureStagedSubject, generateConvergence, INCONCLUSIVE_BAND } from "./converge.js";
 import { executeValidationPlan } from "./validation-attestation.js";
 
 /**
@@ -219,8 +219,14 @@ export function convergenceCheck(root, base, request, minConvergence, receipt, o
     return { name: "Convergence", status: STATUS.fail, summary: `Could not compute convergence: ${error.message ?? String(error)}` };
   }
 
+  // A request that predicted no owner file has no score to hold against the
+  // minimum. That is reported as its own outcome below, not as a failed score:
+  // the same request scores the same whether the change is right or wrong. A
+  // minimum of 0 asks for no score, so only a positive one goes unenforced.
+  const inconclusive = data.band === INCONCLUSIVE_BAND;
+  const unenforced = inconclusive && threshold !== undefined && threshold > 0;
   const failures = [];
-  if (threshold !== undefined && data.convergence < threshold) {
+  if (threshold !== undefined && !inconclusive && data.convergence < threshold) {
     failures.push(`score ${data.convergence}/100 is below the required minimum of ${threshold}`);
   }
   if (receiptValue) {
@@ -239,7 +245,7 @@ export function convergenceCheck(root, base, request, minConvergence, receipt, o
     }
   }
 
-  const details = [`Score: ${data.convergence}/100 (${data.band})`, `Receipt handle: ${data.receipt.id}`];
+  const details = [inconclusive ? "Score: not measured (inconclusive)" : `Score: ${data.convergence}/100 (${data.band})`, `Receipt handle: ${data.receipt.id}`];
   if (data.receipt.receiptVersion === 2) details.push(`Inputs hash: ${data.receipt.inputsHash}`);
   if (data.subject?.treeSha) details.push(`Subject tree: ${data.subject.treeSha}`);
   if (data.subject?.baseSha) details.push(`Base commit: ${data.subject.baseSha}`);
@@ -250,6 +256,15 @@ export function convergenceCheck(root, base, request, minConvergence, receipt, o
   const evidence = { convergence: data.convergence, band: data.band, receipt: data.receipt, subject: data.subject };
   if (failures.length > 0) {
     return { name: "Convergence", status: STATUS.fail, summary: `Convergence enforcement failed: ${failures.join("; ")}.`, details, ...evidence };
+  }
+  if (unenforced) {
+    return {
+      name: "Convergence",
+      status: STATUS.warn,
+      summary: `Convergence is inconclusive: the request did not ground to any predicted owner file, so there is no score to hold against the minimum of ${threshold}. Rephrase it to name the files, symbols or feature it changes, or run \`solumbe impact\` to check grounding.`,
+      details,
+      ...evidence,
+    };
   }
   return { name: "Convergence", status: STATUS.pass, summary: "Task and diff satisfy the convergence requirement.", details, ...evidence };
 }

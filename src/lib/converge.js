@@ -32,7 +32,12 @@ import { estimateTokens } from "./tokens.js";
 // in scope. Scores change again, so 0.2.0 receipts do not recompute here.
 // 0.4.0: a file the change wires to a confirmed one is in scope: a test or
 // source file whose added lines import it, and a doc whose added lines name it.
-export const convergenceEngineVersion = "0.5.0";
+// 0.6.0: a task that predicts no owner file is `inconclusive` and carries no
+// score or sub-scores, where it used to score about 20 and band as `drift`.
+export const convergenceEngineVersion = "0.6.0";
+
+/** The band of a task that did not ground: there is no prediction to measure the diff against. */
+export const INCONCLUSIVE_BAND = "inconclusive";
 
 // Sub-score weights. Coverage (did intent happen?) leads, scope discipline (did
 // only intent happen?) is next, risk alignment (did drift land somewhere
@@ -167,8 +172,7 @@ export function generateConvergence(query, options = {}) {
   const grounded = predictedDirect > 0;
 
   // Coverage — did the intent actually happen? Share of predicted owner files
-  // that were really changed. Ungrounded tasks (no prediction) are unmeasurable,
-  // so coverage is 0 and a recommendation explains why.
+  // that were really changed.
   const coverage = grounded ? (100 * confirmedDirect.length) / predictedDirect : 0;
 
   // Scope discipline — did *only* the intent happen? Share of changed files that
@@ -185,8 +189,16 @@ export function generateConvergence(query, options = {}) {
   const riskPenalty = missedChangedFiles.reduce((/** @type {number} */ sum, /** @type {string} */ file) => sum + riskWeightFor(file), 0);
   const riskAlignment = clamp(100 - riskPenalty, 0, 100);
 
-  const convergence = Math.round(WEIGHTS.coverage * coverage + WEIGHTS.scope * scope + WEIGHTS.riskAlignment * riskAlignment);
-  const band = bandFor(convergence);
+  // An ungrounded task predicted no owner file, so coverage, scope and drift
+  // have nothing to be measured against. The arithmetic above still yields a
+  // number (about 20, from risk alignment alone) that is the same for a correct
+  // change and an unrelated one, so it is not reported: the outcome is
+  // `inconclusive`, with no score and no sub-scores.
+  const convergence = grounded ? Math.round(WEIGHTS.coverage * coverage + WEIGHTS.scope * scope + WEIGHTS.riskAlignment * riskAlignment) : null;
+  const band = convergence === null ? INCONCLUSIVE_BAND : bandFor(convergence);
+  const subScores = grounded
+    ? { coverage: Math.round(coverage), scope: Math.round(scope), riskAlignment: Math.round(riskAlignment) }
+    : { coverage: null, scope: null, riskAlignment: null };
 
   const commit = subject?.headSha ?? subject?.parentSha ?? currentCommit(impact.repo?.root ?? repoPath);
 
@@ -214,11 +226,7 @@ export function generateConvergence(query, options = {}) {
     repo: { name: impact.repo?.name ?? path.basename(path.resolve(repoPath)), root: impact.repo?.root ?? path.resolve(repoPath) },
     convergence,
     band,
-    subScores: {
-      coverage: Math.round(coverage),
-      scope: Math.round(scope),
-      riskAlignment: Math.round(riskAlignment),
-    },
+    subScores,
     drivers,
     recommendations: buildRecommendations({
       grounded,
@@ -246,7 +254,7 @@ export function generateConvergence(query, options = {}) {
     commit,
     subject,
     convergence,
-    subScores: data.subScores,
+    subScores,
     changedFiles,
     confirmedDirect,
     confirmedRelated,
@@ -975,12 +983,19 @@ function buildRecommendations({ grounded, unconfirmedCandidates, missedChangedFi
   /** @type {string[]} */
   const recs = [];
   if (!grounded) {
-    recs.push("The task did not ground to any predicted owner files; rephrase it or run `solumbe impact` to check grounding before trusting this score.");
+    recs.push(
+      "The task did not ground to any predicted owner files, so convergence is inconclusive: there is no score. Rephrase it to name the files, symbols or feature it changes, or run `solumbe impact` to check grounding.",
+    );
     if (advisoryChangedFiles.length) {
-      recs.push(
-        `Changed files were ranked only as advisory leads, never as owners: ${formatList(advisoryChangedFiles)} — this is why the score reports no coverage rather than scope drift.`,
-      );
+      recs.push(`Changed files were ranked only as advisory leads, never as owners: ${formatList(advisoryChangedFiles)}.`);
     }
+    // Nothing was predicted, so no changed file can be called drift. A
+    // risk-sensitive one is still worth naming.
+    if (riskyDrift.length) {
+      recs.push(`Risk-sensitive paths changed: ${formatList(riskyDrift.map((d) => d.file))} — the task did not ground, so nothing shows they were requested.`);
+    }
+    recs.push(...untrackedRecommendation(excludedUntracked));
+    return recs;
   }
   if (riskyDrift.length) {
     recs.push(
@@ -993,17 +1008,24 @@ function buildRecommendations({ grounded, unconfirmedCandidates, missedChangedFi
   if (unconfirmedCandidates.length) {
     recs.push(`Predicted owner files were not changed: ${formatList(unconfirmedCandidates)} — verify the change landed in the right place.`);
   }
-  if (excludedUntracked.length) {
-    const listed = excludedUntracked.slice(0, MAX_LISTED_UNTRACKED);
-    const more = excludedUntracked.length - listed.length;
-    recs.push(
-      `Untracked files were not scored: ${formatList(listed)}${more > 0 ? ` and ${more} more` : ""} — \`git add\` the ones that belong to this change, pass --include-untracked, or score a commit exactly with --head.`,
-    );
-  }
+  recs.push(...untrackedRecommendation(excludedUntracked));
   if (recs.length === 0) {
     recs.push("Change converges on the stated task with no scope drift. Stamp the receipt on the commit as durable evidence.");
   }
   return recs;
+}
+
+/**
+ * @param {string[]} excludedUntracked
+ * @returns {string[]}
+ */
+function untrackedRecommendation(excludedUntracked) {
+  if (!excludedUntracked.length) return [];
+  const listed = excludedUntracked.slice(0, MAX_LISTED_UNTRACKED);
+  const more = excludedUntracked.length - listed.length;
+  return [
+    `Untracked files were not scored: ${formatList(listed)}${more > 0 ? ` and ${more} more` : ""} — \`git add\` the ones that belong to this change, pass --include-untracked, or score a commit exactly with --head.`,
+  ];
 }
 
 /**
@@ -1012,8 +1034,9 @@ function buildRecommendations({ grounded, unconfirmedCandidates, missedChangedFi
  */
 export function formatConvergenceMarkdown(data) {
   const d = data.drivers;
+  const inconclusive = data.band === INCONCLUSIVE_BAND;
   const lines = [
-    `# Convergence: ${data.convergence}/100 (${data.band})`,
+    inconclusive ? "# Convergence: inconclusive" : `# Convergence: ${data.convergence}/100 (${data.band})`,
     "",
     `Repo: ${data.repo.name}`,
     `Task: "${data.task}"`,
@@ -1025,9 +1048,13 @@ export function formatConvergenceMarkdown(data) {
     "",
     "## Sub-scores",
     "",
-    `- Coverage:       ${data.subScores.coverage} (did the intent happen?)`,
-    `- Scope:          ${data.subScores.scope} (did only the intent happen?)`,
-    `- Risk alignment: ${data.subScores.riskAlignment} (did drift land somewhere dangerous?)`,
+    ...(inconclusive
+      ? ["Not measured: the task predicted no owner file, so there is nothing to compare the diff with."]
+      : [
+          `- Coverage:       ${data.subScores.coverage} (did the intent happen?)`,
+          `- Scope:          ${data.subScores.scope} (did only the intent happen?)`,
+          `- Risk alignment: ${data.subScores.riskAlignment} (did drift land somewhere dangerous?)`,
+        ]),
     "",
     "## Drivers",
     "",
@@ -1037,10 +1064,12 @@ export function formatConvergenceMarkdown(data) {
     `- Confirmed related: ${formatList(d.confirmedRelated)}`,
     `- Inferred in scope: ${d.inferredRelated?.length ? d.inferredRelated.map(formatInferred).join(", ") : "none"}`,
     `- Unconfirmed candidates: ${formatList(d.unconfirmedCandidates)}`,
-    `- Missed (scope drift): ${formatList(d.missedChangedFiles)}`,
+    `- ${inconclusive ? "Changed, not predicted" : "Missed (scope drift)"}: ${formatList(d.missedChangedFiles)}`,
   ];
   if (d.riskyDrift.length) {
-    lines.push(`- Risky drift: ${d.riskyDrift.map((/** @type {any} */ r) => `${r.file} [${r.flags.join(", ")}]`).join("; ")}`);
+    lines.push(
+      `- ${inconclusive ? "Risk-sensitive changes" : "Risky drift"}: ${d.riskyDrift.map((/** @type {any} */ r) => `${r.file} [${r.flags.join(", ")}]`).join("; ")}`,
+    );
   }
   if (data.untracked?.count) {
     lines.push(`- Untracked (${data.untracked.included ? "scored" : "not scored"}): ${data.untracked.count}`);

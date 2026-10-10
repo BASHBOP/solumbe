@@ -116,6 +116,15 @@ secret 30 · auth/security 25 · money flow 25 · data model 15 · contract 15
 
 `aligned` ≥ 80 · `partial` ≥ 50 · `drift` < 50.
 
+A fourth outcome carries no score. When the task predicts no owner file (`drivers.grounded` is
+`false`), there is nothing to measure the diff against: coverage, scope and drift are all
+relative to a prediction that does not exist. The result is `band: "inconclusive"` with
+`convergence: null` and every sub-score `null`. Before engine 0.6.0 such a task scored about
+20 (risk alignment alone) and banded as `drift`, the same for a correct change and an
+unrelated one. The drivers still list the changed files, as "changed, not predicted" rather
+than as drift, and name any that sit on a risk-sensitive path. The receipt is computed as
+usual, so an inconclusive result can still be recomputed and verified.
+
 ### 3.5 What is scored
 
 | Mode | Changed files | Receipt |
@@ -154,7 +163,9 @@ changelog and test data to that inference, so a `0.2.0` receipt does not recompu
 `0.3.0` either. Engine `0.4.0` added the rules that read added lines (`owner-import`,
 `owner-doc`, and tests by import), so a `0.3.0` receipt does not recompute under `0.4.0`.
 Engine `0.5.0` follows root-alias imports in those rules, so a `0.4.0` receipt does not
-recompute under `0.5.0`. Re-issue it with the current engine.
+recompute under `0.5.0`. Engine `0.6.0` reports an ungrounded task as `inconclusive` with no
+score, so a `0.5.0` receipt does not recompute under `0.6.0`. Re-issue it with the current
+engine.
 
 Calls without an exact subject retain the byte-for-byte v1 canonical payload and receipt
 shape for compatibility. A subject-bound receipt uses v2 and adds both of these fields to
@@ -197,7 +208,7 @@ full 64-character `inputsHash`. The receipt is hashed but not yet cryptographica
 ```jsonc
 {
   "ok": true,
-  "convergenceEngineVersion": "0.5.0",
+  "convergenceEngineVersion": "0.6.0",
   "task": "add Stripe refunds",
   "base": "origin/main",
   "head": "HEAD",
@@ -289,6 +300,14 @@ than reporting a bare hash mismatch. With `--head`, the gate's changed-path, ris
 convergence checks all read the head commit's tree. Receipt enforcement is opt-in so existing
 gate verdicts remain backward-compatible.
 
+An `inconclusive` result has no score to hold against a floor. With a `--min-convergence`
+above 0 the `Convergence` check reports `WARN` and says the request did not ground; it does
+not report `FAIL`, because the failure would say nothing about the change. A floor of 0 asks
+for no score and passes, and a receipt that does not match fails whether or not the task
+grounded. A pipeline that blocks only on `FAIL` therefore lets an ungrounded request through
+with a warning: block on `WARN` as well, or name the files or symbols in the request, where
+that matters.
+
 This is an exact **convergence receipt**, not yet a complete Gate attestation. Release checks,
 optional local analyzers, base-branch CODEOWNERS, GitHub review state, and signer identity are
 not all bound into this envelope yet. In staged mode, `solumbe gate --run-validation` can produce
@@ -302,7 +321,5 @@ boundary explicitly.
 
 - **Weights & risk penalties**: defaults are placeholders; calibrate against known-good and
   known-drifted PRs before locking, then move into `config.js`.
-- **Ungrounded tasks**: Coverage 0 is harsh for a real change with a vague task description;
-  consider a separate `ungrounded` band rather than folding it into `drift`.
 - **Calibration**: tune the score weights and risk penalties against known-good and
   known-drifted PRs before making a default floor part of a policy profile.

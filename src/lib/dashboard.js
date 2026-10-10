@@ -189,7 +189,7 @@ export function scanArtifacts(root) {
  */
 function classifyArtifact(data) {
   if (!data || typeof data !== "object") return "unknown";
-  if (typeof data.convergence === "number") return "converge";
+  if (typeof data.convergence === "number" || data.convergenceEngineVersion) return "converge";
   if (typeof data.ax === "number") return "ax";
   if (data.totals && typeof data.totals.savedTokens === "number") return "eval";
   if (data.validation) return "impact";
@@ -519,6 +519,7 @@ function renderSparkline(series) {
 function summarizeSignal(signals) {
   if (!signals) return "—";
   if (typeof signals.convergence === "number") return `convergence ${signals.convergence}`;
+  if (signals.band === "inconclusive") return "convergence inconclusive";
   if (typeof signals.ax === "number") return `AX ${signals.ax}`;
   if (typeof signals.savedPct === "number") return `saved ${Math.round(signals.savedPct)}%`;
   if (typeof signals.verdict === "string") return `verdict ${signals.verdict}`;

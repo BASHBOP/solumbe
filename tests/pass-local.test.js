@@ -892,6 +892,39 @@ test("evaluateLocal fails convergence enforcement when no task request is suppli
   assert.match(convergence.summary, /task request is required/);
 });
 
+test("a request that does not ground leaves a positive convergence floor unenforced: WARN, not FAIL", () => {
+  const root = initRepo("convergence-inconclusive");
+  writeAndCommit(
+    root,
+    {
+      "package.json": JSON.stringify({ name: "fixture", version: "1.0.0", scripts: { test: "node --test" } }),
+      "package-lock.json": JSON.stringify({ name: "fixture", version: "1.0.0", lockfileVersion: 3 }),
+      "src/index.ts": "export const greet = () => 'hi';\n",
+    },
+    "init",
+  );
+  writeAndCommit(root, { "src/index.ts": "export const greet = () => 'hello';\n" }, "tweak");
+
+  const result = evaluateLocal(root, { base: "HEAD~1", head: "HEAD", request: "tidy things up", minConvergence: 80 });
+  const convergence = result.checks.find((check) => check.name === "Convergence");
+  assert.equal(convergence.status, "WARN");
+  assert.match(convergence.summary, /inconclusive: the request did not ground .* no score to hold against the minimum of 80/);
+  assert.ok(convergence.details.includes("Score: not measured (inconclusive)"));
+  assert.ok(!convergence.details.some((line) => line.includes("/100")), "no number is reported for a score that was not measured");
+  assert.equal(result.verdict, "WARN");
+  assert.equal(result.band, "inconclusive");
+  assert.equal(result.convergence, null);
+  assert.match(result.receipt.id, /^rcpt_[0-9a-f]{12}$/);
+
+  // A floor of 0 asks for no score, so there is nothing left unenforced.
+  const noFloor = evaluateLocal(root, { base: "HEAD~1", head: "HEAD", request: "tidy things up", minConvergence: 0 });
+  assert.equal(noFloor.checks.find((check) => check.name === "Convergence").status, "PASS");
+
+  // A receipt that does not match is still a failure, grounded or not.
+  const mismatch = evaluateLocal(root, { base: "HEAD~1", head: "HEAD", request: "tidy things up", minConvergence: 80, receipt: "0".repeat(64) });
+  assert.equal(mismatch.checks.find((check) => check.name === "Convergence").status, "FAIL");
+});
+
 test("evaluateLocal FAILS when a .env file is in the diff", () => {
   const root = initRepo("secret");
   writeAndCommit(
