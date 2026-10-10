@@ -1,11 +1,11 @@
 {
   "ok": true,
-  "generatedAt": "2026-10-10T11:25:05.458Z",
+  "generatedAt": "2026-10-10T12:42:28.065Z",
   "schemaVersion": 3,
   "reviewEngineVersion": 1,
   "request": "review this change",
-  "verdict": "WARN",
-  "confidence": 70,
+  "verdict": "PASS",
+  "confidence": 85,
   "repo": {
     "root": "/home/runner/work/solumbe/solumbe",
     "name": "solumbe"
@@ -14,28 +14,28 @@
     "concepts": [],
     "topFiles": [
       {
+        "path": "CHANGELOG.md",
+        "score": 0,
+        "riskFlags": []
+      },
+      {
+        "path": "docs/17-calibration-thesis/README.md",
+        "score": 0,
+        "riskFlags": []
+      },
+      {
+        "path": "src/lib/secret-scan.js",
+        "score": 0,
+        "riskFlags": []
+      },
+      {
+        "path": "tests/secret-scan.test.js",
+        "score": 0,
+        "riskFlags": []
+      },
+      {
         "path": "src/lib/review.js",
         "score": 22.6,
-        "riskFlags": []
-      },
-      {
-        "path": "src/cli.js",
-        "score": 8.3,
-        "riskFlags": []
-      },
-      {
-        "path": "src/lib/mcp.js",
-        "score": 8.3,
-        "riskFlags": []
-      },
-      {
-        "path": "tests/review.test.js",
-        "score": 5.7,
-        "riskFlags": []
-      },
-      {
-        "path": "src/lib/pass-local.js",
-        "score": 5.5,
         "riskFlags": []
       }
     ],
@@ -44,26 +44,22 @@
     ]
   },
   "prReviewSummary": {
-    "changedFiles": 41,
-    "additions": 3512,
-    "deletions": 124,
+    "changedFiles": 4,
+    "additions": 140,
+    "deletions": 4,
     "riskLevel": "low",
-    "riskFlags": [
-      "dependency",
-      "large PR",
-      "large file diff"
-    ],
+    "riskFlags": [],
     "reviewTargetsCount": 0
   },
   "pass": {
-    "verdict": "WARN",
+    "verdict": "PASS",
     "policy": "standard",
     "governance": "solo",
     "checks": [
       {
         "name": "Changed files",
         "status": "PASS",
-        "summary": "41 changed files found."
+        "summary": "4 changed files found."
       },
       {
         "name": "Commit snapshot",
@@ -72,8 +68,8 @@
       },
       {
         "name": "Secret safety",
-        "status": "WARN",
-        "summary": "A changed line assigns a high-entropy literal to a credential-shaped name."
+        "status": "PASS",
+        "summary": "No secret file paths and no credential values found in the changed content."
       },
       {
         "name": "Risk review",
@@ -83,7 +79,7 @@
       {
         "name": "Release discipline",
         "status": "PASS",
-        "summary": "Version metadata is SemVer and changelog was updated."
+        "summary": "No version metadata changes found."
       },
       {
         "name": "Validation commands",
@@ -108,6 +104,6 @@
     ]
   },
   "tokenEstimate": {
-    "fullJson": 480
+    "fullJson": 470
   }
 }
