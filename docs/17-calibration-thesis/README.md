@@ -402,6 +402,57 @@ the commit as it landed, so a warning that made its author change the diff
 left no trace: a check that works is graded on the changes it failed to stop.
 And the convergence request is the commit subject, written after the change.
 
+### A second corpus (2026-10-10)
+
+The same command, on the released 4.4.0 engine, was pointed at `bashbop-api`:
+2,340 non-merge commits, 618 replayed, and none the gate or the convergence
+score could not evaluate. That is more than five times this repository's
+corpus.
+
+| Verdict | n | repaired | 95% interval | lift |
+| --- | ---: | ---: | --- | ---: |
+| PASS | 272 | 32.0% | 26.7% to 37.7% | 0.74x |
+| WARN | 343 | 52.2% | 46.9% to 57.4% | 1.20x |
+| FAIL | 3 | withheld | — | — |
+
+The intervals do not overlap. On this corpus a change the gate warned on was
+repaired more often than one it passed. The lift is modest because the base
+rate is high, 43.4% (268 of 618), and lift compresses toward 1.0 as the base
+rate rises, as it did in the flag tables above.
+
+**The alarm is common, and wrong nearly half the time.** The gate raised an
+alarm on 56.0% of changes (52.0% to 59.9%). Of those 346 alarms, 165 were on a
+change nothing later repaired: 47.7% (42.5% to 52.9%). It had raised an alarm
+on 181 of the 268 changes that were repaired: 67.5% (61.7% to 72.9%).
+
+**One check carries the result.** `Risk review` warned on 333 of the 346
+alarmed changes, repaired 52.3% (46.9% to 57.6%), a lift of 1.21x. `Migration
+safety` warned on 29 (18 repaired), `Release discipline` on 15 (8) and `Secret
+safety` on 1, all under the minimum sample and withheld. What this corpus
+grades is the risk-path rule. It says nothing about the other checks in either
+direction.
+
+**The convergence band orders outcomes and does not separate them.**
+
+| Band | n | repaired | 95% interval | lift |
+| --- | ---: | ---: | --- | ---: |
+| aligned | 82 | 32.9% | 23.7% to 43.7% | 0.76x |
+| partial | 172 | 44.2% | 37.0% to 51.7% | 1.02x |
+| drift | 364 | 45.3% | 40.3% to 50.5% | 1.04x |
+
+Aligned is repaired least and drift most, so the ordering holds, but the drift
+and aligned intervals overlap, and partial and drift are a point apart. 364 of
+the 618 commits, 58.9%, score as drift against their own subject, which says
+more about a commit subject as a stand-in for the request than about the
+changes.
+
+Across the two corpora the direction is the same, PASS repaired less often
+than WARN, and it is established on one. None of it shows that the gate
+prevents a repair. The replay ran on an otherwise idle machine, which matters:
+the repair join reads a git call that times out as no evidence, so a loaded
+machine can undercount repairs without saying so. Receipt
+`gatecal_0059db10d1e2`.
+
 ### The trial
 
 `SOLUMBE_CHECK_MODE=trial` puts each change in one of two arms, by a hash of
