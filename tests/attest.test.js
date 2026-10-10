@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { generateKeyPairSync } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -63,7 +64,7 @@ test("attest appends a versioned record that chains on the previous one, and ref
   const first = runAttest(["--verdict", verdictPath, "--merge", "a".repeat(40), "--prev", "b".repeat(40), "--pr", "12", "--ledger", ledger, "--json"]);
   assert.equal(first.status, 0, first.stderr || first.stdout);
   const { record } = JSON.parse(first.stdout);
-  assert.equal(record.schemaVersion, 1);
+  assert.equal(record.schemaVersion, 2);
   assert.equal(record.verdictSchemaVersion, 1);
   assert.equal(record.seq, 1);
   assert.equal(record.pr, 12);
@@ -221,7 +222,7 @@ test("the scripts attest another repository when SOLUMBE_REPO, SOLUMBE_BIN and S
     [base, merge],
   );
   assert.equal(rows[1].pr, 7);
-  assert.equal(rows[1].schemaVersion, 1);
+  assert.equal(rows[1].schemaVersion, 2);
   assert.ok(fs.existsSync(path.join(target, ".solumbe", "audit", "verdict-latest.json")), "the verdict is written beside the ledger");
   assert.equal(fs.readFileSync(path.join(repoRoot, "audit-pilot", "ledger.jsonl"), "utf8"), ownLedgerBefore, "the tool's own ledger is untouched");
 });
@@ -353,4 +354,252 @@ test("a ledger that matches the history still reconciles normally", () => {
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.doesNotMatch(result.stdout, /archived superseded chain/);
   assert.equal(fs.readdirSync(path.join(root, "audit-pilot")).filter((f) => f.startsWith("ledger-orphaned-")).length, 0);
+});
+
+// --- record version 2: request, contract, tree, signature, schema, status ---
+
+const { ATTESTATION_SCHEMA_VERSION, attestKeyId, buildAttestation, loadAttestKey, postReceiptStatus, receiptStatus, verifyLedger } =
+  await import("../src/lib/attest.js");
+
+/** A `solumbe review --json` payload as a gate with a stated request, an intent and an exact subject produces it. */
+function boundVerdict(overrides = {}) {
+  return {
+    ok: true,
+    generatedAt: "2026-10-10T00:00:00.000Z",
+    schemaVersion: 3,
+    reviewEngineVersion: 1,
+    request: "add refund handling to checkout",
+    requestStated: true,
+    verdict: "PASS",
+    confidence: 90,
+    pass: {
+      policy: "standard",
+      governance: "solo",
+      checks: [
+        { name: "Scope contract", status: "PASS", summary: "dropped" },
+        { name: "Review state", status: "SKIPPED" },
+      ],
+      changedFiles: ["src/payment/checkout.service.ts", "CHANGELOG.md"],
+      subject: { kind: "git-commit", baseSha: "b".repeat(40), headSha: "a".repeat(40), treeSha: "7".repeat(40) },
+      contract: { tip: "c".repeat(64), request: "add refund handling to checkout", amendments: 1, undeclared: [] },
+      convergence: 92,
+      band: "aligned",
+      receipt: { id: "rcpt_0123456789ab", inputsHash: "e".repeat(64) },
+    },
+    prReviewSummary: { changedFiles: 2, riskLevel: "high", riskFlags: ["money flow"] },
+    impactSummary: { topFiles: [{ path: "src/payment/checkout.service.ts", score: 40 }] },
+    ...overrides,
+  };
+}
+
+function ledgerDir(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `attest-${prefix}-`));
+  return { dir, ledger: path.join(dir, "ledger.jsonl"), verdict: path.join(dir, "verdict.json") };
+}
+
+function keyPair(dir, name = "attest") {
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const files = { private: path.join(dir, `${name}.key.pem`), public: path.join(dir, `${name}.pub.pem`) };
+  fs.writeFileSync(files.private, privateKey.export({ type: "pkcs8", format: "pem" }));
+  fs.writeFileSync(files.public, publicKey.export({ type: "spki", format: "pem" }));
+  return { ...files, privatePem: fs.readFileSync(files.private, "utf8"), keyId: attestKeyId(publicKey) };
+}
+
+test("a version 2 record binds the verdict to the request, the contract, the tree and the change", () => {
+  const record = buildAttestation({ verdict: boundVerdict(), merge: "a".repeat(40), prev: "b".repeat(40), pr: 7 }, []);
+  assert.equal(ATTESTATION_SCHEMA_VERSION, 2);
+  assert.equal(record.request, "add refund handling to checkout");
+  assert.deepEqual(record.contract, { tip: "c".repeat(64), amendments: 1, undeclared: 0 });
+  assert.deepEqual(record.subject, { kind: "git-commit", baseSha: "b".repeat(40), headSha: "a".repeat(40), treeSha: "7".repeat(40) });
+  assert.match(record.changedPathsHash, /^[0-9a-f]{64}$/);
+  assert.equal(record.convergence, 92);
+  assert.equal(record.band, "aligned");
+  assert.equal(record.receipt, "e".repeat(64));
+  assert.equal(record.signature, undefined, "no key, no signature");
+
+  // The paths are bound by hash, in any order, and never listed.
+  const reordered = buildAttestation(
+    { verdict: boundVerdict({ pass: { ...boundVerdict().pass, changedFiles: ["CHANGELOG.md", "src/payment/checkout.service.ts"] } }), merge: "a".repeat(40) },
+    [],
+  );
+  assert.equal(reordered.changedPathsHash, record.changedPathsHash);
+  assert.ok(!JSON.stringify(record).includes("CHANGELOG.md"));
+
+  // A verdict that carried none of it records nulls, not guesses: the
+  // placeholder request is not a request anyone stated.
+  const bare = buildAttestation({ verdict: { verdict: "WARN", request: "review this change", pass: { checks: [] } }, merge: "d".repeat(40) }, []);
+  assert.deepEqual(
+    [bare.request, bare.contract, bare.subject, bare.changedPathsHash, bare.convergence, bare.band, bare.receipt],
+    [null, null, null, null, null, null, null],
+  );
+});
+
+test("a record signed with an Ed25519 key verifies against its public key and against nothing else", () => {
+  const { dir, ledger, verdict } = ledgerDir("signed");
+  const key = keyPair(dir);
+  const other = keyPair(dir, "other");
+  fs.writeFileSync(verdict, JSON.stringify(boundVerdict()));
+
+  const signed = runAttest(["--verdict", verdict, "--merge", "a".repeat(40), "--ledger", ledger, "--sign-key", key.private, "--json"]);
+  assert.equal(signed.status, 0, signed.stderr || signed.stdout);
+  const { record } = JSON.parse(signed.stdout);
+  assert.deepEqual(Object.keys(record.signature), ["alg", "keyId", "value"]);
+  assert.equal(record.signature.alg, "ed25519");
+  assert.equal(record.signature.keyId, key.keyId);
+
+  const verified = runAttest(["--verify", "--ledger", ledger, "--public-key", key.public]);
+  assert.equal(verified.status, 0, verified.stderr || verified.stdout);
+  assert.match(verified.stdout, new RegExp(`Chain intact: 1 record\\(s\\), tip [0-9a-f]{12}, 1 signed by key ${key.keyId}`));
+
+  const wrongKey = runAttest(["--verify", "--ledger", ledger, "--public-key", other.public]);
+  assert.equal(wrongKey.status, 1);
+  assert.match(wrongKey.stdout, /BAD SIGNATURE/);
+  assert.match(wrongKey.stdout, new RegExp(`SIGNATURE MISMATCH: 1 record\\(s\\) were not signed by key ${other.keyId}`));
+
+  // Without a key the chain is still checked, and the signature is reported as unchecked.
+  const unchecked = runAttest(["--verify", "--ledger", ledger]);
+  assert.equal(unchecked.status, 0);
+  assert.match(unchecked.stdout, /signed \(not checked: no public key\)/);
+
+  // The private key alone is enough to check its own signatures.
+  assert.equal(runAttest(["--verify", "--ledger", ledger, "--sign-key", key.private]).status, 0);
+
+  // A signature moved onto a record it was not made for does not verify.
+  const row = JSON.parse(fs.readFileSync(ledger, "utf8"));
+  const forged = buildAttestation({ verdict: boundVerdict({ verdict: "FAIL" }), merge: "a".repeat(40) }, []);
+  fs.writeFileSync(ledger, `${JSON.stringify({ ...forged, signature: row.signature })}\n`);
+  const result = verifyLedger(ledger, { publicKey: loadAttestKey(key.public, { asPublic: true }) });
+  assert.equal(result.ok, false);
+  assert.equal(result.chain[0].valid, true, "the chain itself recomputes");
+  assert.equal(result.chain[0].signature, "invalid");
+});
+
+test("the signing key can come from the environment, and an unsigned record fails only when a signature is required", () => {
+  const { dir, ledger, verdict } = ledgerDir("env-key");
+  const key = keyPair(dir);
+  fs.writeFileSync(verdict, JSON.stringify(boundVerdict()));
+
+  const unsigned = runAttest(["--verdict", verdict, "--merge", "a".repeat(40), "--ledger", ledger, "--json"]);
+  assert.equal(JSON.parse(unsigned.stdout).record.signature, undefined);
+  const signed = runAttest(["--verdict", verdict, "--merge", "c".repeat(40), "--ledger", ledger, "--json"], {
+    env: { ...process.env, SOLUMBE_ATTEST_KEY_PEM: key.privatePem },
+  });
+  assert.equal(JSON.parse(signed.stdout).record.signature.keyId, key.keyId);
+
+  const lenient = runAttest(["--verify", "--ledger", ledger, "--public-key", key.public, "--json"]);
+  assert.equal(lenient.status, 0, "a ledger that began before signing still verifies");
+  assert.deepEqual(JSON.parse(lenient.stdout).signatures, { signed: 1, verified: 1, invalid: 0, unsigned: 1, keyId: key.keyId });
+
+  const strict = runAttest(["--verify", "--ledger", ledger, "--public-key", key.public, "--require-signature"]);
+  assert.equal(strict.status, 1);
+  assert.match(strict.stdout, /UNSIGNED: 1 record\(s\) carry no signature/);
+});
+
+test("attestation keys are Ed25519 PEM, and anything else is refused before a record is written", () => {
+  const { dir, ledger, verdict } = ledgerDir("bad-key");
+  fs.writeFileSync(verdict, JSON.stringify(boundVerdict()));
+  const rsa = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey.export({ type: "pkcs8", format: "pem" });
+  fs.writeFileSync(path.join(dir, "rsa.pem"), rsa);
+
+  const refused = runAttest(["--verdict", verdict, "--merge", "a".repeat(40), "--ledger", ledger, "--sign-key", path.join(dir, "rsa.pem")]);
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, /attestation keys are Ed25519, not rsa/);
+  assert.equal(fs.existsSync(ledger), false);
+
+  assert.throws(() => loadAttestKey(path.join(dir, "missing.pem")), /no key file at/);
+  // A PEM envelope with no key in it, assembled so this file holds no key block.
+  const label = "PRIVATE KEY";
+  assert.throws(() => loadAttestKey(`-----BEGIN ${label}-----\nnope\n-----END ${label}-----`), /could not read a private key/);
+  assert.equal(loadAttestKey(""), null);
+});
+
+/** The subset of JSON Schema the published record schema uses. */
+function conforms(schema, value, where = "record") {
+  if (schema.oneOf) {
+    const matching = schema.oneOf.filter((option) => conforms(option, value, where).length === 0);
+    return matching.length === 1 ? [] : [`${where}: matches ${matching.length} of oneOf`];
+  }
+  if ("const" in schema) return value === schema.const ? [] : [`${where}: is not ${JSON.stringify(schema.const)}`];
+  if (schema.enum) return schema.enum.includes(value) ? [] : [`${where}: ${JSON.stringify(value)} is not in the enum`];
+  const typeOf = value === null ? "null" : Array.isArray(value) ? "array" : Number.isInteger(value) ? "integer" : typeof value;
+  const allowed = [schema.type ?? []].flat();
+  if (allowed.length && !allowed.includes(typeOf) && !(typeOf === "integer" && allowed.includes("number")))
+    return [`${where}: is ${typeOf}, not ${allowed.join("|")}`];
+  const problems = [];
+  if (schema.pattern && typeof value === "string" && !new RegExp(schema.pattern).test(value)) problems.push(`${where}: does not match ${schema.pattern}`);
+  if (typeof schema.minimum === "number" && typeof value === "number" && value < schema.minimum) problems.push(`${where}: below ${schema.minimum}`);
+  if (typeOf === "array" && schema.items) value.forEach((item, index) => problems.push(...conforms(schema.items, item, `${where}[${index}]`)));
+  if (typeOf === "object") {
+    for (const key of schema.required ?? []) if (!(key in value)) problems.push(`${where}: missing ${key}`);
+    for (const [key, item] of Object.entries(value)) {
+      if (schema.properties?.[key]) problems.push(...conforms(schema.properties[key], item, `${where}.${key}`));
+      else if (schema.additionalProperties === false) problems.push(`${where}: ${key} is not in the schema`);
+    }
+  }
+  return problems;
+}
+
+test("every record the command writes conforms to the published schema, signed or not", () => {
+  const schema = JSON.parse(fs.readFileSync(path.join(repoRoot, "docs/schemas/attestation-record.v2.json"), "utf8"));
+  const { dir } = ledgerDir("schema");
+  const signingKey = loadAttestKey(keyPair(dir).private);
+
+  const bound = buildAttestation(
+    { verdict: boundVerdict(), merge: "a".repeat(40), prev: "b".repeat(40), pr: 7, author: "T", committed: "2026-10-10T00:00:00Z", signingKey },
+    [],
+  );
+  const bare = buildAttestation({ verdict: { verdict: "WARN", pass: { checks: [] } }, merge: "d".repeat(40) }, [bound]);
+  assert.deepEqual(conforms(schema, bound), []);
+  assert.deepEqual(conforms(schema, bare), []);
+
+  // The schema names every field a record has, so one cannot be added to the
+  // record without being published.
+  const { signature: _signature, ...unsignedFields } = bound;
+  assert.deepEqual(Object.keys(unsignedFields).sort(), [...schema.required].sort());
+  assert.deepEqual(conforms(schema, { ...bound, extra: true }), ["record: extra is not in the schema"]);
+  assert.deepEqual(conforms(schema, { ...bound, verdict: "MAYBE" }), ['record.verdict: "MAYBE" is not in the enum']);
+});
+
+test("a record is published as the solumbe/receipt commit status on the commit it attests", () => {
+  const { dir, ledger, verdict } = ledgerDir("status");
+  const key = keyPair(dir);
+  fs.writeFileSync(verdict, JSON.stringify(boundVerdict()));
+  runAttest(["--verdict", verdict, "--merge", "a".repeat(40), "--ledger", ledger, "--sign-key", key.private]);
+  const [record] = fs
+    .readFileSync(ledger, "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+
+  assert.deepEqual(receiptStatus(record, { targetUrl: "https://example.test/ledger" }), {
+    context: "solumbe/receipt",
+    state: "success",
+    description: `PASS · record #1 ${record.recordHash.slice(0, 12)} · tree 7777777 · signed ${key.keyId}`,
+    target_url: "https://example.test/ledger",
+  });
+  assert.equal(receiptStatus({ ...record, verdict: "FAIL" }).state, "failure");
+  assert.equal(receiptStatus({ ...record, verdict: "WARN" }).state, "success", "a WARN asks for a reviewer; it does not block");
+
+  const dryRun = runAttest(["--status", "--ledger", ledger, "--repo", "acme/shop", "--dry-run"]);
+  assert.equal(dryRun.status, 0, dryRun.stderr || dryRun.stdout);
+  assert.match(dryRun.stdout, /^Would publish solumbe\/receipt on acme\/shop@aaaaaaa: success · PASS · record #1 /);
+
+  assert.equal(runAttest(["--status", "--ledger", ledger, "--merge", "f".repeat(40), "--dry-run"]).status, 1, "no record for that commit");
+
+  // Posting goes through the caller's own gh login.
+  const calls = [];
+  const runner = (command, args) => {
+    calls.push([command, ...args]);
+    return { ok: true, status: 0, stdout: "{}", stderr: "" };
+  };
+  const posted = postReceiptStatus(record, { repo: "acme/shop", runner });
+  assert.equal(posted.posted, true);
+  assert.deepEqual(calls[0].slice(0, 5), ["gh", "api", "--method", "POST", `repos/acme/shop/statuses/${"a".repeat(40)}`]);
+  assert.ok(calls[0].includes("context=solumbe/receipt") && calls[0].includes("state=success"));
+
+  const refused = postReceiptStatus(record, {
+    repo: "acme/shop",
+    runner: () => ({ ok: false, status: 1, stdout: "", stderr: "HTTP 403: Resource not accessible by integration\nmore" }),
+  });
+  assert.deepEqual([refused.posted, refused.error], [false, "HTTP 403: Resource not accessible by integration"]);
 });

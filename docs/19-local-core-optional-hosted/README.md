@@ -34,6 +34,7 @@ The supporting commands run the same way: `impact` and `converge` (the pieces `g
 | Realtime Canvas | The request text, the tool name and the host label | `127.0.0.1` only; any other address is ignored | Off |
 | Telemetry | One JSONL line per run to `~/.solumbe/usage.jsonl` | Your disk | Off |
 | Telemetry sharing | A smaller, allowlisted anonymous shape | Solumbe's public relay | Off, and a separate opt-in from local capture |
+| `attest --status` | One commit status per record: the verdict, record number and hash, the tree SHA and the signing key id, through your own `gh` login | GitHub, on the attested commit | Only with `--status`; the reusable workflow runs it on each record it writes |
 | Hosted audit trail | The attestation record: commit identity, verdict, and hashes. Never the diff or the source | Your organisation's store | Off; needs an org token |
 
 ---

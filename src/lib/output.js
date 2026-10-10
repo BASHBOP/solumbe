@@ -106,8 +106,9 @@ Usage:
   solumbe converge <repo> <query> --base <ref> [--head ref | --staged] [--include-untracked] [--top n] [--out file] [--json]
   solumbe declare <repo> <request> [--top n] [--out file] [--json]                            # before the edit: record the files the request is expected to touch
   solumbe amend <file...> --reason text [--path repo] [--intent file] [--json]                # add files to the declared intent, with the reason they belong
-  solumbe attest [repo] --verdict file --merge sha [--prev sha] [--pr n] [--author name] [--committed iso] [--ledger file] [--json]   # append a hash-chained record of a merged commit
-  solumbe attest [repo] --verify [--ledger file] [--json]                                     # recompute the chain; exits 1 if any record was altered
+  solumbe attest [repo] --verdict file --merge sha [--prev sha] [--pr n] [--author name] [--committed iso] [--ledger file] [--sign-key pem] [--json]   # append a hash-chained record of a merged commit, signed when given a key
+  solumbe attest [repo] --verify [--ledger file] [--public-key pem] [--require-signature] [--json]   # recompute the chain and check signatures; exits 1 if any record was altered
+  solumbe attest [repo] --status [--merge sha] [--ledger file] [--repo owner/name] [--target-url url] [--dry-run] [--json]   # publish a record as the solumbe/receipt commit status
   solumbe calibrate <repo> [--window days] [--min-sample n] [--since date] [--max n] [--json]   # grade risk flags against this repo's own history
   solumbe calibrate <repo> --gate [--window days] [--min-sample n] [--since date] [--max commits] [--policy x] [--governance x] [--quiet] [--out file] [--json]   # replay the gate and the convergence score over history; grade verdict and band
   solumbe calibrate <repo> --follow-through [--all] [--window-min minutes] [--min-sample n] [--out file] [--json]   # from the usage log: how often a warning had cleared on the next run
