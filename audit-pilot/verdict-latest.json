@@ -1,7 +1,7 @@
 {
   "ok": true,
-  "generatedAt": "2026-10-10T08:29:41.852Z",
-  "schemaVersion": 2,
+  "generatedAt": "2026-10-10T11:25:05.458Z",
+  "schemaVersion": 3,
   "reviewEngineVersion": 1,
   "request": "review this change",
   "verdict": "WARN",
@@ -14,13 +14,8 @@
     "concepts": [],
     "topFiles": [
       {
-        "path": "src/lib/agent-workflow.js",
-        "score": 13,
-        "riskFlags": []
-      },
-      {
-        "path": "src/lib/ax.js",
-        "score": 13,
+        "path": "src/lib/review.js",
+        "score": 22.6,
         "riskFlags": []
       },
       {
@@ -34,8 +29,13 @@
         "riskFlags": []
       },
       {
-        "path": "tests/mcp-dispatch.test.js",
-        "score": 2.5,
+        "path": "tests/review.test.js",
+        "score": 5.7,
+        "riskFlags": []
+      },
+      {
+        "path": "src/lib/pass-local.js",
+        "score": 5.5,
         "riskFlags": []
       }
     ],
@@ -44,13 +44,14 @@
     ]
   },
   "prReviewSummary": {
-    "changedFiles": 48,
-    "additions": 1377,
-    "deletions": 69,
+    "changedFiles": 41,
+    "additions": 3512,
+    "deletions": 124,
     "riskLevel": "low",
     "riskFlags": [
       "dependency",
-      "large PR"
+      "large PR",
+      "large file diff"
     ],
     "reviewTargetsCount": 0
   },
@@ -62,7 +63,7 @@
       {
         "name": "Changed files",
         "status": "PASS",
-        "summary": "48 changed files found."
+        "summary": "41 changed files found."
       },
       {
         "name": "Commit snapshot",
@@ -71,8 +72,8 @@
       },
       {
         "name": "Secret safety",
-        "status": "PASS",
-        "summary": "No secret file paths and no credential values found in the changed content."
+        "status": "WARN",
+        "summary": "A changed line assigns a high-entropy literal to a credential-shaped name."
       },
       {
         "name": "Risk review",
@@ -96,8 +97,8 @@
       },
       {
         "name": "Review state",
-        "status": "WARN",
-        "summary": "Local mode cannot verify approvals, CODEOWNERS, status checks, or unresolved conversations yet."
+        "status": "SKIPPED",
+        "summary": "Not checked locally: approvals, CODEOWNERS, status checks, and unresolved conversations are verified once a PR exists."
       },
       {
         "name": "Policy profile",
@@ -107,6 +108,6 @@
     ]
   },
   "tokenEstimate": {
-    "fullJson": 470
+    "fullJson": 480
   }
 }
