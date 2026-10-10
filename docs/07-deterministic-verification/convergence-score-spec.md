@@ -48,7 +48,16 @@ Coverage = predictedDirect > 0 ? 100 * confirmedDirect / predictedDirect : 0
 ```
 
 Share of the task's predicted owner files that were actually changed. A task that grounds to
-no predicted files is unmeasurable; Coverage is 0 and a recommendation says so.
+no predicted file is unmeasurable: the result is `inconclusive` (3.4), with no Coverage at all.
+
+Owners are predicted from the request's words first: the paths, symbols, exports and routes
+that match it. When no file clears that bar, the import graph is asked. A file is then an
+owner when a word of the request is its name (`util` for `src/lib/util.js`) or a symbol it
+exports, no other source file shares that name or export, and it has at least one import edge,
+so it is a module the repository uses and not a stray file. Candidates are ordered by how many
+files import them, and the lexical score only breaks ties. Words that say what to do or name
+code in general (`refactor`, `index`, `test`) anchor nothing. The file's reasons say
+"grounded in the import graph" and which word and edge count did it.
 
 ### 3.2 Scope (did only intent happen?)
 

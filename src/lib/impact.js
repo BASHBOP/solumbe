@@ -11,7 +11,15 @@ import { getCachedCodeMap } from "./index-cache.js";
 import { conceptsFromQuery, classifyPath, CONCEPT_SYNONYMS, RISK_FLAGS, glyphFor, isDocPath, isTestDataPath, singularizeToken } from "./risk-paths.js";
 import { isRunnableTestPath, isTestFilePath } from "./code-map/classify.js";
 import { joinedCamelCaseWords } from "./code-map/text.js";
-import { collapseLocaleSiblings, formatLocales, isCopyRequest, resolveNamedFiles, stripFileExtensions, TRANSLATION_DEMOTION } from "./ranking-rules.js";
+import {
+  collapseLocaleSiblings,
+  formatLocales,
+  importDegrees,
+  isCopyRequest,
+  resolveNamedFiles,
+  stripFileExtensions,
+  TRANSLATION_DEMOTION,
+} from "./ranking-rules.js";
 import { estimateTokens, estimateTokenSections } from "./tokens.js";
 import { runCommand } from "./tools.js";
 
@@ -67,7 +75,9 @@ export const DIFF_RENAME_LIMIT = 1000;
 // 4: a file the request names is pinned as a required owner, a translation
 // catalog is demoted unless the request is about copy and its locale files
 // share one entry (`siblings`), and a named file's extension no longer scores.
-const impactEngineVersion = 4;
+// 5: a request no owner grounds by its words is grounded in the import graph
+// when one file is named for a word in it, or is the only exporter of one.
+const impactEngineVersion = 5;
 const defaultTop = 10;
 const companionTop = 3;
 
@@ -1133,6 +1143,14 @@ function classifyImpactRoles(heuristicRanked, allFiles, query, pinned = new Map(
       .slice(0, 3)
       .map((entry) => entry.file.path),
   ];
+  // Words alone left the request without an owner. The import graph can still
+  // settle it, and what it says is a fact about the repository, not overlap.
+  if (directOwners.length === 0) {
+    for (const { entry, reason } of graphAnchoredOwners(unnamed, allFiles, terms)) {
+      entry.reasons.push(reason);
+      directOwners.push(entry.file.path);
+    }
+  }
   for (const file of directOwners) byPath.set(file, "required");
 
   // `weightedQueryTerms` carries singular forms, so a request for
@@ -1203,6 +1221,67 @@ function genericOwnerFallback(heuristicRanked) {
   );
   if ((candidates[0]?.score ?? 0) < FALLBACK_OWNER_MIN_SCORE) return [];
   return candidates;
+}
+
+// Words that say what to do or name code in general, never a module: a file
+// called `test.js` or `index.js` is not what "test the index" asks about.
+const GRAPH_ANCHOR_STOP_TERMS = new Set([
+  ...["app", "build", "check", "clean", "cleanup", "code", "create", "delete", "disable", "enable", "file", "files", "function", "handle", "implement"],
+  ...["improve", "index", "lib", "list", "load", "logic", "main", "method", "mod", "module", "move", "read", "refactor", "replace", "run", "save", "send"],
+  ...["set", "show", "simplify", "spec", "src", "support", "test", "tests", "tidy", "type", "types", "write"],
+]);
+
+/**
+ * Owners the import graph names when no candidate's lexical score does.
+ *
+ * A file is anchored when a word of the request is its name (`util` for
+ * `src/lib/util.js`) or a symbol it exports (`greet`), no other source file
+ * shares that name or export, and it has at least one import edge, so it is a
+ * module the repository actually uses and not a stray file. Candidates are
+ * ordered by how many files import them; the lexical score only breaks ties.
+ * @param {ScoredEntry[]} ranked
+ * @param {CodeMapFile[]} allFiles
+ * @param {Set<string>} terms
+ * @returns {{ entry: ScoredEntry, reason: string }[]}
+ */
+function graphAnchoredOwners(ranked, allFiles, terms) {
+  const anchors = [...terms].filter((term) => term.length >= 3 && !GRAPH_ANCHOR_STOP_TERMS.has(term));
+  if (anchors.length === 0) return [];
+  const candidates = allFiles.filter((file) => !file.isVendor && !NEVER_OWNER_KINDS.has(file.kind) && !isTestFilePath(file.path) && !isDocPath(file.path));
+  /** @type {Map<string, Set<string>>} */
+  const byStem = new Map();
+  /** @type {Map<string, Set<string>>} */
+  const byExport = new Map();
+  /** @param {Map<string, Set<string>>} index @param {string} key @param {string} filePath */
+  const note = (index, key, filePath) => index.set(key, (index.get(key) ?? new Set()).add(filePath));
+  for (const file of candidates) {
+    note(byStem, path.posix.basename(file.path).split(".")[0].toLowerCase(), file.path);
+    for (const name of file.exports ?? []) note(byExport, String(name).toLowerCase(), file.path);
+  }
+
+  const degrees = importDegrees(allFiles);
+  const rankedByPath = new Map(ranked.map((entry) => [entry.file.path, entry]));
+  /** @type {Map<string, { entry: ScoredEntry, importers: number, reason: string }>} */
+  const found = new Map();
+  for (const term of anchors) {
+    for (const [index, what] of /** @type {[Map<string, Set<string>>, string][]} */ ([
+      [byStem, "the only source file named"],
+      [byExport, "the only source file that exports"],
+    ])) {
+      const files = index.get(term);
+      if (files?.size !== 1) continue;
+      const [filePath] = files;
+      const entry = rankedByPath.get(filePath);
+      const importers = degrees.importers.get(filePath) ?? 0;
+      const imports = degrees.imports.get(filePath) ?? 0;
+      if (!entry || found.has(filePath) || importers + imports === 0) continue;
+      const edges = importers > 0 ? `imported by ${importers} file(s)` : `importing ${imports} file(s)`;
+      found.set(filePath, { entry, importers, reason: `grounded in the import graph: ${what} \`${term}\`, a word in the request; ${edges}` });
+    }
+  }
+  return [...found.values()]
+    .sort((a, b) => b.importers - a.importers || b.entry.score - a.entry.score || a.entry.file.path.localeCompare(b.entry.file.path))
+    .slice(0, 3);
 }
 
 /**
