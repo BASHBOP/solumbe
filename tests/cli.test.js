@@ -537,6 +537,14 @@ test("help lists the gate command and the canonical-vs-legacy guidance", async (
   assert.equal(result.exitCode, 0);
   assert.match(result.stdout, /solumbe gate/);
   assert.match(result.stdout, /Canonical vs legacy/);
+  // The first page is the core and says where the rest is; --all is everything.
+  assert.match(result.stdout, /solumbe help --all/);
+  assert.doesNotMatch(result.stdout, /solumbe (route|ax|obsidian|dashboard|calibrate|regret) /);
+  const all = await runCli(["help", "--all"]);
+  assert.equal(all.exitCode, 0);
+  for (const command of ["route", "ax", "obsidian", "dashboard", "calibrate", "regret", "context", "converge", "gate", "attest"]) {
+    assert.match(all.stdout, new RegExp(`^  solumbe ${command} `, "m"), `help --all lists ${command}`);
+  }
   // The legacy MCP tool note once promised removal "until 3.0" and linked
   // docs/MIGRATION-2.0.md, which the solumbe rebrand deleted; the section it
   // links now has to exist.

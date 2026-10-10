@@ -182,5 +182,5 @@ test("solumbe calibrate --gate prints the replay as JSON and as a report, and ta
   const both = cli(["calibrate", root, "--gate", "--trial"]);
   assert.equal(both.status, 1);
   assert.match(both.stderr, /one of --gate, --follow-through or --trial/);
-  assert.match(cli(["help"]).stdout, /calibrate <repo> --gate/);
+  assert.match(cli(["help", "--all"]).stdout, /calibrate <repo> --gate/);
 });

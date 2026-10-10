@@ -87,7 +87,42 @@ export function printJson(value) {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
-export function printHelp() {
+/**
+ * `solumbe help` is the core: what runs before the edit, before the merge and
+ * after it. `solumbe help --all` is every command. Nothing is removed by being
+ * left off the first page; a reader who wants the rest is told where it is.
+ * @param {{ all?: boolean }} [options]
+ */
+export function printHelp(options = {}) {
+  if (!options.all) {
+    printText(`solumbe
+
+Usage:
+  solumbe context <query> [--path repo] [--limit n] [--online] [--out file] [--json]        # before the edit: the files, tests and commands the request needs
+  solumbe declare <repo> <request> [--top n] [--out file] [--json]                          # before the edit: record the files it is expected to touch
+  solumbe converge <repo> <query> --base <ref> [--head ref | --staged] [--out file] [--json]   # after the edit: how far the diff is from the request, with a receipt
+  solumbe gate [repo | --path repo] [--base ref] [--head ref | --staged] [--request text] [--intent file] [--min-convergence n] [--receipt hash|file] [--out file] [--json]   # before the merge: PASS / WARN / FAIL on the exact tree
+  solumbe gate --pr <selector> [repo | --path repo] [--request text] [--intent file] [--min-convergence n] [--receipt hash|file] [--json]   # the same, for a GitHub pull request
+  solumbe attest [repo] --verdict file --merge sha [--prev sha] [--pr n] [--ledger file] [--sign-key pem] [--json]   # after the merge: append a hash-chained record of the merged commit, signed when given a key
+  solumbe attest [repo] --verify [--ledger file] [--public-key pem] [--require-signature] [--json]   # recompute the chain and check signatures; exits 1 if any record was altered
+
+Set up:
+  solumbe install --host all          # connect the MCP server to every agent host it finds
+  solumbe doctor                      # check the local toolchain
+  solumbe mcp                         # run the MCP server over stdio
+  solumbe init <path>                 # scaffold CI, a pre-commit hook and .solumbe/ in a repository
+
+More:
+  solumbe help --all                  # every command: impact, amend, pr, review, map, search, calibrate, route, ax, dashboard and the rest
+  solumbe <command> --json            # every command prints the same evidence as data
+
+Global flags (every command that prints for a terminal):
+  --emoji | --no-emoji        emoji glyphs on, or ASCII glyphs off; the default is plain Unicode (ASCII under CI, NO_EMOJI=1 or TERM=dumb)
+  --color | --no-color        ANSI colour on or off; the default follows the terminal, NO_COLOR and FORCE_COLOR
+  --theme name                default | color | minimal | high-contrast
+`);
+    return;
+  }
   printText(`solumbe
 
 Usage:

@@ -90,13 +90,16 @@ An amendment adds a file with its reason, hashed onto the contract, so a reviewe
 
 ## The core
 
-Three commands are the product. They call no model, open no socket, and read nothing outside the repository.
+Four commands are the product. They call no model, open no socket, and read nothing outside the repository.
 
-| Step             | Command                                                                      |
-| ---------------- | ---------------------------------------------------------------------------- |
-| Before the edit  | `solumbe context "add refund handling" --path .`                             |
-| Before the merge | `solumbe gate . --staged --base origin/main --request "add refund handling"` |
-| For the reviewer | `solumbe pr . --base origin/main --out .solumbe/pr-review.md`                |
+| Step             | Command                                                                      | What it proves                                             |
+| ---------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Before the edit  | `solumbe context "add refund handling" --path .`                             | Which files, tests and commands the request needs          |
+| After the edit   | `solumbe converge . "add refund handling" --base origin/main --staged`       | How far the diff is from the request, with a receipt       |
+| Before the merge | `solumbe gate . --staged --base origin/main --request "add refund handling"` | PASS / WARN / FAIL on the exact staged tree                |
+| After the merge  | `solumbe attest . --verdict verdict.json --merge <sha>`                      | A hash-chained record of what shipped, under which verdict |
+
+`solumbe help` shows these and how to set up; `solumbe help --all` lists every command, including the ones that support them (`impact`, `declare`, `pr`, `review`, `map`, `calibrate`, `route`, `ax`, `dashboard` and the rest). Nothing was removed.
 
 Nothing hosted is required, and nothing hosted can change a verdict. [Local Core, Optional Hosted](https://bashbop.github.io/solumbe/19-local-core-optional-hosted/) lists exactly what the optional pieces send, and where.
 

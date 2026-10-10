@@ -2045,22 +2045,28 @@ function writeMermaid(parsed, diagram, label) {
  * @returns {void}
  */
 function handleHelp(_parsed) {
-  printHelp();
+  const all = Boolean(_parsed?.flags?.all);
+  printHelp({ all });
   // v2 supplement: the canonical merge-gate command plus the canonical-vs-legacy
   // mapping. The base usage block lives in output.js; this keeps the v2 surface
-  // discoverable without rewriting it.
+  // discoverable without rewriting it. The first page carries only the mapping.
+  const v2 = all
+    ? [
+        "Merge gate (v2):",
+        "  solumbe gate [repo | --path repo] [--base ref] [--head ref | --staged] [--run-validation] [--policy x] [--governance x] [--request text] [--min-convergence n] [--receipt hash|file] [--intent file] [--json]   # local gate",
+        "  solumbe gate --pr <selector> [repo | --path repo] [--policy x] [--governance x] [--request text] [--min-convergence n] [--receipt hash|file] [--intent file] [--json]            # GitHub PR gate",
+        "  solumbe workspace-gate <repo...> [--base ref] [--run-validation] [--policy x] [--governance x] [--request text] [--json]                           # one staged receipt across repositories",
+        "",
+        "Evaluation gates (v2):",
+        "  solumbe eval --accuracy [--corpus path] [--json] [--out file]   # labeled retrieval + risk corpus; non-zero exit below thresholds",
+        "  solumbe eval --harness [--corpus path] [--json] [--out file]    # run inferred install/test/typecheck/build commands in isolated fixtures",
+        "  solumbe eval --gate-effectiveness [--corpus path] [--json] [--out file] # assert gate verdicts and deterministic reasons in isolated Git fixtures",
+        "",
+      ]
+    : [];
   printText(
     [
-      "Merge gate (v2):",
-      "  solumbe gate [repo | --path repo] [--base ref] [--head ref | --staged] [--run-validation] [--policy x] [--governance x] [--request text] [--min-convergence n] [--receipt hash|file] [--intent file] [--json]   # local gate",
-      "  solumbe gate --pr <selector> [repo | --path repo] [--policy x] [--governance x] [--request text] [--min-convergence n] [--receipt hash|file] [--intent file] [--json]            # GitHub PR gate",
-      "  solumbe workspace-gate <repo...> [--base ref] [--run-validation] [--policy x] [--governance x] [--request text] [--json]                           # one staged receipt across repositories",
-      "",
-      "Evaluation gates (v2):",
-      "  solumbe eval --accuracy [--corpus path] [--json] [--out file]   # labeled retrieval + risk corpus; non-zero exit below thresholds",
-      "  solumbe eval --harness [--corpus path] [--json] [--out file]    # run inferred install/test/typecheck/build commands in isolated fixtures",
-      "  solumbe eval --gate-effectiveness [--corpus path] [--json] [--out file] # assert gate verdicts and deterministic reasons in isolated Git fixtures",
-      "",
+      ...v2,
       "Canonical vs legacy commands:",
       "  gate                 canonical merge gate; `pass` (local) and `pass-pr` (PR) remain as legacy aliases",
       "  review               canonical composite verdict (impact + review context + gate)",

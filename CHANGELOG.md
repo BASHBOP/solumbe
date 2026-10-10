@@ -34,6 +34,10 @@ This project follows SemVer.
 
 ### Changed
 
+- **`solumbe help` is the core; `solumbe help --all` is every command.**
+  - The first page lists what runs before the edit (`context`, `declare`), after it (`converge`), before the merge (`gate`) and after it (`attest`), then how to set up. `help --all` is the full usage block as before, with `impact`, `pr`, `review`, `map`, `search`, `calibrate`, `route`, `ax`, `obsidian`, `dashboard` and the rest. No command, flag or MCP tool was removed or renamed.
+  - The README's "The core" names four of them (`context`, `converge`, `gate`, `attest`) with what each proves.
+
 - **A Go import reaches the files of the package it names.**
   - A Go import names a package directory by module path (`example.com/shop/internal/stock`), never a file, so a context pack for a Go repository had no import edges: a file's callers and the packages it uses reached the pack only when their names shared a word with the request.
   - The code map now reads every `go.mod` and records on each Go file the repository directories its imports name (`importDirs`). `solumbe context` and `context_pack` link the file to that package's non-test `.go` files, as "imported by primary file" and "imports primary file", and select a test in an external test package as "imports selected file". A nested module resolves against its own `go.mod`; the standard library and dependencies resolve to nothing.

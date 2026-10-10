@@ -198,7 +198,7 @@ test("--offline keeps a run keyless even when the environment has a key, and --m
 });
 
 test("help lists the regret command beside calibrate", () => {
-  const result = spawnSync(process.execPath, [path.resolve("src/cli.js"), "help"], { encoding: "utf8" });
+  const result = spawnSync(process.execPath, [path.resolve("src/cli.js"), "help", "--all"], { encoding: "utf8" });
   assert.equal(result.status, 0);
   assert.match(result.stdout, /solumbe regret <repo>/);
   assert.match(result.stdout, /grade route tiers against this repo's own history/);
