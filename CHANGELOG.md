@@ -8,6 +8,12 @@ This project follows SemVer.
 
 ### Added
 
+- **The gate delegates to gitleaks, Semgrep and osv-scanner when they are installed.**
+  - Each runs over a temporary copy of the changed files as the gate read them (staged tree, head commit or working tree) and reports as its own check: `Secret scan (gitleaks)`, `Code patterns (semgrep)`, `Known vulnerabilities (osv-scanner)`.
+  - gitleaks runs where the repository has a `.gitleaks.toml`, and a finding fails with the file, line and rule, never the secret. Semgrep runs only with the repository's own rules, never the registry; an `ERROR` finding fails and anything else warns. osv-scanner sends package names to the OSV API, so it runs only when named in `SOLUMBE_SCANNERS`, and a known vulnerability warns.
+  - `SOLUMBE_SCANNERS` selects them (`off`, or a list such as `gitleaks,osv-scanner`), and `SOLUMBE_<SCANNER>_BIN` points at a binary. Nothing is installed or fetched, and the local and PR gates both run them. `solumbe calibrate --gate` does not.
+  - A repository with none of these set up sees no change.
+
 - **A scope contract: declare what a request will touch before the edit, and the gate fails a file that was never declared.**
   - `solumbe declare <repo> "<request>"` records the files Solumbe predicts for the request, the commit and a contract hash in `.solumbe/intent.json`. `solumbe amend <file...> --reason "<why>"` adds files, each amendment hashed onto the one before it.
   - `solumbe gate`, `pass`, `pass-pr` and `review` take `--intent <file>` and add a `Scope contract` check. A changed file is declared, amended, implied by a declared file under convergence's existing rules (its test, a new sibling, an importer, the changelog), or undeclared, which fails with "Touched `src/auth/session.ts`, which was never declared."

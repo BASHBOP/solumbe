@@ -19,6 +19,7 @@ import { estimateTokens } from "./tokens.js";
 import { captureCommitSubject, captureStagedSubject, generateConvergence, INCONCLUSIVE_BAND } from "./converge.js";
 import { declaredScope, readIntent, verifyIntent } from "./intent.js";
 import { executeValidationPlan } from "./validation-attestation.js";
+import { externalScannerChecks } from "./external-scanners.js";
 
 /**
  * A single check produced by the local/PR merge-readiness gates.
@@ -130,6 +131,9 @@ export function evaluateLocal(repoPath, options = {}) {
     if (compliance) checks.push(compliance);
     const aiGovernance = aiGovernanceCheck(root);
     if (aiGovernance) checks.push(aiGovernance);
+    // Specialist scanners, when installed, over the same exact content the
+    // gate's own secret check read.
+    checks.push(...externalScannerChecks(root, files, subjectContent));
   }
   const exactDiff = { staged, subject, subjectError, diffFiles: scope !== "working-tree" ? files : undefined };
   const contract = scopeContractCheck(root, base, options.request, options.intent, exactDiff);
