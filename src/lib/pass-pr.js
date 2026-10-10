@@ -417,7 +417,13 @@ function reviewDecisionCheck(decision, governance) {
       }
       return { name: "Review decision", status: STATUS.fail, summary: "A required human review is still missing." };
     case "":
-      return { name: "Review decision", status: STATUS.warn, summary: "GitHub did not return a review decision; verify required reviewers manually." };
+      // GitHub returns no decision when the base branch requires no review:
+      // there is nothing to read, which is not evidence against the change.
+      return {
+        name: "Review decision",
+        status: STATUS.skipped,
+        summary: "Not checked: GitHub did not return a review decision; verify required reviewers manually.",
+      };
     default:
       return { name: "Review decision", status: STATUS.warn, summary: `Unrecognized review decision: ${decision}` };
   }
@@ -438,7 +444,7 @@ function codeownersCheckPR(root, files, reviews, runner, governance) {
       return { name: "CODEOWNERS", status: STATUS.warn, summary: "No CODEOWNERS file found; ownership checks are unavailable." };
     }
     const loadError = /** @type {{ message?: string } | undefined} */ (loaded.error);
-    return { name: "CODEOWNERS", status: STATUS.warn, summary: `Could not read CODEOWNERS: ${loadError?.message ?? "unknown error"}` };
+    return { name: "CODEOWNERS", status: STATUS.skipped, summary: `Not checked: could not read CODEOWNERS: ${loadError?.message ?? "unknown error"}` };
   }
   const ruleset = loaded.ruleset;
   if (ruleset.rules.length === 0) {
@@ -501,7 +507,7 @@ function codeownersCheckPR(root, files, reviews, runner, governance) {
     return { name: "CODEOWNERS", status: STATUS.fail, summary: "CODEOWNERS approval is missing for one or more changed files.", details: missing };
   }
   if (manual.length > 0) {
-    return { name: "CODEOWNERS", status: STATUS.warn, summary: "Some CODEOWNERS could not be verified automatically.", details: manual };
+    return { name: "CODEOWNERS", status: STATUS.skipped, summary: "Not checked: some CODEOWNERS could not be verified automatically.", details: manual };
   }
   return { name: "CODEOWNERS", status: STATUS.pass, summary: "Changed files have verified CODEOWNERS approval.", details: [ruleset.path] };
 }
@@ -678,7 +684,11 @@ function threadDetail(thread) {
 function branchProtectionCheck(root, branch, runner) {
   const trimmed = String(branch ?? "").trim();
   if (!trimmed) {
-    return { name: "Branch protection", status: STATUS.warn, summary: "Base branch is unavailable; branch protection could not be inspected." };
+    return {
+      name: "Branch protection",
+      status: STATUS.skipped,
+      summary: "Not checked: the base branch is unavailable, so branch protection could not be inspected.",
+    };
   }
   /** @type {BranchProtectionPayload | null} */
   let protection;
@@ -686,7 +696,11 @@ function branchProtectionCheck(root, branch, runner) {
   try {
     ({ protection, exists } = branchProtection(root, trimmed, runner));
   } catch (/** @type {any} */ error) {
-    return { name: "Branch protection", status: STATUS.warn, summary: `Could not inspect branch protection: ${error.message ?? String(error)}` };
+    return {
+      name: "Branch protection",
+      status: STATUS.skipped,
+      summary: `Not checked: could not inspect branch protection: ${error.message ?? String(error)}`,
+    };
   }
   if (!exists || !protection) {
     return { name: "Branch protection", status: STATUS.warn, summary: "Base branch is not protected.", details: [trimmed] };
@@ -996,7 +1010,10 @@ function nextStep(data, blocked, warning) {
   if (state === "CLOSED") return "reopen the PR before it can merge";
   if (blocked) return `address ${blocked.name.toLowerCase()} before merge`;
   if (warning) return "review the warning before merge";
-  return data.changedFiles.length === 0 ? "no changes reported" : "ready to merge";
+  if (data.changedFiles.length === 0) return "no changes reported";
+  // A clean PR run proves the checks that ran, not the ones GitHub gave no evidence for.
+  const skipped = data.checks.filter((entry) => entry.status === STATUS.skipped).map((entry) => entry.name.toLowerCase());
+  return skipped.length ? `ready to merge once ${skipped.join(", ")} ${skipped.length === 1 ? "is" : "are"} confirmed` : "ready to merge";
 }
 
 /**

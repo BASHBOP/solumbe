@@ -137,7 +137,7 @@ test("generateReview adds the companion repository's leads for the same request"
   const { parent, web, api } = companionFixture();
   const { data } = await generateReview(web, { request: "decide when BVN verification is required", base: "HEAD" });
 
-  assert.equal(data.schemaVersion, 2);
+  assert.equal(data.schemaVersion, 3);
   assert.ok(
     data.impactSummary.topFiles.every((file) => !file.path.includes("paystack")),
     "the web repo's own owner files stay its own",
@@ -158,7 +158,7 @@ test("generateReview adds the companion repository's leads for the same request"
 test("generateReview omits companion leads when none are configured or no request is given", async () => {
   const unconfigured = companionFixture({ companions: null });
   const { data: plain } = await generateReview(unconfigured.web, { request: "decide when BVN verification is required", base: "HEAD" });
-  assert.equal(plain.schemaVersion, 2);
+  assert.equal(plain.schemaVersion, 3);
   assert.ok(!("companions" in plain.impactSummary), "no .solumberc.json companions, no field");
   assert.doesNotMatch(
     formatReviewTerminal(plain, (opts) => createRenderer({ ...opts, emoji: false })),
@@ -173,12 +173,12 @@ test("generateReview omits companion leads when none are configured or no reques
   fs.rmSync(configured.parent, { recursive: true });
 });
 
-test("an attestation built from a companion verdict records schema 2 and only the repo's own files", async () => {
+test("an attestation built from a companion verdict records its schema version and only the repo's own files", async () => {
   const { buildAttestation } = await import("../src/lib/attest.js");
   const { parent, web } = companionFixture();
   const { data } = await generateReview(web, { request: "decide when BVN verification is required", base: "HEAD" });
   const record = buildAttestation({ verdict: data, merge: "abc123" }, []);
-  assert.equal(record.verdictSchemaVersion, 2);
+  assert.equal(record.verdictSchemaVersion, 3);
   assert.deepEqual(
     record.impactedFiles,
     data.impactSummary.topFiles.map((file) => file.path),

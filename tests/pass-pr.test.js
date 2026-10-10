@@ -365,7 +365,7 @@ test("evaluatePR WARNs when required_pull_request_reviews is entirely absent", a
   assert.ok(protection.details.some((d) => /Pull request reviews are not required/i.test(d)));
 });
 
-test("evaluatePR WARNs Branch protection when the protection API errors unexpectedly", async () => {
+test("evaluatePR reports Branch protection as SKIPPED when the protection API errors unexpectedly", async () => {
   const root = gitInit("protection-error", { "package.json": JSON.stringify({ name: "fixture", version: "1.0.0" }) });
   const canned = {
     ...baselineCanned,
@@ -373,8 +373,49 @@ test("evaluatePR WARNs Branch protection when the protection API errors unexpect
   };
   const data = await evaluatePR(root, "42", { runner: fakeRunner(canned) });
   const protection = data.checks.find((c) => c.name === "Branch protection");
-  assert.equal(protection.status, "WARN");
-  assert.match(protection.summary, /Could not inspect branch protection/);
+  assert.equal(protection.status, "SKIPPED");
+  assert.match(protection.summary, /could not inspect branch protection/);
+});
+
+test("a review decision GitHub did not return is SKIPPED and leaves the verdict to the other checks", async () => {
+  const root = gitInit("no-review-decision", {
+    "package.json": JSON.stringify({ name: "fixture", version: "1.0.0", scripts: { test: "node --test" } }),
+    "src/utils/format.ts": "export const fmt = 1;\n",
+    ".github/CODEOWNERS": "src/utils/format.ts @alice\n",
+  });
+  const canned = {
+    ...baselineCanned,
+    "pr view": JSON.stringify({ ...JSON.parse(baselineCanned["pr view"]), files: [{ path: "src/utils/format.ts" }], reviewDecision: "" }),
+  };
+  const data = await evaluatePR(root, "42", { runner: fakeRunner(canned) });
+  assert.equal(data.checks.find((c) => c.name === "Review decision").status, "SKIPPED");
+  assert.equal(data.verdict, "PASS");
+  const terminal = formatPassPrTerminal(data, (options) => createRenderer({ ...options, color: false, emoji: false }));
+  assert.match(terminal, /ready to merge once review decision is confirmed/);
+
+  // A profile that requires the evidence still fails without it.
+  const strict = await evaluatePR(root, "42", { policy: "company", runner: fakeRunner(canned) });
+  assert.equal(strict.verdict, "FAIL");
+  assert.ok(strict.checks.find((c) => c.name === "Policy profile").details.some((d) => /Review decision must be PASS, got SKIPPED/.test(d)));
+});
+
+test("CODEOWNERS that cannot be read or checked automatically are SKIPPED, and a missing approval still fails", async () => {
+  const files = {
+    "package.json": JSON.stringify({ name: "fixture", version: "1.0.0", scripts: { test: "node --test" } }),
+    "src/utils/format.ts": "export const fmt = 1;\n",
+  };
+  const canned = {
+    ...baselineCanned,
+    "pr view": JSON.stringify({ ...JSON.parse(baselineCanned["pr view"]), files: [{ path: "src/utils/format.ts" }] }),
+  };
+  // An owner outside GitHub (an email address) cannot be matched to a reviewer.
+  const external = gitInit("codeowners-external", { ...files, ".github/CODEOWNERS": "src/utils/format.ts owner@example.com\n" });
+  const unverifiable = (await evaluatePR(external, "42", { runner: fakeRunner(canned) })).checks.find((c) => c.name === "CODEOWNERS");
+  assert.equal(unverifiable.status, "SKIPPED");
+  assert.match(unverifiable.summary, /could not be verified automatically/);
+
+  const missing = gitInit("codeowners-missing-approval", { ...files, ".github/CODEOWNERS": "src/utils/format.ts @bob\n" });
+  assert.equal((await evaluatePR(missing, "42", { runner: fakeRunner(canned) })).checks.find((c) => c.name === "CODEOWNERS").status, "FAIL");
 });
 
 // --- Finding #8: unresolved review conversations ---

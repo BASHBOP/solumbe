@@ -14,6 +14,9 @@ This project follows SemVer.
   - A configured bouncer whose binary cannot be found stays a `WARN`: that install is actionable. Staged mode still reports `Review state` as `PASS`.
   - The terminal, markdown, `review_verdict`, `solumbe pass-pr` and herdr trust-pane reports show a skipped check on its own line (info, not warning). A clean local run now ends "ready for a PR; skipped checks run there".
   - `solumbe eval --gate-effectiveness` accepts `SKIPPED` in `expectedChecks`.
+  - The pull request gate reports it too, for evidence GitHub did not supply: `Review decision` when GitHub returns none, `CODEOWNERS` when the file cannot be read or an owner cannot be matched to a reviewer, and `Branch protection` when the base branch or the protection API is unavailable. A clean pull request ends "ready to merge once review decision is confirmed".
+  - The `company` and `high-risk` profiles are unchanged: they require those checks to be `PASS`, so a `SKIPPED` one still fails them. An unprotected base branch, a missing CODEOWNERS file, missing status checks and a missing approval under solo governance still `WARN`.
+  - The verdict `schemaVersion` is now 3, for the new check status.
 
 ### Fixed
 
