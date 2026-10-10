@@ -17,6 +17,12 @@ This project follows SemVer.
 
 ### Changed
 
+- **A request its words do not ground is grounded in the import graph.**
+  - `solumbe impact`, `change_impact` and everything built on them (`converge`, the gate's convergence floor) predicted no owner for "refactor util helpers" in a repository with one `util.js`: the file ranked first but under the lexical floor, so the request was ungrounded.
+  - When no file clears that floor, a file is now an owner if a word of the request is its name or a symbol it exports, no other source file shares that name or export, and it has at least one import edge. Candidates are ordered by how many files import them; the lexical score only breaks ties.
+  - It is a fallback: a request that already has an owner is ranked as before, and the accuracy eval is unchanged (p@5 0.861, r@5 1.0, 25 of 25 cases). A file with no import edge, a name two files share, a test, and words such as `refactor`, `index` or `test` ground nothing.
+  - The impact engine is version 5.
+
 - **A request that predicts no owner file is `inconclusive`, with no convergence score.**
   - `solumbe converge` and the MCP `convergence_score` tool scored such a request about 20 and banded it `drift`, the same for a correct change and an unrelated one. They now return `band: "inconclusive"`, `convergence: null` and `null` sub-scores, and the report prints "inconclusive" where the number was. A client that reads `convergence` as a number, or `band` as one of three values, must accept the new ones.
   - The report lists the changed files as "changed, not predicted" rather than as scope drift, and still names any on a risk-sensitive path.

@@ -349,9 +349,23 @@ const importSuffixes = ["", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts"
  * @returns {Map<string, number>}
  */
 function countImporters(files) {
+  return importDegrees(files).importers;
+}
+
+/**
+ * The import graph as two counts per file: how many non-test files import it,
+ * and how many repository files it imports. Specifiers resolve as in
+ * `resolveImportSpecifier`; a bare package specifier is a dependency, not an
+ * edge.
+ * @param {CodeMapFile[]} files
+ * @returns {{ importers: Map<string, number>, imports: Map<string, number> }}
+ */
+export function importDegrees(files) {
   const fileSet = new Set(files.map((file) => file.path));
   /** @type {Map<string, number>} */
-  const counts = new Map();
+  const importers = new Map();
+  /** @type {Map<string, number>} */
+  const imports = new Map();
   for (const file of files) {
     if (file.kind === "test" || file.isVendor) continue;
     /** @type {Set<string>} */
@@ -360,9 +374,10 @@ function countImporters(files) {
       const target = resolveImportSpecifier(file.path, specifier, fileSet);
       if (target && target !== file.path) targets.add(target);
     }
-    for (const target of targets) counts.set(target, (counts.get(target) ?? 0) + 1);
+    if (targets.size) imports.set(file.path, targets.size);
+    for (const target of targets) importers.set(target, (importers.get(target) ?? 0) + 1);
   }
-  return counts;
+  return { importers, imports };
 }
 
 /**
