@@ -239,5 +239,5 @@ test("solumbe calibrate --follow-through reports from the usage log", () => {
   assert.equal(all.status, 0, all.stderr);
   assert.match(all.stdout, /FOLLOW-THROUGH/);
   assert.match(all.stdout, /alarms \(WARN or FAIL\): 2/);
-  assert.match(cli(["help"]).stdout, /calibrate <repo> --follow-through/);
+  assert.match(cli(["help", "--all"]).stdout, /calibrate <repo> --follow-through/);
 });
