@@ -1602,19 +1602,28 @@ function buildImportGraph(files = []) {
   const importsByPath = new Map();
   /** @type {Map<string, Set<string>>} */
   const importedByPath = new Map();
+  // A Go import names a package, so its targets are the package's files.
+  /** @type {Map<string, string[]>} */
+  const goPackages = new Map();
+  for (const file of files) {
+    if (!file.path.endsWith(".go") || file.kind === "test") continue;
+    const directory = path.posix.dirname(file.path);
+    goPackages.set(directory, [...(goPackages.get(directory) ?? []), file.path]);
+  }
 
   for (const file of files) {
     /** @type {Set<string>} */
     const imports = new Set();
-    for (const specifier of file.imports ?? []) {
-      const resolved = resolveImport(file.path, specifier, fileSet);
-      if (!resolved) {
+    const resolved = (file.imports ?? []).map((specifier) => resolveImport(file.path, specifier, fileSet));
+    const packageFiles = (file.importDirs ?? []).flatMap((directory) => goPackages.get(directory || ".") ?? []);
+    for (const target of [...resolved, ...packageFiles]) {
+      if (!target) {
         continue;
       }
-      imports.add(resolved);
-      const importers = importedByPath.get(resolved) ?? new Set();
+      imports.add(target);
+      const importers = importedByPath.get(target) ?? new Set();
       importers.add(file.path);
-      importedByPath.set(resolved, importers);
+      importedByPath.set(target, importers);
     }
     importsByPath.set(file.path, imports);
   }
