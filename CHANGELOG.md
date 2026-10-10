@@ -6,6 +6,14 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`Secret safety` stops flagging a placeholder in a source-file comment.**
+  - The heuristic `hardcoded credential` rule no longer runs on a line that is only a comment (`//`, `/*`, a `*` continuation or `#`). It warned on `src/lib/secret-scan.js:16`, the comment that explains the rule with `accessToken: 'valid-access-token'`.
+  - Known secret formats (AWS, Stripe live, GitHub, Slack and the rest) still fail on a comment line.
+  - A trailing comment, `#name` (a private field), `*name()` (a generator method) and a line that closes a block comment before a statement are still code. Text scanned without a file name, such as redacted validation output, keeps the rule on every line.
+  - A commented-out assignment of a real credential that has no vendor format no longer warns.
+
 ## [4.4.0] - 2026-10-10
 
 A check the gate cannot run reports `SKIPPED` instead of `WARN`, so a clean change can return `PASS`, and `solumbe calibrate` grades the gate's verdict against what happened next. No command or field was removed. A check's `status` gains the value `SKIPPED` and the verdict `schemaVersion` moves to 3, so a client that reads `checks[].status` must accept it.
