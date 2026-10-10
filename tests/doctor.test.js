@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { formatDoctorReport, getDoctorReport } from "../src/lib/doctor.js";
 
 const sampleReport = {
@@ -57,4 +60,26 @@ test("formatDoctorReport drops emojis in plain mode", () => {
   assert.match(output, /\[WARN\]/);
   assert.ok(!output.includes("✅"));
   assert.ok(!output.includes("📋"));
+});
+
+test("doctor says when the user config is read from the pre-rename file", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "solumbe-doctor-test-"));
+  const env = { XDG_CONFIG_HOME: tmp };
+  try {
+    const clean = getDoctorReport(env);
+    assert.equal(clean.userConfig?.source, "none");
+    assert.doesNotMatch(formatDoctorReport(clean, { emoji: false }), /user config/);
+
+    const legacy = path.join(tmp, "otito", "config.json"); // rebrand-keep
+    fs.mkdirSync(path.dirname(legacy));
+    fs.writeFileSync(legacy, JSON.stringify({ telemetry: true }));
+    const report = getDoctorReport(env);
+    assert.equal(report.userConfig?.source, "legacy");
+    const output = formatDoctorReport(report, { emoji: false });
+    assert.match(output, /\[WARN\]\s+user config/);
+    assert.ok(output.includes(legacy), "names the file it read");
+    assert.ok(output.includes(`mv "${legacy}" "${path.join(tmp, "solumbe", "config.json")}"`), "says how to move it");
+  } finally {
+    fs.rmSync(tmp, { recursive: true });
+  }
 });

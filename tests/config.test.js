@@ -3,7 +3,18 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { CONFIG_KEYS, companionRepos, contextRepoPaths, gatePolicy, getConfigPath, listConfigSources, loadConfig, writeConfig } from "../src/lib/config.js";
+import {
+  CONFIG_KEYS,
+  companionRepos,
+  contextRepoPaths,
+  gatePolicy,
+  getConfigPath,
+  listConfigSources,
+  loadConfig,
+  userConfigStatus,
+  writeConfig,
+} from "../src/lib/config.js";
+import { isTelemetryEnabled } from "../src/lib/telemetry.js";
 
 // Every loadConfig call pins XDG_CONFIG_HOME to its temp dir. An empty env
 // still falls back to ~/.config/solumbe/config.json, so a developer who has run
@@ -231,6 +242,59 @@ test("loadConfig honors XDG_CONFIG_HOME from the injected env (user tier)", () =
   const themeSource = sources.find((entry) => entry.key === "theme");
   assert.equal(themeSource?.value, "from-user-xdg");
   assert.equal(themeSource?.source, "user");
+  fs.rmSync(tmp, { recursive: true });
+});
+
+// The rename moved the user config to <config home>/solumbe. A telemetry
+// opt-in left in the pre-rename file stopped applying, and usage capture
+// went quiet with nothing reported.
+test("a missing Solumbe user config falls back to the pre-rename file, under XDG_CONFIG_HOME", () => {
+  const tmp = makeTmpDir();
+  const legacyDir = path.join(tmp, "otito"); // rebrand-keep
+  const legacy = path.join(legacyDir, "config.json");
+  const current = path.join(tmp, "solumbe", "config.json");
+  const env = { XDG_CONFIG_HOME: tmp };
+  assert.deepEqual(userConfigStatus(env), { path: current, legacyPath: legacy, readPath: null, source: "none" });
+
+  fs.mkdirSync(legacyDir);
+  fs.writeFileSync(legacy, JSON.stringify({ telemetry: true, theme: "minimal" }));
+  assert.deepEqual(userConfigStatus(env), { path: current, legacyPath: legacy, readPath: legacy, source: "legacy" });
+  assert.equal(loadConfig({ cwd: tmp, env }).telemetry, true, "the old opt-in still applies");
+  assert.equal(listConfigSources({ cwd: tmp, env }).find((entry) => entry.key === "theme")?.source, "user");
+  assert.equal(isTelemetryEnabled({ env, cwd: tmp, fresh: true }), true, "usage capture stays on");
+
+  // Once a Solumbe config exists it alone is read, even when it sets nothing.
+  fs.mkdirSync(path.dirname(current));
+  fs.writeFileSync(current, "{}");
+  assert.equal(userConfigStatus(env).source, "solumbe");
+  assert.equal(loadConfig({ cwd: tmp, env }).telemetry, false);
+  assert.equal(isTelemetryEnabled({ env, cwd: tmp, fresh: true }), false);
+  fs.rmSync(tmp, { recursive: true });
+});
+
+test("without XDG_CONFIG_HOME both user config paths sit under ~/.config", () => {
+  const status = userConfigStatus({});
+  assert.equal(status.path, path.join(os.homedir(), ".config", "solumbe", "config.json"));
+  assert.equal(status.legacyPath, path.join(os.homedir(), ".config", "otito", "config.json")); // rebrand-keep
+});
+
+test("the first user config write carries the pre-rename settings over", () => {
+  const tmp = makeTmpDir();
+  const legacy = path.join(tmp, "otito", "config.json"); // rebrand-keep
+  fs.mkdirSync(path.dirname(legacy));
+  fs.writeFileSync(legacy, JSON.stringify({ telemetry: true, policy: "company" }));
+  const saved = process.env.XDG_CONFIG_HOME;
+  process.env.XDG_CONFIG_HOME = tmp;
+  try {
+    // writeConfig and getConfigPath read process.env, as the CLI does.
+    writeConfig({ theme: "minimal" }, "user");
+    assert.deepEqual(JSON.parse(fs.readFileSync(getConfigPath("user"), "utf8")), { telemetry: true, policy: "company", theme: "minimal" });
+  } finally {
+    if (saved === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = saved;
+  }
+  assert.ok(fs.existsSync(legacy), "the old file is left in place");
+  assert.equal(userConfigStatus({ XDG_CONFIG_HOME: tmp }).source, "solumbe");
   fs.rmSync(tmp, { recursive: true });
 });
 
