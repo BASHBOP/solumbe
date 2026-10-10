@@ -18,8 +18,9 @@ import path from "node:path";
 import { generateCodeMapFromSources } from "./code-map.js";
 import { isTestFilePath } from "./code-map/classify.js";
 import { isSourceFilePath } from "./code-map/generate.js";
-import { DIFF_RENAME_LIMIT, generateImpact } from "./impact.js";
-import { resolveImportSpecifier } from "./ranking-rules.js";
+import { DIFF_RENAME_LIMIT, generateImpact, pathScopeTokens, scopeTokens } from "./impact.js";
+import { getCachedCodeMap } from "./index-cache.js";
+import { importDegrees, resolveImportSpecifier } from "./ranking-rules.js";
 import { classifyPath, isDocPath, isSecretPath, isTestDataPath, RISK_FLAGS } from "./risk-paths.js";
 import { runCommand } from "./tools.js";
 import { estimateTokens } from "./tokens.js";
@@ -79,7 +80,7 @@ const GENERIC_STEMS = new Set(["__init__", "app", "config", "constants", "helper
 
 /**
  * @param {string} query
- * @param {{ path?: string, base?: string, head?: string, top?: number, staged?: boolean, includeUntracked?: boolean, subject?: Record<string, unknown>, diffFiles?: string[], declared?: { tip: string, owners: string[], related: string[] } }} [options]
+ * @param {{ path?: string, base?: string, head?: string, top?: number, staged?: boolean, includeUntracked?: boolean, subject?: Record<string, unknown>, diffFiles?: string[], declared?: { tip: string, owners: string[], related: string[], terms?: string[], modules?: string[] } }} [options]
  * @returns {Record<string, any>}
  */
 export function generateConvergence(query, options = {}) {
@@ -162,14 +163,31 @@ export function generateConvergence(query, options = {}) {
   // named rule before scope and risk alignment are computed.
   const addedFiles = subject ? addedFilesForSubject(root, subject) : [...addedFilesInWorkingTree(root, base), ...(includeUntracked ? (untracked ?? []) : [])];
   const candidates = [...(compared.missedChangedFiles ?? []), ...(compared.advisoryChangedFiles ?? [])];
+  const addedLines = addedLinesFor(root, base, subject, candidates, includeUntracked ? (untracked ?? []) : []);
   const inferredRelated = inferInScopeFiles({
     confirmedDirect,
     confirmedRelated,
     candidates,
     addedFiles,
     mappedFiles: impact.diffEvidence?.mappedFiles ?? [],
-    addedLines: addedLinesFor(root, base, subject, candidates, includeUntracked ? (untracked ?? []) : []),
+    addedLines,
   });
+  // Under a contract the declaration itself says more than a list of files:
+  // the words of the request, the modules its owners live in, and what the
+  // change wires to them. Those bring the rest of a real change into scope.
+  if (declared) {
+    const settled = new Set(inferredRelated.map((entry) => entry.file));
+    inferredRelated.push(
+      ...inferDeclaredScope({
+        declared,
+        inScope: [...confirmedDirect, ...confirmedRelated, ...settled],
+        candidates: candidates.filter((file) => !settled.has(file)),
+        imports: importEdges(changedFiles, (codeMap ?? getCachedCodeMap(repoPath)).files ?? []),
+        addedLines,
+      }),
+    );
+    inferredRelated.sort((left, right) => left.file.localeCompare(right.file));
+  }
   const inferredFiles = new Set(inferredRelated.map((entry) => entry.file));
   const missedChangedFiles = (compared.missedChangedFiles ?? []).filter((/** @type {string} */ file) => !inferredFiles.has(file));
   const advisoryChangedFiles = (compared.advisoryChangedFiles ?? []).filter((/** @type {string} */ file) => !inferredFiles.has(file));
@@ -282,8 +300,8 @@ export function generateConvergence(query, options = {}) {
 /**
  * @typedef {Object} InferredFile
  * @property {string} file
- * @property {"owner-sibling" | "owner-test" | "owner-import" | "owner-changelog" | "owner-test-data" | "owner-doc"} rule
- * @property {string} anchor the confirmed file that brought `file` into scope
+ * @property {"owner-sibling" | "owner-test" | "owner-import" | "owner-changelog" | "owner-test-data" | "owner-doc" | "request-word" | "request-module" | "request-config" | "owner-module" | "scope-import" | "scope-test" | "scope-doc"} rule
+ * @property {string} anchor the file, or for `request-word` the word, that brought `file` into scope
  */
 
 /**
@@ -386,6 +404,158 @@ export function inferInScopeFiles({ confirmedDirect, confirmedRelated, candidate
   }
 
   return inferred.sort((left, right) => left.file.localeCompare(right.file));
+}
+
+// The flags a file may not bring into scope on a neighbour's say-so. A
+// controller beside a declared service is ordinary fan-out; an auth or payment
+// file beside an unrelated owner is exactly the change a contract should name.
+const SEVERE_RISK_FLAGS = [RISK_FLAGS.authSecurity, RISK_FLAGS.moneyFlow];
+
+/** @param {string} file @param {string} anchor */
+function addsSevereRisk(file, anchor) {
+  if (isSecretPath(file)) return true;
+  const anchored = riskFlagsFor(anchor);
+  return riskFlagsFor(file).some((flag) => SEVERE_RISK_FLAGS.includes(flag) && !anchored.includes(flag));
+}
+
+const TEMPLATE_FILE = /\.(example|sample|template|dist)$/i;
+
+/**
+ * What a declared intent covers beyond the files it lists. Applied only under
+ * a scope contract, after `inferInScopeFiles`, to the changed files that are
+ * still unaccounted for:
+ *
+ * - `request-word`: the path, without its extension, carries one of the
+ *   request's distinctive words (`declared.terms`): `docs/hubspot-crm-sync.md`
+ *   under "hubspot: …". The request named it, so no risk check applies.
+ * - `request-module`: the file is under a directory the request names
+ *   outright (`declared.modules`): `src/user/` under "user: …".
+ * - `request-config`: a configuration or data file (JSON, YAML, TOML, a
+ *   snapshot, a script) whose added lines carry one of those words: the flag
+ *   the feature ships behind, the workflow step that runs it. Its path says
+ *   nothing, so its content has to.
+ * - `owner-module`: the file sits in, or under, the directory of a declared
+ *   owner, changed or not. A directory at the repository root or one level
+ *   down (`src`) is a tree, not a module, and anchors nothing.
+ * - `scope-import`: the file imports, or is imported by, a changed file that
+ *   is already in scope, where the imported side has few importers. An edge
+ *   into a module half the repository imports says nothing about this change.
+ * - `scope-test`: a test that covers, or imports, a file in scope.
+ * - `scope-doc`: documentation, or a template such as `.env.example`, changed
+ *   alongside code that is in scope.
+ *
+ * `owner-module` and `scope-import` never bring in an auth or payment path
+ * their anchor is not itself: that file stays undeclared and needs a reason.
+ * The import and test rules repeat until nothing more joins.
+ * @param {{ declared: { owners: string[], terms?: string[], modules?: string[] }, inScope: string[], candidates: string[], imports: { edges: Map<string, Set<string>>, importers: Map<string, number> }, addedLines?: Map<string, string[]> }} input
+ * @returns {InferredFile[]}
+ */
+export function inferDeclaredScope({ declared, inScope, candidates, imports, addedLines = new Map() }) {
+  /** @type {InferredFile[]} */
+  const inferred = [];
+  const scope = new Set(inScope);
+  const pending = new Set([...candidates].filter((file) => !isSecretPath(file)).sort());
+  /** @param {string} file @param {InferredFile["rule"]} rule @param {string} anchor */
+  const admit = (file, rule, anchor) => {
+    inferred.push({ file, rule, anchor });
+    scope.add(file);
+    pending.delete(file);
+  };
+
+  const terms = new Set(declared.terms ?? []);
+  if (terms.size) {
+    for (const file of [...pending]) {
+      const word = pathScopeTokens(file).find((token) => terms.has(token));
+      if (word) admit(file, "request-word", word);
+    }
+  }
+  const named = [...(declared.modules ?? [])].sort();
+  for (const file of [...pending]) {
+    const directory = named.find((module) => file.startsWith(`${module}/`));
+    if (directory) admit(file, "request-module", directory);
+  }
+  if (terms.size) {
+    for (const file of [...pending]) {
+      if (!CONFIG_FILE.test(file) || isDocPath(file)) continue;
+      const word = scopeTokens((addedLines.get(file) ?? []).join("\n")).find((token) => terms.has(token));
+      if (word) admit(file, "request-config", word);
+    }
+  }
+
+  const modules = [...new Set(declared.owners)].filter((owner) => path.posix.dirname(owner).split("/").length >= 2).sort();
+  for (const file of [...pending]) {
+    const anchor = modules.find((owner) => file.startsWith(`${path.posix.dirname(owner)}/`) && !addsSevereRisk(file, owner));
+    if (anchor) admit(file, "owner-module", anchor);
+  }
+
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const file of [...pending]) {
+      const sources = [...scope].filter((source) => !isTestFilePath(source) && !isDocPath(source)).sort();
+      const connected = sources.filter((source) => specificEdge(imports, file, source) || specificEdge(imports, source, file));
+      if (isTestFilePath(file)) {
+        const anchor = connected[0] ?? sources.find((source) => testCovers(file, source));
+        if (anchor) admit(file, "scope-test", anchor);
+        grew ||= Boolean(anchor);
+        continue;
+      }
+      if (isDocPath(file)) continue;
+      const anchor = connected.find((source) => !addsSevereRisk(file, source));
+      if (anchor) admit(file, "scope-import", anchor);
+      grew ||= Boolean(anchor);
+    }
+  }
+
+  const code = [...scope].filter((file) => !isDocPath(file) && !isTestFilePath(file)).sort()[0];
+  if (code) {
+    for (const file of [...pending]) {
+      if (isDocPath(file) || TEMPLATE_FILE.test(file)) admit(file, "scope-doc", code);
+    }
+  }
+  return inferred;
+}
+
+const CONFIG_FILE = /(\.(json|ya?ml|toml|ini|env|snapshot|snap|sh|bash|mjs|cjs)|(^|\/)\.[^/.]+)$/i;
+
+// More importers than this and a file is shared infrastructure: importing it,
+// or being imported by it, relates a file to half the repository.
+const HUB_IMPORTERS = 5;
+
+/**
+ * Whether `from` imports `to` and `to` is specific enough for that to mean
+ * something.
+ * @param {{ edges: Map<string, Set<string>>, importers: Map<string, number> }} imports
+ * @param {string} from
+ * @param {string} to
+ */
+function specificEdge(imports, from, to) {
+  return Boolean(imports.edges.get(from)?.has(to)) && (imports.importers.get(to) ?? 0) <= HUB_IMPORTERS;
+}
+
+/**
+ * Import edges among the changed files, from the code map of the tree under
+ * review: for each changed file, the changed files it imports, and for every
+ * file how many files import it.
+ * @param {string[]} changedFiles
+ * @param {any[]} mapFiles
+ * @returns {{ edges: Map<string, Set<string>>, importers: Map<string, number> }}
+ */
+function importEdges(changedFiles, mapFiles) {
+  const changed = new Set(changedFiles);
+  const { importers } = importDegrees(mapFiles);
+  /** @type {Map<string, Set<string>>} */
+  const edges = new Map();
+  for (const file of mapFiles) {
+    if (!changed.has(file.path)) continue;
+    /** @type {Set<string>} */
+    const targets = new Set();
+    for (const specifier of file.imports ?? []) {
+      const target = resolveImportSpecifier(file.path, specifier, changed);
+      if (target && target !== file.path) targets.add(target);
+    }
+    if (targets.size) edges.set(file.path, targets);
+  }
+  return { edges, importers };
 }
 
 const IMPORT_SPECIFIERS = [/\bfrom\s+["']([^"']+)["']/g, /\bimport\s+["']([^"']+)["']/g, /\b(?:require|import)\(\s*["']([^"']+)["']\s*\)/g];
@@ -516,7 +686,7 @@ function testSubjectStem(file) {
 
 /**
  * @param {unknown} value
- * @returns {{ tip: string, owners: string[], related: string[] } | null}
+ * @returns {{ tip: string, owners: string[], related: string[], terms: string[], modules: string[] } | null}
  */
 function normalizeDeclaredScope(value) {
   if (value === undefined || value === null) return null;
@@ -525,7 +695,10 @@ function normalizeDeclaredScope(value) {
   if (typeof scope !== "object" || !/^[0-9a-f]{64}$/.test(String(scope.tip ?? "")) || !isFiles(scope.owners) || !isFiles(scope.related)) {
     throw new Error("converge received an invalid declared scope");
   }
-  return { tip: scope.tip, owners: [...scope.owners], related: [...scope.related] };
+  if ((scope.terms !== undefined && !isFiles(scope.terms)) || (scope.modules !== undefined && !isFiles(scope.modules))) {
+    throw new Error("converge received an invalid declared scope");
+  }
+  return { tip: scope.tip, owners: [...scope.owners], related: [...scope.related], terms: [...(scope.terms ?? [])], modules: [...(scope.modules ?? [])] };
 }
 
 /**
@@ -1163,6 +1336,13 @@ const INFERRED_RULE_LABELS = {
   "owner-doc": "documents",
   "owner-changelog": "changelog for",
   "owner-test-data": "test data for",
+  "request-word": "path carries the request's word",
+  "request-module": "under the module the request names,",
+  "request-config": "adds lines carrying the request's word",
+  "owner-module": "in the module of",
+  "scope-import": "import-connected to",
+  "scope-test": "test of",
+  "scope-doc": "documents the change to",
 };
 
 /** @param {InferredFile} entry @returns {string} */

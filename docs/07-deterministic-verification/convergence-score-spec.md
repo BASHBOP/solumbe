@@ -349,13 +349,30 @@ it as `intent` (the record, its JSON, or a path).
 impact engine version, the declared files (`owners` and `supporting`, the required owners and
 predictable supporting files `solumbe impact` ranks for the request) and
 `dirtyAtDeclaration`, the tracked files that already differed from `HEAD`, so a contract
-written after the edit began says so.
+written after the edit began says so. It also holds what the request's own words scope:
+
+- `terms`: the words of the request that few tracked paths carry (at most 20 paths, or 3% of
+  the repository if that is more). `hubspot` in an events platform is on a dozen paths and is
+  a term; `event` is on hundreds and is not. A word no path carries yet is kept, since it
+  names what the change adds. Words are compared in the singular, so `fees` meets
+  `fee-calculator.ts`. Three things are never terms: a tree name (`src`, `lib`, `tests`), a
+  file extension (`ts`), and the parts of a tracked path written out in the request.
+  "update greet in src/index.ts" names that one file, which the prediction holds, and
+  scopes neither `src` nor every `index`.
+- `modules`: the directories whose whole name is a word of the request: `src/user` for
+  "user: …", not `src/user-settings`. A directory holding more than a fifth of the
+  repository, a tree name (`src`, `lib`, `tests`, …) or a dot-directory names nothing, and a
+  request that names more than six directories names none.
 
 ```
 contractHash   = sha256( canonical({ schema, request, head, impactEngineVersion,
-                                     owners, supporting, dirtyAtDeclaration }) )
+                                     owners, supporting, dirtyAtDeclaration,
+                                     terms, modules }) )
 amendment.hash = sha256( prevHash + canonical({ seq, files, reason }) )
 ```
+
+`terms` and `modules` enter the hash only when the record carries them, so a record declared
+before they existed verifies as it did.
 
 `prevHash` is the previous amendment's hash, or `contractHash` for the first. Editing the
 request, a declared file, or any amendment's files or reason breaks the chain, and the gate
@@ -369,15 +386,82 @@ of four things:
 | --- | --- |
 | declared | An owner or supporting file in the record. |
 | amended | Named in an amendment, which carries its reason. |
-| implied | Placed in scope by one of the rules in 3.2, anchored on a declared or amended file: its test, a new file beside it, a file whose added lines import it, the changelog entry. |
+| implied | Placed in scope by one of the rules in 3.2, anchored on a declared or amended file (its test, a new file beside it, a file whose added lines import it, the changelog entry), or by one of the declaration rules below. |
 | undeclared | None of the above. The check fails and names the file, with its risk flags when it sits on a risk-sensitive path. |
 
 A declared owner that was not changed is listed and does not fail the check. A gate given a
 `--request` other than the declared one fails, since it would be holding the change against a
 different promise. With an intent, `--min-convergence` and `--receipt` measure against the
 declared files too, and the convergence receipt carries the contract hash, so it names the
-contract it was scored under. A request that predicts no owner file declares nothing: every
-file then needs an amendment, which is the explicit way to name files by path.
+contract it was scored under. A request that predicts no owner file declares no file: a
+changed file is then in scope only through the request's own words (the first three rules
+below) or an amendment, which is the explicit way to name files by path.
+
+**What a declaration implies.** A real change is wider than the files a request predicts: the
+controller beside the service, the feature flag, the workflow step, the doc. Under a contract,
+after the rules in 3.2, seven more rules place a changed file in scope. They run in this
+order, and each implied file is reported with its rule and anchor:
+
+| Rule | A changed file is in scope when |
+| --- | --- |
+| `request-word` | its path, without the extension, carries one of the record's `terms`: `docs/hubspot-crm-sync.md` under "hubspot: …". |
+| `request-module` | it is under one of the record's `modules`: `src/user/dto/me.dto.ts` under "user: …". |
+| `request-config` | it is a configuration or data file (JSON, YAML, TOML, INI, a dotfile, a snapshot, a shell or `.mjs`/`.cjs` script) and the lines the change adds to it carry one of the `terms`: the flag the feature ships behind, the workflow step that runs it. |
+| `owner-module` | it sits in, or under, the directory of a declared owner, changed or not. A directory at the repository root or one level down (`src`) is a tree and anchors nothing. |
+| `scope-import` | it imports, or is imported by, a changed source file already in scope, and the imported side has at most five importers. An edge into a module half the repository imports relates nothing. |
+| `scope-test` | it is a test that imports, or is named for, a source file in scope. |
+| `scope-doc` | it is documentation, or a template such as `.env.example`, and at least one source file is in scope. Documentation alone joins nothing. |
+
+`scope-import` and `scope-test` repeat until nothing more joins, so a chain of imports from a
+declared file is followed through the change. Import edges come from the code map of the tree
+under review, and only edges between changed files count.
+
+Two limits keep the rules from waving a change through:
+
+- A secret path is never implied.
+- `owner-module` and `scope-import` do not bring in a file on an authentication or payment
+  path unless the anchor is on one too. A payment service beside a declared mailer stays
+  undeclared and needs an amendment. The three request rules carry no such limit: the request
+  named the file.
+
+The request rules take the request at its word, and cannot tell a module named on purpose
+from one a sentence happens to mention: "allow one ticket type per guest" names `src/types`
+and `src/guests` as surely as "guests: …" does. A change inside a directory or to
+a path that shares a distinctive word with the request is in scope by definition. What the
+rules hold out is the change that shares none.
+
+These rules widen what a declaration covers and do not change the score without one: a
+`converge` or gate run with no intent applies only the rules in 3.2.
+
+**Measured on a real repository.** `bashbop-api` (a NestJS service, about 1,400 tracked
+files) was replayed commit by commit: the intent is declared from the commit's subject at its
+parent, the commit is gated against it, and then one unrelated change at a time is planted on
+top (an authentication service, a payment service, two plain services, a compose file, a
+workflow) and gated again. A plant counts as caught when the check fails and names it, and a
+plant whose path or module shares a word with the request is skipped, since the rules place
+it in scope by definition.
+
+| | Commits that pass | Changed files undeclared | Planted changes caught |
+| --- | --- | --- | --- |
+| Rules of 3.2 only, 30 most recent commits | 3 of 30 | 153 of 199 | not measured |
+| With the declaration rules, the same 30 (the rules were tuned on these) | 16 of 30 | 36 of 199 | 156 of 157 |
+| Rules of 3.2 only, the 30 commits before those | 5 of 30 | 172 of 219 | 143 of 143 |
+| With the declaration rules, the 30 commits before those (held out, run once) | 15 of 30 | 71 of 219 | 142 of 142 |
+
+The held-out commits were measured once. The repository's own tests then showed that a
+request naming a file turned `src` and `ts` into terms, so tree names, extensions and written
+paths were excluded, and both sets were measured again: every figure above was unchanged.
+
+The one plant that passed was a payment service the declaration itself had listed as a
+supporting file for an unrelated request: a wrong prediction, which no rule here corrects.
+
+About half of real commits still fail, and by design. Their undeclared files are a database
+schema or migration, a feature-flag snapshot whose added lines do not carry the request's
+words, a shared constants or error-dictionary file, or a module the subject line never named
+(a change to how emails format dates that also edits the user and scheduled-task modules).
+Each is a file a reviewer should see a reason for, and `solumbe amend` records one. The figures are
+from one repository with conventional `scope: subject` commit messages; a repository with
+terser subjects will declare less.
 
 What the contract does not prove: that the declared files were the right ones, or that the
 code in them is correct. An agent can amend any file in; the amendment and its reason are what
