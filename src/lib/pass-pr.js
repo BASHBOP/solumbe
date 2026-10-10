@@ -8,6 +8,7 @@ import path from "node:path";
 import * as codeowners from "./codeowners.js";
 import { defaultGhRunner } from "./gh.js";
 import { convergenceCheck, gitRoot, gitShowContent, migrationCheck, scopeContractCheck, secretCheck } from "./pass-local.js";
+import { externalScannerChecks } from "./external-scanners.js";
 import { aggregateVerdict, normalizeGovernance, normalizeProfile, policyCheck, STATUS } from "./policy.js";
 import { checkRelease } from "./release-check.js";
 import { matchRiskPaths } from "./risk-paths.js";
@@ -143,6 +144,9 @@ export async function evaluatePR(repoPath, selector, options = {}) {
     unresolvedConversationsCheck(root, pr.number, runner),
     branchProtectionCheck(root, pr.baseRefName, runner),
     statusChecksCheck(pr.statusCheckRollup ?? []),
+    // Installed scanners read the PR head's blobs, as the secret check does;
+    // when the head is not fetched there is nothing to hand them and no check.
+    ...externalScannerChecks(root, files, prHeadContent),
   ];
   const exactDiff = { subject, subjectError, diffFiles: files, expectedHead: subject?.headSha, requireClean: true };
   const convergenceBase = subject?.baseSha ?? localBaseRef(root, pr.baseRefName);

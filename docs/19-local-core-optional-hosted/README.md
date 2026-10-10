@@ -29,10 +29,30 @@ The supporting commands run the same way: `impact` and `converge` (the pieces `g
 | The core commands and the 14 MCP tools | Nothing | — | On |
 | `gate --pr`, `pass-pr`, `review --pr` | GitHub API reads through your own `gh` login: PR state, reviews, checks | GitHub | Only with `--pr` |
 | `route`, `context --online`, `model_route` | The request text, the repository name, its AX and containment scores, the ranked file paths and any risk paths, under a `user-agent` of `solumbe/<version>`. Never file contents | TypeSafe's Jev, on your own `TYPESAFE_API_KEY` | Off; without a key the read is a labelled offline estimate |
+| Delegated scanners: `gitleaks`, `semgrep` | Nothing. They run on this machine over a temporary copy of the changed files | — | Only when installed and the repository carries their config |
+| Delegated scanner: `osv-scanner` | Package names and versions from the changed lockfiles, through your own `osv-scanner` | The OSV API | Off; only when named in `SOLUMBE_SCANNERS` |
 | Realtime Canvas | The request text, the tool name and the host label | `127.0.0.1` only; any other address is ignored | Off |
 | Telemetry | One JSONL line per run to `~/.solumbe/usage.jsonl` | Your disk | Off |
 | Telemetry sharing | A smaller, allowlisted anonymous shape | Solumbe's public relay | Off, and a separate opt-in from local capture |
 | Hosted audit trail | The attestation record: commit identity, verdict, and hashes. Never the diff or the source | Your organisation's store | Off; needs an org token |
+
+---
+
+## Delegated scanners
+
+The gate's own secret rules and risk flags read paths, names and a short list of credential formats. They do not parse code or hold a vulnerability database, and they are not meant to grow into a scanner. When a specialist scanner is installed, the gate runs it and reports what it found as a check of its own.
+
+| Scanner | Runs when | Check | A finding is |
+| --- | --- | --- | --- |
+| [gitleaks](https://github.com/gitleaks/gitleaks) | It is installed and the repository has a `.gitleaks.toml` | `Secret scan (gitleaks)` | `FAIL`. The report is redacted; only file, line and rule are repeated |
+| [Semgrep](https://semgrep.dev) | It is installed and the repository has its own rules (`.semgrep.yml`, `.semgrep/`, `semgrep.yml`). The registry is never fetched | `Code patterns (semgrep)` | `FAIL` at `ERROR` severity, `WARN` otherwise |
+| [osv-scanner](https://github.com/google/osv-scanner) | It is installed, a lockfile changed, and it is named in `SOLUMBE_SCANNERS` | `Known vulnerabilities (osv-scanner)` | `WARN`: it reports every known vulnerability in the lockfile, not only what the change introduced |
+
+- **What a scanner sees.** A temporary copy of the changed files as the gate read them: the staged tree, the head commit, or the working tree. Not the whole checkout, so a finding is about this change.
+- **`SOLUMBE_SCANNERS`** picks them. Unset runs each installed scanner the repository carries a config for. A list (`gitleaks,osv-scanner`) runs exactly those, config or not, and is the only way a scanner that uses the network runs. `off` runs none.
+- **`SOLUMBE_GITLEAKS_BIN`, `SOLUMBE_SEMGREP_BIN`, `SOLUMBE_OSV_SCANNER_BIN`** point at a binary that is not on `PATH`.
+- **Nothing is installed.** The gate never runs `npx` or downloads a scanner. One that is absent is simply not a check, unless it was named, which warns.
+- **Not run** by `solumbe calibrate --gate`, which replays history with every optional analyzer off.
 
 ---
 
