@@ -6,6 +6,21 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+### Added
+
+- **`solumbe calibrate --gate` grades the gate's verdict and the convergence band against history.**
+  - It replays the real local gate and the real convergence score on each commit, checked out into a temporary worktree, and joins the result to the same `repaired` outcome `solumbe calibrate` uses for risk flags.
+  - It reports the repair rate for PASS, WARN and FAIL, the alarm rate, the share of alarms on changes nothing repaired, a row for each check that warned, and the rate for each convergence band. Rates carry a Wilson 95% interval and are withheld under 30 commits.
+  - On this repository: 111 commits, PASS repaired 16.0%, WARN 36.7%, with overlapping intervals, and an alarm on 27.0% of changes.
+  - It shows whether a verdict separates repaired changes from the rest, not whether the gate prevents a repair. The optional analyzers are not run against historical trees.
+- **`solumbe calibrate --follow-through` reports how often a warning had cleared on the next run.**
+  - It reads the local usage log, pairs each WARN or FAIL with the next gate run on the same repository inside 60 minutes, and reports per check how often that check then passed. A convergence score below `aligned` is paired with the next score of the same task.
+  - Gate and convergence events in the usage log now record each check's status under its name, whether the gate was local or a pull request, and hashes of the repository root, the changed-file set and the request. No path or request text is logged, and none of it is shared.
+- **`SOLUMBE_CHECK_MODE=trial` runs a trial with a control arm on the checks an agent makes before it commits.**
+  - Off by default. Each change falls in a shown or a withheld arm by a hash of the repository root and its head commit; `SOLUMBE_CHECK_SHOWN_SHARE` sets the split.
+  - In the withheld arm the MCP `convergence_score` and local `review_gate` tools compute and log the result and tell the agent only that it was recorded. A blocking FAIL is shown in both arms. The command line, the pre-commit hook, CI and the pull request gate are unaffected.
+  - `solumbe calibrate --trial` grades the arms on the first commit made on each head. `scripts/hooks/check-outcomes.mjs` grades them on corrections and rework in the same Claude Code session.
+
 ### Changed
 
 - **A check that cannot run in the current mode is `SKIPPED`, not `WARN`, and never moves the verdict.**

@@ -14,6 +14,7 @@ import { generateRoute, hostModelFor, TIERS } from "./model-route.js";
 import { formatRouteMarkdown } from "./render/route.js";
 import { appendEvent, extractSignals, redactError, shareEvent } from "./telemetry.js";
 import { forwardToCanvas } from "./canvas-tap.js";
+import { applyCheckTrial } from "./check-trial.js";
 import { contextRepoPaths, gatePolicy } from "./config.js";
 import { evaluateLocal } from "./pass-local.js";
 import { evaluatePR } from "./pass-pr.js";
@@ -637,11 +638,14 @@ async function callTool(params = {}) {
   }
 
   recordToolEvent(name, args, startedAt, "ok", { result });
+  // Off unless SOLUMBE_CHECK_MODE=trial. The usage log above already holds the
+  // real result; in the withheld arm the agent is told only that it was recorded.
+  const shown = applyCheckTrial(LEGACY_TOOL_ALIASES[name]?.tool ?? name, args, result).result;
   return {
     content: [
       {
         type: "text",
-        text: toolResultText(result),
+        text: toolResultText(shown),
       },
     ],
     isError: false,

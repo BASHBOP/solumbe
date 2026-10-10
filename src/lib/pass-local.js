@@ -57,7 +57,7 @@ const MAX_FINDINGS = 40;
 
 /**
  * @param {string} repoPath
- * @param {{ policy?: unknown, governance?: unknown, base?: string, head?: string, request?: string, minConvergence?: number | string, receipt?: string, staged?: boolean, runValidation?: boolean }} [options]
+ * @param {{ policy?: unknown, governance?: unknown, base?: string, head?: string, request?: string, minConvergence?: number | string, receipt?: string, staged?: boolean, runValidation?: boolean, analyzers?: boolean }} [options]
  */
 export function evaluateLocal(repoPath, options = {}) {
   const profile = normalizeProfile(options.policy);
@@ -118,12 +118,17 @@ export function evaluateLocal(repoPath, options = {}) {
   ];
   const audit = dependencyAuditCheck(root);
   if (audit) checks.push(audit);
-  const drift = contractDriftCheck(root);
-  if (drift) checks.push(drift);
-  const compliance = complianceControlsCheck(root);
-  if (compliance) checks.push(compliance);
-  const aiGovernance = aiGovernanceCheck(root);
-  if (aiGovernance) checks.push(aiGovernance);
+  // The optional analyzers run an installed tool against the tree. A replay
+  // over historical trees (`solumbe calibrate --gate`) passes `analyzers: false`
+  // so that checking out an old commit runs nothing.
+  if (options.analyzers !== false) {
+    const drift = contractDriftCheck(root);
+    if (drift) checks.push(drift);
+    const compliance = complianceControlsCheck(root);
+    if (compliance) checks.push(compliance);
+    const aiGovernance = aiGovernanceCheck(root);
+    if (aiGovernance) checks.push(aiGovernance);
+  }
   const convergence = convergenceCheck(root, base, options.request, options.minConvergence, options.receipt, {
     staged,
     subject,

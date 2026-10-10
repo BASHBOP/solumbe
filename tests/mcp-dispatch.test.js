@@ -1244,3 +1244,61 @@ test("the solumbe skill lists the same workflow tools the server sends", async (
     AGENT_WORKFLOW_STAGES.map(({ stage, tool }) => ({ stage, tool })),
   );
 });
+
+test("the check trial withholds a warning or a score in the withheld arm and leaves everything else alone", async (t) => {
+  const fixture = makeGitRepoFixture("check-trial");
+  const log = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "solumbe-mcp-trial-")), "check-decisions.jsonl");
+  const saved = { mode: process.env.SOLUMBE_CHECK_MODE, share: process.env.SOLUMBE_CHECK_SHOWN_SHARE, log: process.env.SOLUMBE_CHECK_LOG };
+  t.after(() => {
+    for (const [key, value] of [
+      ["SOLUMBE_CHECK_MODE", saved.mode],
+      ["SOLUMBE_CHECK_SHOWN_SHARE", saved.share],
+      ["SOLUMBE_CHECK_LOG", saved.log],
+    ]) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  const call = (id, name, args) => ({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: { path: fixture, base: "HEAD~1", ...args } } });
+  const requests = [
+    call(1, "convergence_score", { query: "add an events endpoint" }),
+    call(2, "review_gate", {}),
+    call(3, "change_impact", { query: "add an events endpoint" }),
+  ];
+
+  process.env.SOLUMBE_CHECK_LOG = log;
+  process.env.SOLUMBE_CHECK_MODE = "trial";
+  process.env.SOLUMBE_CHECK_SHOWN_SHARE = "0";
+  const withheld = await runRequests(requests);
+  assert.equal(structured(withheld, 1).withheld, true);
+  assert.equal(structured(withheld, 1).convergence, undefined, "the score is not in what the agent sees");
+  assert.equal(structured(withheld, 2).withheld, true);
+  assert.equal(structured(withheld, 2).checks, undefined);
+  assert.equal(structured(withheld, 3).withheld, undefined, "a tool outside the trial answers as usual");
+
+  process.env.SOLUMBE_CHECK_SHOWN_SHARE = "1";
+  const shown = await runRequests(requests);
+  assert.equal(typeof structured(shown, 1).convergence, "number");
+  assert.ok(["PASS", "WARN", "FAIL"].includes(structured(shown, 2).verdict));
+
+  const decisions = fs
+    .readFileSync(log, "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.deepEqual(
+    decisions.map((entry) => [entry.tool, entry.arm, entry.withheld]),
+    [
+      ["convergence_score", "withheld", true],
+      ["review_gate", "withheld", true],
+      ["convergence_score", "shown", false],
+      ["review_gate", "shown", false],
+    ],
+  );
+  assert.equal(typeof decisions[0].convergence, "number", "the log keeps the result the agent did not see");
+
+  delete process.env.SOLUMBE_CHECK_MODE;
+  const off = await runRequests(requests);
+  assert.equal(typeof structured(off, 1).convergence, "number");
+  assert.equal(fs.readFileSync(log, "utf8").trim().split("\n").length, 4, "nothing is logged outside the trial");
+});

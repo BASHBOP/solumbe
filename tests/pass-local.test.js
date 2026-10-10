@@ -1449,3 +1449,17 @@ test("the real env file next to its template still fails Secret safety", () => {
   assert.match(secret.details.join("\n"), /^\.env\.production\.local$/m);
   assert.doesNotMatch(secret.details.join("\n"), /\.example/);
 });
+
+test("analyzers: false leaves the optional analyzers out, for a replay over historical trees", () => {
+  const root = initRepo("analyzers-off");
+  writeAndCommit(
+    root,
+    { "package.json": JSON.stringify({ name: "fixture", version: "1.0.0", scripts: { test: "node --test" } }), "src/index.ts": "export const a = 1;\n" },
+    "init",
+  );
+  fs.writeFileSync(path.join(root, "bouncer.config.json"), JSON.stringify({ target: { adapter: "next", repo: "." }, packs: ["uk-osa"] }));
+  writeAndCommit(root, { "src/index.ts": "export const a = 2;\n" }, "tweak");
+  const names = (options) => evaluateLocal(root, { base: "HEAD~1", ...options }).checks.map((check) => check.name);
+  assert.ok(names({}).includes("Compliance controls"));
+  assert.ok(!names({ analyzers: false }).includes("Compliance controls"));
+});

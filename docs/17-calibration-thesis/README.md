@@ -356,6 +356,73 @@ Monotonic (low < medium < high): unknown (a band fell below the minimum sample)
 That is the rule working. This repository still cannot calibrate this
 repository, and the tool now says so rather than printing a decimal.
 
+## Grading the verdict, not only the flags (2026-10-10)
+
+Everything above grades the risk flags, which are one input to the gate. It
+does not grade what the gate says with them, and it cannot say whether showing
+a verdict changes what happens next. Those are three different questions, and
+`solumbe calibrate` now answers each with its own instrument.
+
+| Question | Command | Evidence | What it cannot show |
+| --- | --- | --- | --- |
+| Does a WARN or FAIL change get repaired more often than a PASS one? | `solumbe calibrate <repo> --gate` | History: the real gate and convergence score replayed on each commit, joined to `repaired` | Whether the gate prevented anything |
+| When a check warns, does anyone act on it? | `solumbe calibrate <repo> --follow-through` | The local usage log: the next run on the same repository | Whether the next run was the same change |
+| Does showing the checks reduce repairs? | `solumbe calibrate <repo> --trial` | A trial with a control arm, `SOLUMBE_CHECK_MODE=trial` | Anything, until both arms hold 30 graded changes |
+
+A check whose warnings do not predict a repair and are rarely cleared is a
+false alarm. Neither of the first two numbers says that alone, and only the
+third is evidence of an effect.
+
+### The first replay
+
+The command was pointed at this repository on the branch that introduced it:
+314 non-merge commits, 111 replayed. Fix commits are the outcome, and release,
+docs-only and under-30-day commits are not graded.
+
+| Verdict | n | repaired | 95% interval | lift |
+| --- | ---: | ---: | --- | ---: |
+| PASS | 81 | 16.0% | 9.6% to 25.5% | 0.74x |
+| WARN | 30 | 36.7% | 21.9% to 54.5% | 1.70x |
+| FAIL | 0 | withheld | — | — |
+
+The gate raised an alarm on 27.0% of changes (19.6% to 36.0%). Before the
+review-state check stopped warning in local mode that figure was 100%, and
+there was no PASS row to compare against. Of the 30 alarms, 19 were on a change
+nothing later repaired: 63.3% (45.5% to 78.1%).
+
+The direction is the one a useful gate would show. The claim is not earned:
+the two intervals overlap, so on this corpus WARN is not shown to differ from
+PASS. `Risk review` warned on 26 changes and `Dependency audit` on 6, both
+under the minimum sample, so neither has a published rate. The convergence
+bands read aligned 4 of 29 (withheld), partial 18.8% and drift 28.0%, with the
+ordering unknown for the same reason. Receipt `gatecal_34e099cfe78b`.
+
+Two cautions belong to the method, not to this corpus. The gate is replayed on
+the commit as it landed, so a warning that made its author change the diff
+left no trace: a check that works is graded on the changes it failed to stop.
+And the convergence request is the commit subject, written after the change.
+
+### The trial
+
+`SOLUMBE_CHECK_MODE=trial` puts each change in one of two arms, by a hash of
+the repository root and the commit the change is being built on. In the shown
+arm `convergence_score` and the local `review_gate` answer as usual. In the
+withheld arm the MCP server computes and records the same result and tells the
+agent only that it was recorded. `SOLUMBE_CHECK_SHOWN_SHARE` (default 0.5) sets
+the split, and decisions go to `~/.solumbe/check-decisions.jsonl`
+(`SOLUMBE_CHECK_LOG`).
+
+A blocking FAIL is shown in both arms: a secret in a diff is not withheld for
+a measurement. The command line, the pre-commit hook, CI and the pull request
+gate are never part of the trial, which also means an agent in the withheld arm
+can reach the result another way. Both facts pull the arms together, so the
+trial understates whatever effect there is.
+
+`solumbe calibrate <repo> --trial` grades the arms on the first commit made on
+each head, joined to `repaired`. `node scripts/hooks/check-outcomes.mjs` grades
+them sooner, on the same-session proxies the route outcomes use: whether the
+next prompt pushed back, and whether the next turn edited the same files.
+
 ## What changes because of it
 
 1. **Weights stop being folklore.** Changing one becomes a reviewed code change
