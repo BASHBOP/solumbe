@@ -44,9 +44,39 @@ const DEFAULTS = {
  * @returns {string}
  */
 function getUserConfigPath(env = process.env) {
+  return path.join(userConfigBase(env), "solumbe", "config.json");
+}
+
+/**
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {string}
+ */
+function userConfigBase(env) {
   const xdg = env.XDG_CONFIG_HOME;
-  const base = xdg ? xdg : path.join(os.homedir(), ".config");
-  return path.join(base, "solumbe", "config.json");
+  return xdg ? xdg : path.join(os.homedir(), ".config");
+}
+
+/**
+ * @typedef {object} UserConfigStatus
+ * @property {string} path The Solumbe user config, where writes go.
+ * @property {string} legacyPath The user config from before the rename.
+ * @property {string | null} readPath The file settings are read from, if any.
+ * @property {"solumbe" | "legacy" | "none"} source
+ */
+
+/**
+ * Which user config file is read. The Solumbe file wins whenever it exists.
+ * Without it the pre-rename file is read, so the rename does not silently drop
+ * its settings, the telemetry opt-in among them. Both honour XDG_CONFIG_HOME.
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {UserConfigStatus}
+ */
+export function userConfigStatus(env = process.env) {
+  const current = getUserConfigPath(env);
+  const legacyPath = path.join(userConfigBase(env), "otito", "config.json"); // rebrand-keep
+  if (fs.existsSync(current)) return { path: current, legacyPath, readPath: current, source: "solumbe" };
+  if (fs.existsSync(legacyPath)) return { path: current, legacyPath, readPath: legacyPath, source: "legacy" };
+  return { path: current, legacyPath, readPath: null, source: "none" };
 }
 
 /**
@@ -81,6 +111,15 @@ function readJsonFile(filePath) {
   } catch {
     return null;
   }
+}
+
+/**
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {Record<string, unknown> | null}
+ */
+function readUserConfig(env) {
+  const { readPath } = userConfigStatus(env);
+  return readPath ? readJsonFile(readPath) : null;
 }
 
 /**
@@ -147,7 +186,7 @@ function mergeRaw(cfg, raw) {
 export function loadConfig({ cwd = process.cwd(), env = process.env } = {}) {
   /** @type {Partial<ResolvedConfig>} */
   const cfg = { ...DEFAULTS };
-  const userRaw = readJsonFile(getUserConfigPath(env));
+  const userRaw = readUserConfig(env);
   if (userRaw) mergeRaw(cfg, userRaw);
   const localPath = findLocalConfigPath(cwd);
   if (localPath) {
@@ -224,13 +263,16 @@ export function getConfigPath(scope, cwd = process.cwd()) {
 
 /**
  * Merge partial config into the target file (user or local .solumberc.json).
+ * The first user write after the rename starts from the legacy file, so it
+ * carries those settings over instead of hiding them behind a new file that
+ * holds only the key just set.
  * @param {Partial<ResolvedConfig>} config
  * @param {"user" | "local"} [scope]
  * @param {string} [cwd]
  */
 export function writeConfig(config, scope = "user", cwd = process.cwd()) {
   const target = getConfigPath(scope, cwd);
-  const existing = readJsonFile(target) ?? {};
+  const existing = (scope === "user" ? readUserConfig(process.env) : readJsonFile(target)) ?? {};
   for (const [key, value] of Object.entries(config)) {
     if (VALID_KEYS.has(key)) existing[key] = value;
   }
@@ -244,7 +286,7 @@ export function writeConfig(config, scope = "user", cwd = process.cwd()) {
  * @returns {SourcedEntry[]}
  */
 export function listConfigSources({ cwd = process.cwd(), env = process.env } = {}) {
-  const userRaw = readJsonFile(getUserConfigPath(env)) ?? {};
+  const userRaw = readUserConfig(env) ?? {};
   const localPath = findLocalConfigPath(cwd);
   const localRaw = localPath ? (readJsonFile(localPath) ?? {}) : {};
   /** @type {Partial<ResolvedConfig>} */

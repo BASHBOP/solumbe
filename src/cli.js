@@ -25,7 +25,7 @@ import { parseArgv } from "./lib/args.js";
 /** @typedef {import('./lib/eval.js').EvalOptions} EvalOptions */
 import { createRenderer } from "./lib/render/fancy.js";
 import { formatTerminalSummary, printHelp, printText, printJson, verifyWrittenFiles, writeArtifact } from "./lib/output.js";
-import { CONFIG_KEYS, gatePolicy, getConfigPath, listConfigSources, loadConfig, writeConfig } from "./lib/config.js";
+import { CONFIG_KEYS, gatePolicy, getConfigPath, listConfigSources, loadConfig, userConfigStatus, writeConfig } from "./lib/config.js";
 import { appendEvent, clearTelemetryLog, noteResult, redactError, shareEvent, takePendingSignals, telemetryStatus } from "./lib/telemetry.js";
 
 const packageVersion = String(JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version);
@@ -1824,6 +1824,7 @@ async function handleConfig(parsed) {
     return;
   }
   const renderer = rendererFor(parsed);
+  const user = userConfigStatus();
   printText(
     [
       renderer.header({ text: "solumbe config", glyph: "\u{2699}\u{FE0F}" }),
@@ -1835,6 +1836,7 @@ async function handleConfig(parsed) {
       "",
       renderer.table([
         ["User config", renderer.code(getConfigPath("user"))],
+        ...(user.source === "legacy" ? [["User config read from", renderer.code(user.legacyPath)]] : []),
         ["Local config", renderer.code(getConfigPath("local"))],
       ]),
     ].join("\n"),
