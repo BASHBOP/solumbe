@@ -1515,6 +1515,34 @@ export function tokenize(value) {
   return tokens;
 }
 
+/**
+ * The words a request and a path can share: `tokenize`'s tokens, folded to
+ * their singular, without bare numbers or single letters. `fees:` and
+ * `fee-calculator.ts` meet on `fee`.
+ * @param {unknown} value
+ * @returns {string[]}
+ */
+export function scopeTokens(value) {
+  const tokens = new Set();
+  for (const token of tokenize(value)) {
+    if (token.length < 2 || /^\d+$/.test(token)) continue;
+    tokens.add(token.length > 4 ? singularizeToken(token) : token);
+    tokens.add(singularizeToken(token));
+  }
+  return [...tokens];
+}
+
+/**
+ * The words of a path a request can name: `scopeTokens` of the path without
+ * its extension. `.ts` says what kind of file it is, not what it is about.
+ * @param {string} file
+ * @returns {string[]}
+ */
+export function pathScopeTokens(file) {
+  const extension = path.posix.extname(file);
+  return scopeTokens(extension ? file.slice(0, -extension.length) : file);
+}
+
 // Build the weighted query term counter. Longer / domain / repeated tokens
 // get extra weight, and a soft singular form is added so "refunds" and
 // "refund" both light up.

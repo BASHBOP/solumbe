@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { generateConvergence } from "../src/lib/converge.js";
+import { generateConvergence, inferDeclaredScope } from "../src/lib/converge.js";
 import { generateImpact } from "../src/lib/impact.js";
 import {
   DEFAULT_INTENT_PATH,
@@ -242,6 +242,207 @@ test("a convergence floor is measured against the declared files when an intent 
   const convergence = result.checks.find((check) => check.name === "Convergence");
   const held = generateConvergence(REQUEST, { path: root, base: "HEAD", staged: true, declared: declaredScope(intent, intent.contractHash) });
   assert.equal(convergence.receipt.inputsHash, held.receipt.inputsHash, "the request comes from the intent and the score from its declared files");
+});
+
+// --- what a declaration covers beyond the files it lists ---
+
+const noImports = { edges: new Map(), importers: new Map() };
+
+test("a declared intent records the request's distinctive words, and they are part of the contract", () => {
+  const root = fixture();
+  const intent = declareIntent("greeting: update the greeting message", { path: root });
+  assert.ok(intent.declared.terms.includes("greeting"));
+  assert.ok(!intent.declared.terms.includes("update"), "a stop word names nothing");
+
+  const forged = JSON.parse(JSON.stringify(intent));
+  forged.declared.terms.push("auth");
+  assert.match(verifyIntent(forged).error, /contract hash mismatch/, "a scope word cannot be added after the fact");
+
+  // A record declared before scope words existed still verifies, and covers
+  // only what it listed.
+  const { terms: _terms, ...older } = intent.declared;
+  const legacy = { ...intent, declared: older, contractHash: "" };
+  legacy.contractHash = declareIntent("greeting: update the greeting message", { path: root }).contractHash;
+  assert.equal(verifyIntent(legacy).ok, false, "dropping the words changes the contract");
+  assert.deepEqual(declaredScope(intent, intent.contractHash).terms, intent.declared.terms);
+});
+
+test("a word most of the repository's paths carry scopes nothing", () => {
+  const root = fixture();
+  const many = Object.fromEntries(Array.from({ length: 40 }, (_, index) => [`src/event/event-${index}.ts`, `export const e${index} = ${index};\n`]));
+  write(root, many);
+  git(root, "add", ".");
+  git(root, "commit", "-q", "-m", "events");
+  const intent = declareIntent("event: update the greeting message", { path: root });
+  assert.ok(!intent.declared.terms.includes("event"), "40 of 45 paths carry it");
+  assert.ok(intent.declared.terms.includes("greeting"));
+});
+
+test("a tree name, a file extension and a file path written in the request are not scope words", () => {
+  const root = fixture();
+  write(root, { "src/index.ts": "export const greet = () => 'hi';\n" });
+  git(root, "add", ".");
+  git(root, "commit", "-q", "-m", "index");
+
+  // Naming a file names that file, not `src` or every `index`.
+  const named = declareIntent("reword greet in src/index.ts", { path: root });
+  assert.deepEqual(named.declared.terms, ["greet", "reword"]);
+  // In prose they scope nothing either: every path here is under `src` or ends `.ts`.
+  const prose = declareIntent("move the session ts helpers out of src and lib", { path: root });
+  assert.deepEqual(prose.declared.terms, ["helper", "move", "session"]);
+  assert.deepEqual(prose.declared.modules, []);
+
+  // A word that only a file's extension carries does not bring the file in.
+  const inferred = inferDeclaredScope({
+    declared: { owners: [], terms: ["ts", "json", "session"] },
+    inScope: [],
+    candidates: ["src/billing/invoice.ts", "package.json", "src/auth/session.ts"],
+    imports: noImports,
+  });
+  assert.deepEqual(inferred, [{ file: "src/auth/session.ts", rule: "request-word", anchor: "session" }]);
+
+  write(root, { "src/index.ts": "export const greet = () => 'hello';\n", "src/auth/session.ts": "export const sessionTtl = 1;\n" });
+  git(root, "add", ".");
+  const check = contractCheck(evaluateLocal(root, { base: "HEAD", staged: true, intent: named }));
+  assert.equal(check.status, "FAIL");
+  assert.match(check.summary, /^Touched `src\/auth\/session\.ts`, which was never declared\./);
+});
+
+test("a path carrying the request's word is in scope, whatever kind of file it is", () => {
+  const declared = { owners: ["src/hubspot/hubspot-crm-sync.service.ts"], terms: ["hubspot", "production"] };
+  const inferred = inferDeclaredScope({
+    declared,
+    inScope: [],
+    candidates: ["docs/hubspot-crm-sync.md", "src/feature-flags/config/environments/production.json", "src/feature-flags/config/.snapshot"],
+    imports: noImports,
+  });
+  assert.deepEqual(inferred, [
+    { file: "docs/hubspot-crm-sync.md", rule: "request-word", anchor: "hubspot" },
+    { file: "src/feature-flags/config/environments/production.json", rule: "request-word", anchor: "production" },
+  ]);
+});
+
+test("a file in a declared owner's module is in scope, unless it is an auth or payment path the owner is not", () => {
+  const inferred = inferDeclaredScope({
+    declared: { owners: ["src/series/series.service.ts", "src/main.ts"], terms: [] },
+    inScope: [],
+    candidates: [
+      "src/series/dto/override-occurrence.dto.ts",
+      "src/series/series.module.ts",
+      "src/series/payment/refund.service.ts",
+      "src/app.module.ts",
+      "src/auth/session.ts",
+    ],
+    imports: noImports,
+  });
+  assert.deepEqual(
+    inferred.map((entry) => [entry.file, entry.rule]),
+    [
+      ["src/series/dto/override-occurrence.dto.ts", "owner-module"],
+      ["src/series/series.module.ts", "owner-module"],
+    ],
+    "a payment path under the module, a file beside a top-level owner, and another module all stay undeclared",
+  );
+});
+
+test("a file import-connected to the change is in scope, its test with it, and auth stays out", () => {
+  const imports = {
+    edges: new Map([
+      ["src/app.module.ts", new Set(["src/hubspot/hubspot.module.ts"])],
+      ["src/hubspot/hubspot.module.ts", new Set(["src/hubspot/hubspot.client.ts"])],
+      ["src/hubspot/hubspot.client.ts", new Set(["src/auth/session.ts", "src/config/configuration.service.ts"])],
+      ["src/user/user.service.spec.ts", new Set(["src/hubspot/hubspot.client.ts"])],
+    ]),
+    // The configuration service is imported by half the repository.
+    importers: new Map([["src/config/configuration.service.ts", 80]]),
+  };
+  const inferred = inferDeclaredScope({
+    declared: { owners: [], terms: [] },
+    inScope: ["src/hubspot/hubspot.client.ts"],
+    candidates: [
+      "src/app.module.ts",
+      "src/hubspot/hubspot.module.ts",
+      "src/auth/session.ts",
+      "src/config/configuration.service.ts",
+      "src/user/user.service.spec.ts",
+      "src/excel/excel.service.ts",
+      "README.md",
+      ".env.example",
+    ],
+    imports,
+  });
+  assert.deepEqual(
+    inferred.map((entry) => [entry.file, entry.rule, entry.anchor]),
+    [
+      ["src/hubspot/hubspot.module.ts", "scope-import", "src/hubspot/hubspot.client.ts"],
+      ["src/user/user.service.spec.ts", "scope-test", "src/hubspot/hubspot.client.ts"],
+      ["src/app.module.ts", "scope-import", "src/hubspot/hubspot.module.ts"],
+      [".env.example", "scope-doc", "src/app.module.ts"],
+      ["README.md", "scope-doc", "src/app.module.ts"],
+    ],
+    "the chain is followed to app.module.ts; session.ts (auth), the hub everything imports and the unconnected excel service stay undeclared",
+  );
+});
+
+test("a module the request names is in scope, and a config file is when the lines it adds carry the request's word", () => {
+  const root = fixture();
+  write(root, { "src/user/user.service.ts": "export const user = 1;\n", "src/user-settings/settings.ts": "export const s = 1;\n" });
+  git(root, "add", ".");
+  git(root, "commit", "-q", "-m", "user");
+  const intent = declareIntent("user: return the greeting state", { path: root });
+  assert.deepEqual(intent.declared.modules, ["src/greeting", "src/user"], "the directories named for a word, not one that merely contains it");
+
+  const inferred = inferDeclaredScope({
+    declared: { owners: [], terms: ["hubspot"], modules: ["src/user"] },
+    inScope: [],
+    candidates: ["src/user/user.service.ts", "src/flags/production.json", "src/flags/global.json", "src/flags/notes.ts"],
+    imports: noImports,
+    addedLines: new Map([
+      ["src/flags/production.json", ['  "hubspot_organiser_connect": true,']],
+      ["src/flags/global.json", ['  "checkout_v2": true,']],
+      ["src/flags/notes.ts", ["// hubspot"]],
+    ]),
+  });
+  assert.deepEqual(inferred, [
+    { file: "src/user/user.service.ts", rule: "request-module", anchor: "src/user" },
+    { file: "src/flags/production.json", rule: "request-config", anchor: "hubspot" },
+  ]);
+});
+
+test("documentation alone joins nothing: a doc is in scope only alongside code that is", () => {
+  const inferred = inferDeclaredScope({
+    declared: { owners: [], terms: [] },
+    inScope: [],
+    candidates: ["README.md", "src/excel/excel.service.ts"],
+    imports: noImports,
+  });
+  assert.deepEqual(inferred, []);
+});
+
+test("the gate holds a wider real change to its declaration, and still names the unrelated file", () => {
+  const root = fixture();
+  write(root, {
+    "src/greeting/greeting.module.ts": "import { greetingMessage } from './greeting';\nexport const greetingModule = { greetingMessage };\n",
+    "src/billing/invoice.ts": "export const invoiceTotal = (lines) => lines.length;\n",
+    "docs/greeting.md": "# Greeting\n",
+  });
+  git(root, "add", ".");
+  git(root, "commit", "-q", "-m", "more modules");
+  const intent = declareIntent(REQUEST, { path: root });
+
+  write(root, {
+    "src/greeting/greeting.ts": "export function greetingMessage(name) { return `hello ${name}`; }\n",
+    "src/greeting/greeting.module.ts": "import { greetingMessage } from './greeting';\nexport const greetingModule = { greetingMessage, version: 2 };\n",
+    "docs/greeting.md": "# Greeting\n\nNow says hello.\n",
+    "src/billing/invoice.ts": "export const invoiceTotal = (lines) => lines.length + 1;\n",
+  });
+  git(root, "add", ".");
+
+  const check = contractCheck(evaluateLocal(root, { base: "HEAD", staged: true, intent }));
+  assert.equal(check.status, "FAIL");
+  assert.match(check.summary, /^Touched `src\/billing\/invoice\.ts`, which was never declared\./);
+  assert.ok(check.details.includes("Changed files: 4 (2 declared, 0 amended, 1 implied, 1 undeclared)"), check.details.join("\n"));
+  assert.ok(check.details.includes("Implied: docs/greeting.md (request-word of greeting)"));
 });
 
 // --- command line ---

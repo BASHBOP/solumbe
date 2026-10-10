@@ -20,6 +20,10 @@ This project follows SemVer.
   - Over MCP no tool is added: `change_impact` takes `declare: true` and `amend`, and `review_gate`, `review_verdict` and `convergence_score` take `intent`. Declaring through a tool writes nothing.
   - With an intent, `--min-convergence` and `--receipt` score against the declared files, and the convergence receipt carries the contract hash. A record whose request, files or amendments were edited afterwards does not verify and fails the gate.
   - The check is opt-in. Without an intent the gate is unchanged.
+  - A declaration covers more than the files it lists. The record also holds `terms`, the request's words that few paths carry (never a tree name such as `src`, a file extension, or the parts of a tracked path written in the request), and `modules`, the directories named for one of its words, both under the contract hash. Seven rules then place a changed file in scope: `request-word` (its path, without the extension, carries a term), `request-module` (it is under a named module), `request-config` (a config or data file whose added lines carry a term), `owner-module` (it is in a declared owner's directory), `scope-import` (it imports, or is imported by, a changed file in scope, where the imported file has at most five importers), `scope-test` and `scope-doc`.
+  - A secret path is never implied, and `owner-module` and `scope-import` do not bring in an auth or payment path their anchor is not on.
+  - Replayed on bashbop-api, declaring each commit's subject at its parent: without these rules 3 of the 30 most recent commits passed; with them 16 of 30 do, and 15 of the 30 commits before those, which the rules were not tuned on (5 of 30 without them). One unrelated change planted on each commit (auth, payment, plain service, config file) was caught 156 of 157 times on the first set and 142 of 142 on the second; the one miss was a payment file the declaration itself had predicted.
+  - The commits that still fail change a database schema, a feature-flag snapshot, a shared constants or error file, or a module the request never named. Those need `solumbe amend`.
 
 ### Changed
 
