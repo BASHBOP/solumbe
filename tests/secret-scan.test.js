@@ -130,3 +130,45 @@ test("summarizeSecretFindings reports the worst severity present", () => {
   ]);
   assert.equal(mixed.severity, "fail");
 });
+
+// --- Where a credential-shaped literal is a placeholder by convention ---
+
+// Assembled at runtime so no fixture here is itself a literal the gate flags.
+const HEURISTIC_LINE = "const accessToken = " + "'valid-access-token-9xQ2mLp7';";
+const HEURISTIC_PASSWORD = "const password = " + '"Xq7$mR2vLp9!zKw4Tb8";';
+
+test("the heuristic rule stands down in test, doc, fixture and template files", () => {
+  for (const file of [
+    "src/authentication/auth.controller.spec.ts",
+    "src/payment/stripe.test.js",
+    "src/__tests__/auth.ts",
+    "tests/helpers/session.js",
+    "docs/guest-account-system.md",
+    "evals/fixtures/api/src/auth.js",
+    ".env.production.local.example",
+  ]) {
+    assert.deepEqual(scanSecretContent(HEURISTIC_PASSWORD, { file }), [], file);
+    assert.deepEqual(scanSecretContent(HEURISTIC_LINE, { file }), [], file);
+  }
+});
+
+test("the same line still warns in ordinary source", () => {
+  const findings = scanSecretContent(HEURISTIC_PASSWORD, { file: "src/authentication/auth.service.ts" });
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].rule, "generic-credential-assignment");
+  assert.equal(findings[0].severity, "warn");
+});
+
+test("a known secret format still fails in test, doc and template files", () => {
+  for (const file of ["src/payment/stripe.processor.spec.ts", "docs/payments.md", ".env.production.local.example"]) {
+    const findings = scanSecretContent(`STRIPE_KEY="${STRIPE_LIVE}"`, { file });
+    assert.equal(findings.length, 1, file);
+    assert.equal(findings[0].rule, "stripe-live-secret-key", file);
+    assert.equal(findings[0].severity, "fail", file);
+  }
+});
+
+test("scanning without a file name keeps every rule", () => {
+  // Callers that redact log lines pass text only; they must keep the heuristic.
+  assert.equal(scanSecretContent(HEURISTIC_PASSWORD).length, 1);
+});

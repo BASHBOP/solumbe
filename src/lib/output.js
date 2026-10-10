@@ -107,6 +107,9 @@ Usage:
   solumbe attest [repo] --verdict file --merge sha [--prev sha] [--pr n] [--author name] [--committed iso] [--ledger file] [--json]   # append a hash-chained record of a merged commit
   solumbe attest [repo] --verify [--ledger file] [--json]                                     # recompute the chain; exits 1 if any record was altered
   solumbe calibrate <repo> [--window days] [--min-sample n] [--since date] [--max n] [--json]   # grade risk flags against this repo's own history
+  solumbe calibrate <repo> --gate [--window days] [--min-sample n] [--since date] [--max commits] [--policy x] [--governance x] [--quiet] [--out file] [--json]   # replay the gate and the convergence score over history; grade verdict and band
+  solumbe calibrate <repo> --follow-through [--all] [--window-min minutes] [--min-sample n] [--out file] [--json]   # from the usage log: how often a warning had cleared on the next run
+  solumbe calibrate <repo> --trial [--log file] [--window days] [--min-sample n] [--out file] [--json]   # grade the shown and withheld arms of SOLUMBE_CHECK_MODE=trial
   solumbe regret <repo> [--window days] [--min-sample n] [--since date] [--max commits] [--offline] [--quiet] [--out file] [--json]   # grade route tiers against this repo's own history
   solumbe regret --rescore run.json [--out file] [--json]                                     # regrade a saved run with the current arithmetic; replays and calls nothing
   solumbe pass <repo> [--base ref] [--head ref | --staged] [--run-validation] [--policy standard|company|high-risk] [--governance team|solo] [--request text] [--min-convergence n] [--receipt hash|file] [--out file] [--json]

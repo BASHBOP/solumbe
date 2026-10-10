@@ -42,6 +42,7 @@ import { wilson } from "../../src/lib/regret.js";
 import { isHarnessPrompt, routeLogPath } from "./route-prompt.mjs";
 
 export const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit", "str_replace_based_edit_tool"]);
+const CHECK_TOOL = /(?:^|__)(convergence_score|review_gate)$/;
 const TIERS = ["cheap", "mid", "premium"];
 const INTERRUPT = /^\[Request interrupted by user/;
 const PUSHBACK =
@@ -85,7 +86,7 @@ function promptText(record) {
  * is filed as an attachment and never becomes a user record, while the queue
  * holds every one as the hook hashed it.
  * @param {string} dir `~/.claude/projects` or a directory shaped like it
- * @returns {Map<string, { ts: number, kind: "prompt"|"interrupt"|"edit"|"harness", text?: string, file?: string, uuid?: string, hash?: string }[]>}
+ * @returns {Map<string, { ts: number, kind: "prompt"|"interrupt"|"edit"|"harness"|"check", text?: string, file?: string, uuid?: string, hash?: string, tool?: string }[]>}
  */
 export function readSessions(dir) {
   /** @type {Map<string, any[]>} */
@@ -117,7 +118,16 @@ export function readSessions(dir) {
       const events = sessions.get(sessionId) ?? [];
       if (record.type === "assistant") {
         for (const block of Array.isArray(record.message?.content) ? record.message.content : []) {
-          if (block?.type !== "tool_use" || !EDIT_TOOLS.has(block.name)) continue;
+          if (block?.type !== "tool_use") continue;
+          // A call to one of solumbe's pre-commit checks, under whatever name
+          // the host gave the server. check-outcomes.mjs joins these to the
+          // check trial's decision log by tool and the hash of the request.
+          const check = CHECK_TOOL.exec(String(block.name ?? ""));
+          if (check) {
+            events.push({ ts, kind: "check", tool: check[1], hash: promptHash(block.input?.query ?? block.input?.request ?? "") });
+            continue;
+          }
+          if (!EDIT_TOOLS.has(block.name)) continue;
           const file = block.input?.file_path ?? block.input?.path;
           if (file) events.push({ ts, kind: "edit", file: String(file) });
         }
