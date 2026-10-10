@@ -8,6 +8,13 @@ This project follows SemVer.
 
 ### Added
 
+- **The attestation record is version 2, can be signed, has a published schema, and is posted as a commit status.**
+  - A record now binds the verdict to the request that was stated, the scope contract the change was held against (its hash, amendments and undeclared count), the exact subject (kind, base, head and tree SHA), a hash of the sorted changed paths, and the convergence score, band and receipt hash. Each is `null` when the verdict did not carry it. The diff and the source are still never recorded.
+  - `solumbe attest --sign-key <pem>` signs `recordHash` with an Ed25519 key (`SOLUMBE_ATTEST_KEY` or `SOLUMBE_ATTEST_KEY_PEM` also work); `--verify --public-key <pem>` checks the signatures and `--require-signature` fails an unsigned record. The signature sits outside the hash, so older and unsigned ledgers verify as before.
+  - `solumbe attest --status` publishes a record as the `solumbe/receipt` commit status on the commit it attests, with the verdict, record hash, tree and key id; `FAIL` is a failed status. The reusable workflow posts it for each record, signs with the `attest_key` secret when one is passed, and needs `statuses: write`.
+  - The schema is at `docs/schemas/attestation-record.v2.json`, and a test holds every written record to it.
+  - `solumbe review --json` now carries `requestStated`, `pass.changedFiles`, `pass.subject`, `pass.contract`, `pass.convergence`, `pass.band` and `pass.receipt`, which the record is built from.
+
 - **The gate delegates to gitleaks, Semgrep and osv-scanner when they are installed.**
   - Each runs over a temporary copy of the changed files as the gate read them (staged tree, head commit or working tree) and reports as its own check: `Secret scan (gitleaks)`, `Code patterns (semgrep)`, `Known vulnerabilities (osv-scanner)`.
   - gitleaks runs where the repository has a `.gitleaks.toml`, and a finding fails with the file, line and rule, never the secret. Semgrep runs only with the repository's own rules, never the registry; an `ERROR` finding fails and anything else warns. osv-scanner sends package names to the OSV API, so it runs only when named in `SOLUMBE_SCANNERS`, and a known vulnerability warns.

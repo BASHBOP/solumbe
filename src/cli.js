@@ -905,12 +905,21 @@ async function handlePassPr(parsed) {
  * @param {CliArgs} parsed
  */
 async function handleAttest(parsed) {
-  const { appendAttestation, formatAttested, formatVerify, resolveLedgerPath, verifyLedger } = await import("./lib/attest.js");
+  const { appendAttestation, formatAttested, formatVerify, loadAttestKey, postReceiptStatus, readLedger, resolveLedgerPath, verifyLedger } =
+    await import("./lib/attest.js");
   const repoPath = parsed.flags.path ?? parsed.positionals[0] ?? ".";
   const ledgerPath = resolveLedgerPath({ ledger: parsed.flags.ledger, path: repoPath });
+  /** @param {unknown} flag @param {string[]} names the environment variables to fall back to */
+  const keySource = (flag, names) => (typeof flag === "string" ? flag : names.map((name) => process.env[name]).find(Boolean));
+  // The private key signs a new record; its public half checks the ledger
+  // when no public key was given.
+  const signingKey = loadAttestKey(keySource(parsed.flags.sign_key, ["SOLUMBE_ATTEST_KEY", "SOLUMBE_ATTEST_KEY_PEM"]));
+  const publicKey =
+    loadAttestKey(keySource(parsed.flags.public_key, ["SOLUMBE_ATTEST_PUBLIC_KEY", "SOLUMBE_ATTEST_PUBLIC_KEY_PEM"]), { asPublic: true }) ??
+    (signingKey ? loadAttestKey(signingKey.export({ type: "pkcs8", format: "pem" }).toString(), { asPublic: true }) : null);
 
   if (parsed.flags.verify) {
-    const result = verifyLedger(ledgerPath);
+    const result = verifyLedger(ledgerPath, { publicKey, requireSignature: Boolean(parsed.flags.require_signature) });
     if (!result.ok) process.exitCode = 1;
     if (parsed.flags.json) {
       printJson(result);
@@ -918,11 +927,49 @@ async function handleAttest(parsed) {
     }
     printText(formatVerify(result));
     const broken = result.chain.find((row) => !row.valid);
+    const badSignature = result.chain.find((row) => row.signature === "invalid");
+    const unsigned = result.chain.find((row) => row.signature === "unsigned");
     printClose(
       parsed,
       result.ok
         ? { status: "verified" }
-        : { status: "not-verified", detail: broken ? `record #${broken.seq} does not match its hash` : "the ledger chain is broken" },
+        : {
+            status: "not-verified",
+            detail: broken
+              ? `record #${broken.seq} does not match its hash`
+              : badSignature
+                ? `record #${badSignature.seq} was not signed by the key given`
+                : unsigned
+                  ? `record #${unsigned.seq} carries no signature`
+                  : "the ledger chain is broken",
+          },
+    );
+    return;
+  }
+
+  // `attest --status` publishes a record that is already in the ledger as a
+  // commit status on the commit it attests.
+  if (parsed.flags.status) {
+    const rows = readLedger(ledgerPath);
+    const wanted = typeof parsed.flags.merge === "string" ? parsed.flags.merge : "";
+    const record = wanted ? rows.find((row) => row.mergeSha === wanted || row.mergeSha.startsWith(wanted)) : rows[rows.length - 1];
+    if (!record) throw new Error(wanted ? `no record for ${wanted} in ${ledgerPath}` : `${ledgerPath} holds no record to publish`);
+    const result = postReceiptStatus(record, {
+      repo: typeof parsed.flags.repo === "string" ? parsed.flags.repo : undefined,
+      targetUrl: typeof parsed.flags.target_url === "string" ? parsed.flags.target_url : undefined,
+      cwd: String(repoPath),
+      dryRun: Boolean(parsed.flags.dry_run),
+    });
+    if (result.error) process.exitCode = 1;
+    if (parsed.flags.json) {
+      printJson({ ok: !result.error, ...result });
+      return;
+    }
+    const where = `${result.repo ?? "the repository"}@${result.sha.slice(0, 7)}`;
+    printText(
+      result.error
+        ? `Could not publish ${result.status.context} on ${where}: ${result.error}`
+        : `${result.posted ? "Published" : "Would publish"} ${result.status.context} on ${where}: ${result.status.state} · ${result.status.description}`,
     );
     return;
   }
@@ -939,13 +986,14 @@ async function handleAttest(parsed) {
     pr: parsed.flags.pr === undefined ? null : String(parsed.flags.pr),
     author: parsed.flags.author === undefined ? undefined : String(parsed.flags.author),
     committed: parsed.flags.committed === undefined ? null : String(parsed.flags.committed),
+    signingKey,
   });
   if (parsed.flags.json) {
     printJson({ ok: true, ledger: ledgerPath, record });
     return;
   }
   printText(formatAttested(record));
-  const reread = verifyLedger(ledgerPath);
+  const reread = verifyLedger(ledgerPath, { publicKey });
   printClose(
     parsed,
     reread.ok && reread.tip === record.recordHash

@@ -106,6 +106,14 @@ test("post-merge workflow reconciles successful CI into a durable audit branch",
   assert.match(reusable, /SOLUMBE_REPO: \$\{\{ github\.workspace \}\}/);
   assert.match(reusable, /SOLUMBE_BIN: node \$\{\{ github\.workspace \}\}\/\$\{\{ env\.SOLUMBE_TOOL_DIR \}\}\/src\/cli\.js/);
   assert.match(reusable, /echo "\$SOLUMBE_TOOL_DIR\/" >> \.git\/info\/exclude/);
+  // The record is signed with a key the caller passes, never one in the tree,
+  // and published on the commit it attests, which needs the statuses scope.
+  assert.match(reusable, /secrets:\s+attest_key:[\s\S]*?required: false/);
+  assert.match(reusable, /SOLUMBE_ATTEST_KEY_PEM: \$\{\{ secrets\.attest_key \}\}/);
+  assert.match(reusable, /statuses: write/);
+  assert.match(reusable, /attest \. --status --ledger "\$LEDGER_PATH" --merge "\$TARGET_SHA"/);
+  assert.match(caller, /attest_key: \$\{\{ secrets\.SOLUMBE_ATTEST_KEY \}\}/);
+  assert.match(caller, /statuses: write/);
 });
 
 test("the attestation target is passed in a variable the workflow can actually set", () => {

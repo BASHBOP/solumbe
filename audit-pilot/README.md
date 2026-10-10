@@ -32,9 +32,20 @@ solumbe attest . --verdict verdict.json --merge <sha> --prev <base> \
 # Verify the whole chain (CI gate / auditor spot-check)
 solumbe attest . --verify        # exits non-zero if any record was altered
 solumbe attest . --verify --json # the same, as data
+
+# Sign, and verify the signatures (Ed25519, PEM)
+solumbe attest . --verdict verdict.json --merge <sha> --sign-key attest.key.pem
+solumbe attest . --verify --public-key attest.pub.pem --require-signature
+
+# Publish a record as the solumbe/receipt commit status on the commit it attests
+solumbe attest . --status --merge <sha>
 ```
 
-The ledger defaults to `audit-pilot/ledger.jsonl` under the repository; `--ledger <file>` (or `SOLUMBE_LEDGER` for the scripts) names another. Every record written by `solumbe attest` carries `schemaVersion: 1` and the `verdictSchemaVersion` of the verdict it was built from. Records written before those fields existed verify unchanged: the hash covers whatever body was stored.
+The ledger defaults to `audit-pilot/ledger.jsonl` under the repository; `--ledger <file>` (or `SOLUMBE_LEDGER` for the scripts) names another. Every record written by `solumbe attest` carries `schemaVersion: 2` and the `verdictSchemaVersion` of the verdict it was built from; the published schema is [docs/schemas/attestation-record.v2.json](../docs/schemas/attestation-record.v2.json). A version 2 record binds the verdict to the request that was stated, the scope contract the change was held against, the exact tree it was measured on and a hash of its changed paths, each `null` when the verdict did not carry it. Records written before those fields existed verify unchanged: the hash covers whatever body was stored.
+
+A record can be signed. `--sign-key <pem>` (or `SOLUMBE_ATTEST_KEY` naming a file, or `SOLUMBE_ATTEST_KEY_PEM` holding the PEM) signs `recordHash` with an Ed25519 key; `--verify --public-key <pem>` checks every signature, and `--require-signature` fails an unsigned record. The signature sits outside the hash, so a signed ledger verifies the same way as an unsigned one. The chain shows nothing was edited afterwards; the signature shows who wrote it.
+
+`attest --status` posts a record as the `solumbe/receipt` commit status on the commit it attests, through your own `gh` login: the verdict, the record's place in the chain, its hash, the tree and the signing key. `FAIL` is a failed status; `PASS` and `WARN` are a success, since a `WARN` asks for a reviewer and does not block. The reusable workflow does this for every record it writes.
 
 ## CI on main
 
