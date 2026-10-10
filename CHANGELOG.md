@@ -6,6 +6,10 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A user config from before the rename applies again.** The rename moved the user config from `~/.config/otito/config.json` to `~/.config/solumbe/config.json` with no fallback, so settings left in the old file, a telemetry opt-in among them, stopped applying and local usage capture went quiet with nothing reported. When the Solumbe file is missing, the old one is read; both honour `XDG_CONFIG_HOME`. The first `solumbe config set` or `solumbe telemetry` write starts from the old settings, and the old file is left in place. `solumbe doctor` warns while the old file is in use and prints the command that moves it, `solumbe config` names the file it read, and `doctor --json` carries a new `userConfig` field.
+
 ## [4.3.0] - 2026-10-09
 
 The MCP server tells every host which tool to call at each stage of a task, and `convergence_score` stops calling a change's own tests, changelog, fixtures and docs drift. It also follows `@/` alias imports and matches the joined spelling of a camelCase product name (`OpenPanel` → `lib/openpanel.ts`). No command, field or schema was removed. Convergence receipts move to engine `0.5.0`, and the index cache moves to version 12, so existing indexes rebuild once.
