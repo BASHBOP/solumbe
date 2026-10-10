@@ -21,7 +21,7 @@ Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep
 
 ## What's New
 
-!!! tip "v4.3.0 published (2026-10-06)"
+!!! tip "v4.3.0 published (2026-10-10)"
     The MCP server tells every host which tool to call at each stage of a task, and convergence stops calling a change's own tests, changelog, fixtures and docs drift. No command, field or schema was removed.
 
     - `initialize` returns `instructions` with the agent workflow: `context_pack` first, a `repo_search` retry when the pack is weak, `change_impact` before editing, `convergence_score` before each commit and `review_gate` before a pull request.
