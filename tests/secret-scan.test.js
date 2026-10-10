@@ -87,6 +87,7 @@ test("the generic rule warns only on high-entropy literals without whitespace", 
   // Prose in a doc comment clears an entropy bar on character variety alone,
   // so the rule additionally requires a value with no whitespace.
   assert.deepEqual(scanSecretContent("* const password = 'Password used to generate key';", { file: "types.d.ts" }), []);
+  assert.deepEqual(scanSecretContent("const password = 'Password used to generate key';", { file: "src/auth.js" }), []);
   assert.deepEqual(scanSecretContent('const password = "shortpassword1";', { file: "src/auth.js" }), []);
 });
 
@@ -171,4 +172,60 @@ test("a known secret format still fails in test, doc and template files", () => 
 test("scanning without a file name keeps every rule", () => {
   // Callers that redact log lines pass text only; they must keep the heuristic.
   assert.equal(scanSecretContent(HEURISTIC_PASSWORD).length, 1);
+});
+
+// --- Comment lines in ordinary source ---
+
+const PLACEHOLDER_ASSIGNMENT = "accessToken: " + "'valid-access-token'";
+
+test("the heuristic rule stands down on a comment line in a source file", () => {
+  for (const line of [
+    `// values by convention (\`${PLACEHOLDER_ASSIGNMENT}\`), so the heuristic`,
+    `    // ${PLACEHOLDER_ASSIGNMENT}`,
+    `/* ${PLACEHOLDER_ASSIGNMENT} */`,
+    ` * ${PLACEHOLDER_ASSIGNMENT}`,
+    `# ${PLACEHOLDER_ASSIGNMENT}`,
+    `// ${HEURISTIC_PASSWORD}`,
+  ]) {
+    assert.deepEqual(scanSecretContent(line, { file: "src/lib/secret-scan.js" }), [], line);
+  }
+});
+
+test("the same assignment on a code line in a source file still warns", () => {
+  for (const line of [
+    `const session = { ${PLACEHOLDER_ASSIGNMENT} };`,
+    `  ${PLACEHOLDER_ASSIGNMENT},`,
+    `const session = { ${PLACEHOLDER_ASSIGNMENT} }; // signed in`,
+    `/* signed in */ const session = { ${PLACEHOLDER_ASSIGNMENT} };`,
+    ` */ const session = { ${PLACEHOLDER_ASSIGNMENT} };`,
+    // A private field and a generator method start with a comment character.
+    "  #password = " + '"Xq7$mR2vLp9!zKw4Tb8";',
+    "  *tokens(password = " + '"Xq7$mR2vLp9!zKw4Tb8") {',
+  ]) {
+    const findings = scanSecretContent(line, { file: "src/auth/session.js" });
+    assert.equal(findings.length, 1, line);
+    assert.equal(findings[0].rule, "generic-credential-assignment", line);
+    assert.equal(findings[0].severity, "warn", line);
+  }
+});
+
+test("a known secret format inside a comment still fails", () => {
+  const cases = [
+    [`// rotated on Friday: ${STRIPE_LIVE}`, "stripe-live-secret-key"],
+    [`# AWS_ACCESS_KEY_ID=${AWS_KEY}`, "aws-access-key-id"],
+    [` * token: ${GITHUB_TOKEN}`, "github-token"],
+    [`/* ${SLACK_TOKEN} */`, "slack-token"],
+  ];
+  for (const [line, expectedRule] of cases) {
+    const findings = scanSecretContent(line, { file: "src/payment/stripe.service.ts" });
+    assert.equal(findings.length, 1, line);
+    assert.equal(findings[0].rule, expectedRule, line);
+    assert.equal(findings[0].severity, "fail", line);
+  }
+});
+
+test("text scanned without a file name has no comment lines", () => {
+  // Redacted output is not source: a TAP diagnostic starts with `#`.
+  assert.equal(scanSecretContent(`# ${HEURISTIC_PASSWORD}`).length, 1);
+  assert.equal(scanSecretContent(`// ${HEURISTIC_PASSWORD}`).length, 1);
 });

@@ -14,8 +14,10 @@
 //
 // Test files, documentation, fixtures and committed templates hold made-up
 // values by convention (`accessToken: 'valid-access-token'`), so the heuristic
-// rule stands down there. Vendor-format rules still run everywhere: a real
-// `sk_live_` key is a leak in a spec file too.
+// rule stands down there. A comment line in a source file gets the same
+// treatment, because a comment that explains a credential shape is not an
+// assignment. Vendor-format rules still run everywhere: a real `sk_live_` key
+// is a leak in a spec file, and in a comment, too.
 //
 // Escape hatch: put `solumbe:allow-secret` on the matching line (or the line
 // above it) to silence a reviewed false positive.
@@ -73,7 +75,7 @@ const INDIRECTION_PATTERNS = [/process\s*\.\s*env/i, /import\.meta\.env/i, /os\.
  * @property {string} label
  * @property {RegExp} pattern
  * @property {"fail" | "warn"} severity
- * @property {boolean} [heuristic] matches a shape, not an issuer format; skipped in test, doc, fixture and template files
+ * @property {boolean} [heuristic] matches a shape, not an issuer format; skipped in test, doc, fixture and template files, and on comment lines
  * @property {(match: RegExpMatchArray) => boolean} [accept] extra validation on a raw match
  */
 
@@ -194,7 +196,8 @@ export function scanSecretContent(text, options = {}) {
   if (text.includes("\0")) return findings;
 
   const lines = text.split(/\r?\n/, MAX_SCAN_LINES);
-  const rules = isPlaceholderValuePath(file) ? SECRET_CONTENT_RULES.filter((rule) => !rule.heuristic) : SECRET_CONTENT_RULES;
+  const formatRules = SECRET_CONTENT_RULES.filter((rule) => !rule.heuristic);
+  const fileRules = isPlaceholderValuePath(file) ? formatRules : SECRET_CONTENT_RULES;
   /** @type {Set<string>} */
   const seen = new Set();
   for (let index = 0; index < lines.length; index += 1) {
@@ -202,6 +205,9 @@ export function scanSecretContent(text, options = {}) {
     if (!line || line.length > MAX_LINE_LENGTH) continue;
     if (isAllowed(line) || isAllowed(lines[index - 1] ?? "")) continue;
 
+    // Only a named file has comment syntax. Text scanned without one is output
+    // being redacted, where a line that starts with `#` is not a comment.
+    const rules = file && isCommentLine(line) ? formatRules : fileRules;
     for (const rule of rules) {
       rule.pattern.lastIndex = 0;
       for (const match of line.matchAll(rule.pattern)) {
@@ -227,6 +233,20 @@ export function scanSecretContent(text, options = {}) {
 function isPlaceholderValuePath(file) {
   if (!file) return false;
   return isTestFilePath(file) || isDocPath(file) || isFixturePath(file) || isTemplatePath(file);
+}
+
+/**
+ * A line that holds nothing but a comment: `//`, `/*`, a `*` continuation, or
+ * `#`. `#name` and `*name` are code (a private field, a preprocessor directive,
+ * a generator method), and so is a line that closes a block comment and then
+ * carries a statement.
+ * @param {string} line
+ * @returns {boolean}
+ */
+function isCommentLine(line) {
+  const trimmed = line.trimStart();
+  if (trimmed.startsWith("//") || /^#(?![\w$])/.test(trimmed)) return true;
+  return /^(?:\/\*|\*(?![\w$]))/.test(trimmed) && !/\*\/\s*\S/.test(trimmed);
 }
 
 /** @param {string} line */
