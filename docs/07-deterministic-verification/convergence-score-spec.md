@@ -62,7 +62,7 @@ confirmed owners' own fan-out). `missedChangedFiles`, files that changed but not
 task predicted, are scope drift. An empty diff converges on nothing, so Scope is 0.
 
 `inferredRelated` moves a changed file out of drift (or out of the advisory bucket) under
-one of two named rules, each anchored on a file the diff already confirmed:
+one of six named rules, each anchored on a file the diff already confirmed:
 
 - **`owner-sibling`**: a file the change *adds* in the same directory as a confirmed
   required owner. It must be a mapped source file, must not be a secret path, and must
@@ -72,7 +72,29 @@ one of two named rules, each anchored on a file the diff already confirmed:
   an inferred sibling: `PersonDialog.test.tsx` for `PersonDialog.tsx`,
   `SmartTable.selection.test.tsx` for `SmartTable.tsx`, `test_converge.py` for
   `converge.py`. Generic stems (`index`, `utils`, `types`, …) must sit beside the file or in
-  a `__tests__`/`test`/`tests` directory directly under it.
+  a `__tests__`/`test`/`tests` directory directly under it. A suffix after a hyphen or
+  underscore also names a non-generic file: `mcp-dispatch.test.js` for `mcp.js`.
+- **`owner-changelog`**: the changelog (`CHANGELOG.md`, `CHANGES.md`, `HISTORY.md`,
+  release notes), which records the change.
+- **`owner-test-data`**: fixture or eval data (`evals/fixtures/…`, `evals/corpus.json`,
+  `testdata/…`), the input the change's tests run on.
+
+The last two need at least one confirmed owner; a diff that is only a changelog or only
+fixtures stays drift.
+
+Three rules read the lines the change *adds* (a zero-context diff against the base, or the
+whole file when an untracked file is scored), so they hold for what this change did:
+
+- **`owner-test`** also covers a test whose added lines import a confirmed file, whatever
+  its name.
+- **`owner-import`**: a source file whose added lines import a confirmed file, by a relative
+  specifier or a root alias (`@/utils/analytics`, `~/lib/x`, `#/lib/x`, resolved from the
+  repository root or `src/`), carrying no risk flag that file lacks. The change wired them
+  together, as when a helper moves into a shared module and its callers import it there, or
+  a feature calls a confirmed module from the screens it touches.
+- **`owner-doc`**: a doc whose added lines name a confirmed or inferred file by path or file
+  name. Generic file names (`index.ts`) name nothing, and the change's code is preferred
+  over its fixtures as the anchor.
 
 Each entry records its rule and anchor, so the inference is visible rather than silent.
 
@@ -127,7 +149,12 @@ was inferred into scope, so a payload without inference hashes exactly as before
 
 `engine` is `convergenceEngineVersion`. Engine `0.2.0` added owner-adjacent inference and
 stopped scoring untracked files by default; both change scores, so a receipt issued by
-`0.1.0` does not recompute under `0.2.0`. Re-issue it with the current engine.
+`0.1.0` does not recompute under `0.2.0`. Engine `0.3.0` added suffixed test names, the
+changelog and test data to that inference, so a `0.2.0` receipt does not recompute under
+`0.3.0` either. Engine `0.4.0` added the rules that read added lines (`owner-import`,
+`owner-doc`, and tests by import), so a `0.3.0` receipt does not recompute under `0.4.0`.
+Engine `0.5.0` follows root-alias imports in those rules, so a `0.4.0` receipt does not
+recompute under `0.5.0`. Re-issue it with the current engine.
 
 Calls without an exact subject retain the byte-for-byte v1 canonical payload and receipt
 shape for compatibility. A subject-bound receipt uses v2 and adds both of these fields to
@@ -170,7 +197,7 @@ full 64-character `inputsHash`. The receipt is hashed but not yet cryptographica
 ```jsonc
 {
   "ok": true,
-  "convergenceEngineVersion": "0.2.0",
+  "convergenceEngineVersion": "0.5.0",
   "task": "add Stripe refunds",
   "base": "origin/main",
   "head": "HEAD",

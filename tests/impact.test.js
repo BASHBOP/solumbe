@@ -12,6 +12,13 @@ test("tokenize splits camelCase and kebab-case identifiers, drops stop-words", (
   assert.deepEqual(tokens, ["stripe", "refunds", "bookings"]);
 });
 
+test("weightedQueryTerms also weighs the joined spelling of a camelCase name", () => {
+  const weights = weightedQueryTerms("identify the account in OpenPanel");
+  assert.ok(weights.get("open"), "keeps the split word");
+  assert.ok(weights.get("panel"), "keeps the split word");
+  assert.equal(weights.get("openpanel"), 2);
+});
+
 test("weightedQueryTerms boosts domain keywords and adds singular forms", () => {
   const weights = weightedQueryTerms("add Stripe refunds to bookings");
   assert.ok(weights.has("stripe"), "expected stripe present");

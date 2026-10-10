@@ -6,6 +6,45 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-10-10
+
+The MCP server tells every host which tool to call at each stage of a task, and `convergence_score` stops calling a change's own tests, changelog, fixtures and docs drift. It also follows `@/` alias imports and matches the joined spelling of a camelCase product name (`OpenPanel` → `lib/openpanel.ts`). No command, field or schema was removed. Convergence receipts move to engine `0.5.0`, and the index cache moves to version 12, so existing indexes rebuild once.
+
+### Added
+
+- **The MCP server sends its workflow to every host.** `initialize` now returns `instructions` that say which tool to call at each stage of a task: `context_pack` first, a `repo_search` retry when the pack is weak, `change_impact` before editing, `convergence_score` before each commit and `review_gate` before a pull request. The workflow used to live only in one host's instruction file, so an agent on another host never saw it. The text is defined once in `src/lib/agent-workflow.js`, and a test fails if it names a tool the server does not list.
+
+### Fixed
+
+- **`convergence_score` no longer calls a change's own tests, changelog and eval data drift.**
+  - A test whose name adds a suffix to a confirmed file (`mcp-dispatch.test.js` for `mcp.js`) counts as its test.
+  - With at least one confirmed owner, the changelog entry and fixture or eval data (`evals/fixtures/…`, `evals/corpus.json`) are in scope under the new `owner-changelog` and `owner-test-data` rules.
+  - A ranking fix that added an eval fixture and recorded its changelog scored 52/100, with every fixture file listed as drift.
+  - The convergence engine moves to `0.3.0`, so `0.2.0` receipts are not recomputed.
+- **The gate no longer treats fixture files as risk-sensitive.** `isGateRiskPath` skips `fixtures`, `__fixtures__`, `testdata` and `test-data` directories, as it already did for tests and docs. A fixture repository's `middleware/admin-auth.ts` had made `review_gate` warn. Real code under an `eval/` or `evals/` folder still gates.
+- **A repository deleted from disk no longer fails every search.**
+  - `repo_search` lists it under `stale`, with a hint, instead of `errors`.
+  - The next `solumbe index` drops it from the catalog and reports it under `pruned`.
+- **A request that names a tool reaches the code that implements it.**
+  - A registry names its tools as strings: `{ name: "convergence_score" }` in a tool table, and `case "convergence_score":` in the switch that dispatches it. The indexer only knew declarations, so `context_pack` missed `src/lib/mcp.js` for a request about MCP tools, and `convergence_score` called `converge.js` drift in a change to it.
+  - Identifier-shaped strings in those two places are now indexed as `registered` symbols, together with the functions their entry calls.
+  - A request naming one pins the module that exports the called function, through the registry's own imports (`converge.js` for `convergence_score`). The registry is surfaced as its definer.
+  - Display names such as "Convergence Score" are not indexed.
+  - The index cache moves to version 12, so existing indexes rebuild once.
+- **A failing accuracy eval says FAIL instead of crashing.** The closing line called `.find` on the accuracy eval's cases, which are grouped by suite (`{ retrieval, risk }`), so a run below threshold threw `data.cases?.find is not a function`.
+- **`convergence_score` reads what the change adds to place a file.**
+  - A test or source file whose added lines import a confirmed file is in scope (`owner-test`, and the new `owner-import`). A source file still needs no risk flag that file lacks.
+  - A doc whose added lines name a confirmed or inferred file is in scope (`owner-doc`).
+  - #273 had four files wrongly called drift: `ast.js`, which now imports a helper from `text.js`; a test named `registered-names.test.js`; its gap note; and `docs/EVALS.md`. Its score moves from 59 to 70, with scope and risk alignment both at 100.
+  - The convergence engine moves to `0.4.0`.
+- **`convergence_score` follows root-alias imports.**
+  - The `owner-import` rule, and tests placed by import, now resolve `@/…`, `~/…` and `#/…` specifiers from the repository root or `src/`, the form Next.js and Vite apps use. They only followed relative imports before.
+  - On the bashbop-event-web analytics change (BASHBOP/bashbop-event-web#622), every screen wired to the confirmed `utils/analytics.ts` through `@/utils/analytics` counted as drift: 25 drift files, scope 16, 51/100. Now 10 drift files remain, scope is 68 and the score is 69/100. The ten that remain are six risk-flagged files, which still need their own review by design, and four that changed without adding an import.
+  - The convergence engine moves to `0.5.0`, so `0.4.0` receipts are not recomputed.
+- **A request naming a camelCase product reaches the file named after it.** "OpenPanel" splits into `open` and `panel`, while the file is `lib/openpanel.ts` and the package `@openpanel/react-native`. `context_pack` and `change_impact` now also weigh the joined spelling. On the bashbop-mobile-app request, `lib/openpanel.ts` rose from ninth to third in `context_pack`, and into `change_impact`'s top eight from outside its top twelve.
+- **A user config from before the rename applies again.** The rename moved the user config from `~/.config/otito/config.json` to `~/.config/solumbe/config.json` with no fallback, so settings left in the old file, a telemetry opt-in among them, stopped applying and local usage capture went quiet with nothing reported. When the Solumbe file is missing, the old one is read; both honour `XDG_CONFIG_HOME`. The first `solumbe config set` or `solumbe telemetry` write starts from the old settings, and the old file is left in place. `solumbe doctor` warns while the old file is in use and prints the command that moves it, `solumbe config` names the file it read, and `doctor --json` carries a new `userConfig` field.
+- **`solumbe route` starts one git process instead of six.** AX inspected the whole repository (a file listing plus four git metadata calls) for four fields it reads from `package.json` and the top-level directories, and `route` runs AX on every routed prompt. Where each process launch is slow, the six launches pushed `route` past the `UserPromptSubmit` hook's six-second budget, so the hook gave no tier and logged no decision. AX now reads those fields through `inspectRepoBasics`, which runs no git; its score is unchanged.
+
 ## [4.2.1] - 2026-10-06
 
 Context packs rank by distinct request words, and a failing gate says what failed. No command or schema was removed. The gate check gains one optional field, and `gate --out` prints a verdict line.

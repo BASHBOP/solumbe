@@ -1,6 +1,7 @@
 /// <reference types="node" />
 import path from "node:path";
 import { isRunnableTestPath } from "./code-map/classify.js";
+import { joinedCamelCaseWords } from "./code-map/text.js";
 import { generateHarness } from "./harness.js";
 import { getCachedCodeMap } from "./index-cache.js";
 import { collapseLocaleSiblings, formatLocales, isCopyRequest, resolveNamedFiles, stripFileExtensions, TRANSLATION_DEMOTION } from "./ranking-rules.js";
@@ -90,7 +91,7 @@ const defaultLimit = 8;
 // imports (that one is pinned): a local copy, an export nothing uses.
 const NAMED_DEFINER_BONUS = 60;
 // How far a named file sits above the best candidate the request did not name.
-const PIN_MARGIN = { path: 20, symbol: 10 };
+const PIN_MARGIN = { path: 20, symbol: 10, implements: 10 };
 // Enough to put the definition of a named symbol ahead of every hotspot that
 // only shares words with the request.
 const NAMED_HOTSPOT_BONUS = 200;
@@ -184,7 +185,7 @@ export function generateContextPack(query, options = {}) {
   // The words of a named file score; its extension, shared by every file of
   // that language, does not.
   const termsQuery = stripFileExtensions(normalizedQuery);
-  const tokens = uniqueConcepts(tokenize(termsQuery));
+  const tokens = uniqueConcepts([...tokenize(termsQuery), ...joinedCamelCaseWords(termsQuery)]);
   const phrases = extractPhrases(termsQuery);
   const intent = inferIntent(tokens);
   const tokenStats = { ...computeTokenDocFrequency(maps, tokens), partners: compoundPartners(termsQuery) };
@@ -628,7 +629,13 @@ function liftPinnedFiles(scored, pinned) {
     const pin = pinned.get(fileKey(file));
     if (!pin) continue;
     file.score = Math.max(file.score, ceiling) + PIN_MARGIN[pin.rule];
-    file.reasons.push(pin.rule === "path" ? "named in request" : `defines ${pin.literal}, named in request`);
+    file.reasons.push(
+      pin.rule === "path"
+        ? "named in request"
+        : pin.rule === "implements"
+          ? `implements ${pin.literal}, registered in ${pin.via}`
+          : `defines ${pin.literal}, named in request`,
+    );
   }
 }
 

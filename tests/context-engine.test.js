@@ -5,6 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { AMBIGUOUS_ACTION_QUESTION, compoundPartners, formatContextPackTerminal, generateContextPack, uniqueConcepts } from "../src/lib/context-engine.js";
+import { joinedCamelCaseWords } from "../src/lib/code-map/text.js";
 import { createRenderer } from "../src/lib/render/fancy.js";
 
 test("generateContextPack returns task-aware files, tests, and commands", () => {
@@ -618,6 +619,39 @@ test("compoundPartners ties the words of a camelCase name together unless the re
     hog: ["post"],
   });
   assert.deepEqual(Object.fromEntries(compoundPartners("open the OpenPanel panel")), {});
+});
+
+test("joinedCamelCaseWords joins each camelCase word of a request, and nothing else", () => {
+  assert.deepEqual(joinedCamelCaseWords("add OpenPanel and PostHog to the open panel"), ["openpanel", "posthog"]);
+  assert.deepEqual(joinedCamelCaseWords("track ticket scans"), []);
+});
+
+test("generateContextPack reaches a file named with the joined spelling of a camelCase name", () => {
+  // The bashbop-mobile-app request of 2026-10-08: the OpenPanel client lives in
+  // `lib/openpanel.ts`, one joined word, and ranked behind files matching one
+  // other word of the request.
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "solumbe-context-joined-"));
+  const files = {
+    "package.json": JSON.stringify({ name: "joined-fixture", private: true }),
+    "lib/openpanel.ts":
+      "import { createClient } from '@openpanel/sdk';\n\nexport const client = createClient();\n\nexport function trackTimelineEvent(name: string) {\n  client.track(name);\n}\n",
+    "hooks/useScanner.ts":
+      "export function trackScan(result: string) {\n  return result;\n}\n\nexport function useScanner() {\n  return { scanTicket: (code: string) => trackScan(code) };\n}\n",
+    "hooks/useGuests.ts": "export function useCheckInGuest() {\n  return { checkInGuest: (guestId: string) => guestId };\n}\n",
+    "contexts/AuthContext.tsx": "export function useSignedInAccount() {\n  return { account: null };\n}\n",
+    "components/FilterPanel.tsx": "export function FilterPanel({ open }: { open: boolean }) {\n  return open ? 'filters' : null;\n}\n",
+    "lib/deeplinks.ts": "export function openTicketLink(id: string) {\n  return `app://tickets/${id}`;\n}\n",
+  };
+  for (const [file, body] of Object.entries(files)) {
+    fs.mkdirSync(path.join(root, path.dirname(file)), { recursive: true });
+    fs.writeFileSync(path.join(root, file), body);
+  }
+
+  const pack = generateContextPack("identify the signed-in account in OpenPanel and track ticket scans and guest check-ins", { path: root });
+  const ranked = pack.data.primaryFiles.map((/** @type {{ path: string }} */ file) => file.path);
+
+  assert.ok(ranked.indexOf("lib/openpanel.ts") >= 0 && ranked.indexOf("lib/openpanel.ts") < ranked.indexOf("hooks/useGuests.ts"), ranked.join(", "));
+  fs.rmSync(root, { recursive: true, force: true });
 });
 
 test("generateContextPack scores a word the request repeats once per hotspot", () => {

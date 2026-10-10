@@ -25,7 +25,7 @@ import { parseArgv } from "./lib/args.js";
 /** @typedef {import('./lib/eval.js').EvalOptions} EvalOptions */
 import { createRenderer } from "./lib/render/fancy.js";
 import { formatTerminalSummary, printHelp, printText, printJson, verifyWrittenFiles, writeArtifact } from "./lib/output.js";
-import { CONFIG_KEYS, gatePolicy, getConfigPath, listConfigSources, loadConfig, writeConfig } from "./lib/config.js";
+import { CONFIG_KEYS, gatePolicy, getConfigPath, listConfigSources, loadConfig, userConfigStatus, writeConfig } from "./lib/config.js";
 import { appendEvent, clearTelemetryLog, noteResult, redactError, shareEvent, takePendingSignals, telemetryStatus } from "./lib/telemetry.js";
 
 const packageVersion = String(JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version);
@@ -237,12 +237,15 @@ function gateClose(data, validated = false) {
 
 /**
  * An eval that enforces thresholds is verified when they hold.
- * @param {{ passed?: boolean, checks?: { name?: string, pass?: boolean }[], cases?: { name?: string, pass?: boolean }[] }} data
+ * @param {{ passed?: boolean, checks?: { name?: string, pass?: boolean }[], cases?: { name?: string, pass?: boolean }[] | Record<string, { name?: string, pass?: boolean }[]> }} data
  * @returns {ClosingLine}
  */
 function evalClose(data) {
   if (data.passed) return { status: "verified" };
-  const failing = data.checks?.find((entry) => !entry.pass)?.name ?? data.cases?.find((entry) => !entry.pass)?.name;
+  // The accuracy eval groups its cases by suite (`{ retrieval, risk }`); a
+  // failing run crashed here on `.find` instead of naming the failing case.
+  const cases = Array.isArray(data.cases) ? data.cases : Object.values(data.cases ?? {}).flat();
+  const failing = data.checks?.find((entry) => !entry.pass)?.name ?? cases.find((entry) => !entry.pass)?.name;
   return { status: "not-verified", detail: failing ?? "the eval thresholds" };
 }
 
@@ -1821,6 +1824,7 @@ async function handleConfig(parsed) {
     return;
   }
   const renderer = rendererFor(parsed);
+  const user = userConfigStatus();
   printText(
     [
       renderer.header({ text: "solumbe config", glyph: "\u{2699}\u{FE0F}" }),
@@ -1832,6 +1836,7 @@ async function handleConfig(parsed) {
       "",
       renderer.table([
         ["User config", renderer.code(getConfigPath("user"))],
+        ...(user.source === "legacy" ? [["User config read from", renderer.code(user.legacyPath)]] : []),
         ["Local config", renderer.code(getConfigPath("local"))],
       ]),
     ].join("\n"),

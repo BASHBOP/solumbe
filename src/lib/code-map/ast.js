@@ -1,6 +1,6 @@
 import path from "node:path";
 import ts from "typescript";
-import { lineNumberAt, readStringCallArguments, stripNonCode } from "./text.js";
+import { isIdentifierShaped, lineNumberAt, readStringCallArguments, stripNonCode } from "./text.js";
 import { extractCsharpFacts, extractGoFacts, extractJavaFacts, extractPythonFacts, extractRubyFacts, extractRustFacts } from "./ast-languages.js";
 
 /**
@@ -79,12 +79,14 @@ export function extractAstFacts(relativePath, text) {
     };
     /** @type {Set<string>} */
     const seenSymbols = new Set();
+    /** @type {Map<string, CodeSymbol>} */
+    const registered = new Map();
 
     visit(sourceFile);
     return {
       imports: [...facts.imports].slice(0, 100),
       exports: [...facts.exports].slice(0, 100),
-      symbols: facts.symbols,
+      symbols: [...facts.symbols, ...[...registered.values()].slice(0, maxRegisteredNames)],
       formFields: [...facts.formFields].slice(0, 100),
       navigationTargets: [...facts.navigationTargets].slice(0, 100),
       localIdentifiers: [...facts.localIdentifiers].slice(0, 200),
@@ -98,6 +100,7 @@ export function extractAstFacts(relativePath, text) {
       collectFormField(node, facts.formFields);
       collectNavigationTarget(node, facts.navigationTargets);
       collectLocalIdentifier(node, facts.localIdentifiers);
+      collectRegisteredName(sourceFile, node, registered);
       ts.forEachChild(node, visit);
     }
   } catch {
@@ -121,6 +124,74 @@ function collectLocalIdentifier(node, identifiers) {
   if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
     identifiers.add(node.name.text);
   }
+}
+
+// Bound on registered names per file, so a large dispatch table or action
+// reducer stays a bounded part of the map.
+const maxRegisteredNames = 100;
+const maxRegisteredCalls = 20;
+
+/**
+ * Names a registry gives things as strings: `{ name: "convergence_score", … }`
+ * in a tool, command or route table, and `case "convergence_score":` in the
+ * switch that dispatches it. A request naming the tool never reached the file,
+ * because the name is a string rather than a declaration. Only
+ * identifier-shaped strings count, so a display name like "Convergence Score"
+ * does not. Each name keeps, as its terms, the functions its entry or branch
+ * calls (`generateConvergence`), so the request can be followed through the
+ * file's imports to the module that implements it. A name registered twice,
+ * once in a table and once in a switch, is one symbol with both sets of calls.
+ * @param {ts.SourceFile} sourceFile
+ * @param {ts.Node} node
+ * @param {Map<string, CodeSymbol>} registered
+ */
+function collectRegisteredName(sourceFile, node, registered) {
+  /** @type {{ name: string, scope: ts.Node } | undefined} */
+  let found;
+  if (
+    ts.isPropertyAssignment(node) &&
+    propertyNameText(node.name) === "name" &&
+    isStringLiteralNode(node.initializer) &&
+    isIdentifierShaped(node.initializer.text) &&
+    ts.isObjectLiteralExpression(node.parent)
+  ) {
+    found = { name: node.initializer.text, scope: node.parent };
+  } else if (ts.isCaseClause(node) && isStringLiteralNode(node.expression) && isIdentifierShaped(node.expression.text)) {
+    found = { name: node.expression.text, scope: node };
+  }
+  if (!found) return;
+
+  const existing = registered.get(found.name);
+  const terms = new Set([...(existing?.terms ?? []), ...calledFunctions(found.scope)]);
+  /** @type {CodeSymbol} */
+  const symbol = existing ?? { type: "registered", name: found.name, line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1 };
+  if (terms.size) symbol.terms = [...terms].slice(0, maxRegisteredCalls);
+  registered.set(found.name, symbol);
+}
+
+/**
+ * Functions called by name inside a node: `generateConvergence(…)`, not
+ * `console.log(…)`.
+ * @param {ts.Node} scope
+ * @returns {string[]}
+ */
+function calledFunctions(scope) {
+  /** @type {Set<string>} */
+  const names = new Set();
+  const visit = (/** @type {ts.Node} */ child) => {
+    if (ts.isCallExpression(child) && ts.isIdentifier(child.expression)) names.add(child.expression.text);
+    ts.forEachChild(child, visit);
+  };
+  ts.forEachChild(scope, visit);
+  return [...names];
+}
+
+/**
+ * @param {ts.PropertyName} name
+ * @returns {string | undefined}
+ */
+function propertyNameText(name) {
+  return ts.isIdentifier(name) || ts.isStringLiteral(name) ? name.text : undefined;
 }
 
 const formFieldCallees = new Set(["watch", "register", "setValue", "setValues", "setFieldValue", "setFieldsValue", "update"]);

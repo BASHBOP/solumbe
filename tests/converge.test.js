@@ -412,3 +412,164 @@ test("working-tree mode lists untracked files instead of scoring them, unless as
   assert.ok(withUntracked.drivers.missedChangedFiles.includes("dump.rdb"));
   assert.ok(withUntracked.subScores.scope < tracked.subScores.scope);
 });
+
+test("inferInScopeFiles keeps a change's suffixed tests, changelog and eval data in scope", () => {
+  const inferred = inferInScopeFiles({
+    confirmedDirect: ["src/lib/mcp.js"],
+    confirmedRelated: [],
+    candidates: [
+      "tests/mcp-dispatch.test.js",
+      "CHANGELOG.md",
+      "evals/corpus.json",
+      "evals/fixtures/telemetry-web/middleware/admin-auth.ts",
+      "docs/EVALS.md",
+      "src/lib/billing.js",
+    ],
+    addedFiles: [],
+    mappedFiles: [],
+  }).map((entry) => `${entry.rule}:${entry.file}`);
+
+  assert.deepEqual(inferred, [
+    "owner-changelog:CHANGELOG.md",
+    "owner-test-data:evals/corpus.json",
+    "owner-test-data:evals/fixtures/telemetry-web/middleware/admin-auth.ts",
+    "owner-test:tests/mcp-dispatch.test.js",
+  ]);
+});
+
+test("inferInScopeFiles needs a confirmed owner before the changelog or eval data count", () => {
+  const inferred = inferInScopeFiles({
+    confirmedDirect: [],
+    confirmedRelated: [],
+    candidates: ["CHANGELOG.md", "evals/corpus.json"],
+    addedFiles: [],
+    mappedFiles: [],
+  });
+  assert.deepEqual(inferred, []);
+});
+
+test("inferInScopeFiles does not read a suffix after a generic stem as naming the file", () => {
+  const inferred = inferInScopeFiles({
+    confirmedDirect: ["src/lib/index.js"],
+    confirmedRelated: [],
+    candidates: ["tests/index-cache.test.js"],
+    addedFiles: [],
+    mappedFiles: [],
+  });
+  assert.deepEqual(inferred, []);
+});
+
+test("inferInScopeFiles keeps what the change wires to a confirmed file, from the lines it adds", () => {
+  const inferred = inferInScopeFiles({
+    confirmedDirect: ["src/lib/context-engine.js"],
+    confirmedRelated: ["src/lib/code-map/text.js"],
+    candidates: [
+      "src/lib/code-map/ast.js",
+      "tests/registered-names.test.js",
+      "docs/EVALS.md",
+      "docs/gap-note.md",
+      "src/lib/auth/session.js",
+      "docs/unrelated.md",
+      "src/lib/reporter.js",
+    ],
+    addedFiles: [],
+    mappedFiles: [],
+    addedLines: new Map([
+      ["src/lib/code-map/ast.js", ['import { isIdentifierShaped, lineNumberAt } from "./text.js";']],
+      ["tests/registered-names.test.js", ['import { generateContextPack } from "../src/lib/context-engine.js";']],
+      ["docs/EVALS.md", ["The change pins `src/lib/context-engine.js` for a named tool."]],
+      ["docs/gap-note.md", ["- `ast.js` indexes registered names"]],
+      // Imports a confirmed file but carries an auth flag that file lacks.
+      ["src/lib/auth/session.js", ['import { x } from "../context-engine.js";']],
+      ["docs/unrelated.md", ["Setup notes for the new release."]],
+      // Already imported the confirmed file; this change added nothing that wires them.
+      ["src/lib/reporter.js", ["export const header = 'report';"]],
+    ]),
+  }).map((entry) => `${entry.rule}:${entry.file}<-${entry.anchor}`);
+
+  assert.deepEqual(inferred, [
+    "owner-doc:docs/EVALS.md<-src/lib/context-engine.js",
+    "owner-doc:docs/gap-note.md<-src/lib/code-map/ast.js",
+    "owner-import:src/lib/code-map/ast.js<-src/lib/code-map/text.js",
+    "owner-test:tests/registered-names.test.js<-src/lib/context-engine.js",
+  ]);
+});
+
+test("inferInScopeFiles follows root-alias imports to a confirmed file", () => {
+  const inferred = inferInScopeFiles({
+    confirmedDirect: ["components/providers/openpanel-provider.tsx"],
+    confirmedRelated: ["utils/analytics.ts", "src/lib/session.ts"],
+    candidates: [
+      "app/dashboard/guests/GuestsTable.tsx",
+      "components/faq/FaqItem.tsx",
+      "app/(customer)/pricing/Pricing.tsx",
+      "components/billing/PayoutDialog.tsx",
+      "__tests__/utils/analytics.test.ts",
+      "app/dashboard/home/page.tsx",
+    ],
+    addedFiles: [],
+    mappedFiles: [],
+    addedLines: new Map([
+      ["app/dashboard/guests/GuestsTable.tsx", ["import { analytics } from '@/utils/analytics';"]],
+      ["components/faq/FaqItem.tsx", ['import { analytics } from "~/utils/analytics";']],
+      // `@/lib/session` resolves under `src/` when the root has no `lib/`.
+      ["app/dashboard/home/page.tsx", ["import { readSession } from '@/lib/session';"]],
+      // A money-flow file the change wired up still needs its own review.
+      ["components/billing/PayoutDialog.tsx", ["import { analytics } from '@/utils/analytics';"]],
+      ["__tests__/utils/analytics.test.ts", ["import { analytics } from '@/utils/analytics';"]],
+      // An alias to a file the change did not confirm wires nothing.
+      ["app/(customer)/pricing/Pricing.tsx", ["import { formatPrice } from '@/utils/price';"]],
+    ]),
+  }).map((entry) => `${entry.rule}:${entry.file}<-${entry.anchor}`);
+
+  assert.deepEqual(inferred, [
+    "owner-test:__tests__/utils/analytics.test.ts<-utils/analytics.ts",
+    "owner-import:app/dashboard/guests/GuestsTable.tsx<-utils/analytics.ts",
+    "owner-import:app/dashboard/home/page.tsx<-src/lib/session.ts",
+    "owner-import:components/faq/FaqItem.tsx<-utils/analytics.ts",
+  ]);
+});
+
+test("a doc naming only a generic file name names nothing", () => {
+  const inferred = inferInScopeFiles({
+    confirmedDirect: ["src/lib/index.js"],
+    confirmedRelated: [],
+    candidates: ["docs/notes.md"],
+    addedFiles: [],
+    mappedFiles: [],
+    addedLines: new Map([["docs/notes.md", ["Run `index.js` to start."]]]),
+  });
+  assert.deepEqual(inferred, []);
+});
+
+test("head mode reads the lines a commit adds to place its docs", () => {
+  const root = featureCommitFixture();
+  const write = (files) => {
+    for (const [file, body] of Object.entries(files)) {
+      fs.mkdirSync(path.join(root, path.dirname(file)), { recursive: true });
+      fs.writeFileSync(path.join(root, file), body);
+    }
+  };
+  write({ "docs/greeting.md": "# Greeting\n", "docs/setup.md": "# Setup\n" });
+  convergeGit(root, "add", "docs");
+  convergeGit(root, "commit", "-q", "-m", "docs");
+  const baseSha = convergeGit(root, "rev-parse", "HEAD").trim();
+  write({
+    "src/greeting/greeting.ts": "export function greetingMessage(name) { return `welcome ${name}`; }\n",
+    "tests/welcome.test.ts": 'import { greetingMessage } from "../src/greeting/greeting";\n',
+    "src/cache/store.ts": 'import { greetingMessage } from "../greeting/greeting.js";\nexport const store = new Map([["hi", greetingMessage("x")]]);\n',
+    "docs/greeting.md": "# Greeting\n\n`src/greeting/greeting.ts` now says welcome.\n",
+    "docs/setup.md": "# Setup\n\nInstall with npm.\n",
+  });
+  convergeGit(root, "add", "src/greeting/greeting.ts", "tests/welcome.test.ts", "src/cache/store.ts", "docs/greeting.md", "docs/setup.md");
+  convergeGit(root, "commit", "-q", "-m", "welcome");
+  const headSha = convergeGit(root, "rev-parse", "HEAD").trim();
+
+  const data = generateConvergence(TASK, { path: root, base: baseSha, head: headSha });
+  assert.deepEqual(data.drivers.confirmedDirect, ["src/greeting/greeting.ts"]);
+  // The import graph already relates the new test and the importing module.
+  assert.deepEqual(data.drivers.confirmedRelated, ["src/cache/store.ts", "tests/welcome.test.ts"]);
+  // The doc is placed from the line the commit adds to it, read through git.
+  assert.deepEqual(data.drivers.inferredRelated, [{ file: "docs/greeting.md", rule: "owner-doc", anchor: "src/greeting/greeting.ts" }]);
+  assert.deepEqual(data.drivers.missedChangedFiles, ["docs/setup.md"]);
+});

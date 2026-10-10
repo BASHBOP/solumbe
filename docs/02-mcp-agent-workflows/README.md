@@ -397,6 +397,13 @@ sequenceDiagram
 
 ## Trusted Agent Workflow
 
+The server sends its workflow (which tool to call at each stage of a task) in
+the MCP `initialize` result as `instructions`. A host that surfaces server
+instructions, as Claude Code does, therefore follows the same workflow without
+a CLAUDE.md, AGENTS.md or `.cursor/rules` entry. The text lives in
+`src/lib/agent-workflow.js`, and a test fails if it names a tool the server
+does not list.
+
 This workflow works across Codex, Claude, Cursor, Gemini, Kimi, and any agent
 that can use local MCP or a structured handoff:
 

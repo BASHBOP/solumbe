@@ -10,6 +10,7 @@ import { companionRepos } from "./config.js";
 import { getCachedCodeMap } from "./index-cache.js";
 import { conceptsFromQuery, classifyPath, CONCEPT_SYNONYMS, RISK_FLAGS, glyphFor, isDocPath, isTestDataPath, singularizeToken } from "./risk-paths.js";
 import { isRunnableTestPath, isTestFilePath } from "./code-map/classify.js";
+import { joinedCamelCaseWords } from "./code-map/text.js";
 import { collapseLocaleSiblings, formatLocales, isCopyRequest, resolveNamedFiles, stripFileExtensions, TRANSLATION_DEMOTION } from "./ranking-rules.js";
 import { estimateTokens, estimateTokenSections } from "./tokens.js";
 import { runCommand } from "./tools.js";
@@ -189,7 +190,7 @@ const W_CONFIG_HINT = 4.0;
 const W_NAMED_DEFINER = 30.0;
 // How far a named file sits above the best candidate the request did not
 // name. A named path outranks a named symbol's definition.
-const PIN_MARGIN = { path: 20.0, symbol: 10.0 };
+const PIN_MARGIN = { path: 20.0, symbol: 10.0, implements: 10.0 };
 
 const CONFIG_HINTS = {
   docker: ["dockerfile", "docker-compose"],
@@ -730,7 +731,9 @@ function liftPinnedFiles(scored, pinned) {
     entry.reasons.push(
       pin.rule === "path"
         ? `named in the request as \`${pin.literal}\`, ${lift}`
-        : `defines \`${pin.literal}\`${pin.line ? ` (line ${pin.line})` : ""}, named in the request; exported and imported by ${pin.importers} file(s), ${lift}`,
+        : pin.rule === "implements"
+          ? `implements \`${pin.literal}\`, named in the request and registered in \`${pin.via}\`, ${lift}`
+          : `defines \`${pin.literal}\`${pin.line ? ` (line ${pin.line})` : ""}, named in the request; exported and imported by ${pin.importers} file(s), ${lift}`,
     );
     entry.score = lifted;
   }
@@ -1461,6 +1464,10 @@ export function weightedQueryTerms(request) {
     if (singular !== term) {
       weighted.set(singular, Math.max(weighted.get(singular) ?? 0, Math.max(1, weight - 1)));
     }
+  }
+  // "OpenPanel" also reaches `lib/openpanel.ts`; see joinedCamelCaseWords.
+  for (const joined of joinedCamelCaseWords(request)) {
+    if (!weighted.has(joined)) weighted.set(joined, joined.length >= 6 ? 2 : 1);
   }
   return weighted;
 }

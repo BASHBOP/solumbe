@@ -1,5 +1,7 @@
+import path from "node:path";
 import { commandExists, commandVersion } from "./tools.js";
 import { createRenderer } from "./render/fancy.js";
+import { userConfigStatus } from "./config.js";
 
 const toolDefinitions = [
   {
@@ -59,14 +61,17 @@ const toolDefinitions = [
  * @typedef {object} DoctorReport
  * @property {boolean} ok
  * @property {DoctorTool[]} tools
+ * @property {import("./config.js").UserConfigStatus} [userConfig]
  */
 
 /**
+ * @param {NodeJS.ProcessEnv} [env]
  * @returns {DoctorReport}
  */
-export function getDoctorReport() {
+export function getDoctorReport(env = process.env) {
   return {
     ok: true,
+    userConfig: userConfigStatus(env),
     tools: toolDefinitions.map((tool) => {
       const exists = commandExists(tool.command);
       return {
@@ -97,6 +102,14 @@ export function formatDoctorReport(report, options = {}) {
     const summary = tool.available ? (tool.version ?? "available") : "not installed";
     const details = tool.available ? [] : [tool.installHint];
     lines.push(renderer.statusLine(status, tool.name, summary, details));
+  }
+  const config = report.userConfig;
+  if (config?.source === "legacy") {
+    lines.push(
+      renderer.statusLine("warn", "user config", `read from the pre-rename ${config.legacyPath}`, [
+        `Its settings apply until ${config.path} exists. To move it: mkdir -p "${path.dirname(config.path)}" && mv "${config.legacyPath}" "${config.path}"`,
+      ]),
+    );
   }
   lines.push("");
   lines.push(renderer.tip("rg, opensrc, and code-structure are optional accelerators."));

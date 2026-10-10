@@ -12,7 +12,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { generateImpact } from "./impact.js";
-import { inspectRepo, listRepoFiles } from "./repo.js";
+import { inspectRepoBasics, listRepoFiles } from "./repo.js";
 import { load as loadCodeowners } from "./codeowners.js";
 import { estimateTokens } from "./tokens.js";
 
@@ -55,7 +55,7 @@ export function generateAxScore(query, options = {}) {
   // has one (for example `solumbe route`) hands it in rather than paying twice.
   const impact = options.impact ?? generateImpact(normalizedQuery, { path: repoPath, top }).data;
   /** @type {any} */
-  const repo = inspectRepo(repoPath);
+  const repo = inspectRepoBasics(repoPath);
   const root = repo.root ?? path.resolve(repoPath);
 
   // Changeability — inverse token cost of the context an agent needs.

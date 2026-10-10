@@ -130,7 +130,9 @@ import { listRepoFiles } from "./repo.js";
 // indexed, say. Changes to which files are eligible, or to how they are
 // classified, are caught automatically by `codeMapCapabilitySignature()`
 // below; they do not need a bump here.
-const cacheVersion = 11;
+// 12: string names a registry gives tools and commands (`name: "context_pack"`,
+// `case "context_pack":`) are indexed as `registered` symbols.
+const cacheVersion = 12;
 const externalCacheDirectory = "solumbe-index-cache";
 
 // Bound on the in-process memo. MCP hosts call repo-map tools repeatedly for the
