@@ -6,6 +6,10 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+## [4.5.0] - 2026-10-10
+
+A request can declare what it will touch before the edit, and the gate fails a file that was never declared. The gate can also delegate to gitleaks, Semgrep and osv-scanner where they are installed, and the attestation record is version 2 and can be signed. No command or field was removed. `convergence_score` can now return `band: "inconclusive"` with `convergence: null`, so a client that reads `convergence` as a number, or `band` as one of three values, must accept them. The convergence engine moves to `0.6.0`, the impact engine to 5 and the index cache to version 13, so `0.5.0` receipts do not recompute and existing indexes rebuild once.
+
 ### Added
 
 - **The attestation record is version 2, can be signed, has a published schema, and is posted as a commit status.**
