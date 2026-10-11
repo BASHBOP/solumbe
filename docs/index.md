@@ -21,7 +21,7 @@ Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep
 
 ## What's New
 
-!!! tip "v4.5.0 published (2026-10-10)"
+!!! tip "v4.5.0 published (2026-10-11)"
     A request can declare what it will touch before the edit, and the gate can delegate to the scanners you already run. No command or field was removed.
 
     - `solumbe declare <repo> "<request>"` records the files Solumbe predicts for a request, and `solumbe amend <file...> --reason "<why>"` adds to them. With `--intent`, the gate adds a `Scope contract` check that fails a changed file that was never declared. It is opt-in, and over MCP it uses the existing tools.
