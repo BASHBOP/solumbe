@@ -15,19 +15,23 @@ function tempHome() {
 
 /**
  * @param {string} home
- * @param {{ has?: string[], calls?: string[][], stdout?: Record<string, string> }} [options]
+ * @param {{ has?: string[], calls?: string[][], stdout?: Record<string, string>, fail?: Record<string, string> }} [options]
+ *   `fail` maps the start of a command line to the stderr it exits non-zero with.
  */
 function deps(home, options = {}) {
   const calls = options.calls ?? [];
   return {
     home,
+    claudeConfigDir: home,
     platform: /** @type {NodeJS.Platform} */ ("darwin"),
     launch,
     verify: verified,
     has: (/** @type {string} */ command) => (options.has ?? []).includes(command),
     run: (/** @type {string} */ command, /** @type {string[]} */ args) => {
       calls.push([command, ...args]);
-      return { ok: true, stdout: options.stdout?.[[command, ...args].join(" ")] ?? "", stderr: "" };
+      const line = [command, ...args].join(" ");
+      const failed = Object.entries(options.fail ?? {}).find(([start]) => line.startsWith(start));
+      return failed ? { ok: false, stdout: "", stderr: failed[1] } : { ok: true, stdout: options.stdout?.[line] ?? "", stderr: "" };
     },
   };
 }
@@ -105,7 +109,7 @@ test("installHosts refuses to rewrite a config it cannot parse", () => {
   assert.equal(fs.readFileSync(file, "utf8"), '{ // comment\n "mcpServers": {} }');
 });
 
-test("installHosts dry run writes nothing and runs no host CLI", () => {
+test("installHosts dry run writes nothing and only reads through a host CLI", () => {
   const home = tempHome();
   /** @type {string[][]} */
   const calls = [];
@@ -119,7 +123,7 @@ test("installHosts dry run writes nothing and runs no host CLI", () => {
     ["planned", "planned"],
   );
   assert.equal(fs.existsSync(path.join(home, ".cursor")), false);
-  assert.deepEqual(calls, []);
+  assert.deepEqual(calls, [["claude", "mcp", "get", "solumbe"]]);
 });
 
 test("installHosts with all skips hosts that are not on the machine", () => {
@@ -146,12 +150,18 @@ test("installHosts uses the claude and codex CLIs, replacing any old entry", () 
   const codexList = JSON.stringify([{ name: "bashbop-solumbe", transport: { command: "npx", args: ["-y", "@bashbop/solumbe"] } }]);
   const result = installHosts(
     { hosts: ["claude-code", "codex"], canvasUrl: "http://127.0.0.1:7801" },
-    deps(home, { has: ["claude", "codex"], calls, stdout: { "codex mcp list --json": codexList } }),
+    deps(home, {
+      has: ["claude", "codex"],
+      calls,
+      stdout: { "codex mcp list --json": codexList },
+      fail: { "claude mcp get solumbe": 'No MCP server named "solumbe".' },
+    }),
   );
 
   assert.equal(result.ok, true);
   const env = { SOLUMBE_CANVAS_URL: "http://127.0.0.1:7801" };
   assert.deepEqual(calls, [
+    ["claude", "mcp", "get", "solumbe"],
     ["claude", "mcp", "remove", "solumbe", "--scope", "user"],
     ["claude", "mcp", "add-json", "solumbe", JSON.stringify({ type: "stdio", ...launch, env: { ...env, SOLUMBE_HOST: "claude-code" } }), "--scope", "user"],
     ["codex", "mcp", "add", "--help"],
@@ -171,6 +181,81 @@ test("installHosts uses the claude and codex CLIs, replacing any old entry", () 
     ],
   ]);
   assert.match(result.results[1].warnings?.[0] ?? "", /codex mcp remove bashbop-solumbe/);
+  assert.deepEqual(result.results[0].warnings, []);
+  assert.deepEqual(
+    result.results.map((item) => item.keptEnv),
+    [[], []],
+  );
+});
+
+test("installHosts reads Claude Code's entry from claude mcp get when its user config is missing, and a variable this run sets wins", () => {
+  const home = tempHome();
+  /** @type {string[][]} */
+  const calls = [];
+  const shown = [
+    "solumbe:",
+    "  Scope: User config (available in all your projects)",
+    "  Status: ✔ Connected",
+    "  Type: stdio",
+    "  Command: node",
+    "  Args: /old/cli.js mcp",
+    "  Environment:",
+    "    SOLUMBE_CANVAS_URL=http://old.invalid:7801",
+    "    SOLUMBE_CHECK_MODE=kept=mode value",
+    "",
+    "To remove this server, run: claude mcp remove solumbe -s user",
+    "",
+  ].join("\n");
+  const result = installHosts(
+    { hosts: ["claude-code"], canvasUrl: "http://127.0.0.1:7801" },
+    deps(home, { has: ["claude"], calls, stdout: { "claude mcp get solumbe": shown } }),
+  );
+
+  assert.deepEqual(JSON.parse(calls[2][4]).env, {
+    SOLUMBE_CANVAS_URL: "http://127.0.0.1:7801",
+    SOLUMBE_CHECK_MODE: "kept=mode value",
+    SOLUMBE_HOST: "claude-code",
+  });
+  assert.deepEqual(result.results[0].keptEnv, ["SOLUMBE_CHECK_MODE"]);
+  assert.deepEqual(result.results[0].warnings, []);
+});
+
+test("installHosts says so when it cannot read an existing env, instead of dropping it silently", () => {
+  const home = tempHome();
+  const cursorFile = path.join(home, ".cursor", "mcp.json");
+  fs.mkdirSync(path.dirname(cursorFile), { recursive: true });
+  fs.writeFileSync(cursorFile, JSON.stringify({ mcpServers: { solumbe: { command: "node", args: ["/old/cli.js", "mcp"], env: "A=1" } } }));
+  // An unparseable user config, a `claude mcp get` that shows another scope, and a Codex with no JSON listing.
+  fs.writeFileSync(path.join(home, ".claude.json"), "{ not json");
+  const shown = "solumbe:\n  Scope: Local config (private to you in this project)\n  Environment:\n    A=1\n";
+
+  const result = installHosts(
+    { hosts: ["claude-code", "codex", "cursor"] },
+    deps(home, { has: ["claude", "codex"], stdout: { "claude mcp get solumbe": shown, "codex mcp list --json": "error: unexpected argument" } }),
+  );
+
+  assert.equal(result.ok, true);
+  for (const item of result.results) {
+    assert.match(item.warnings?.join("\n") ?? "", new RegExp(`^${item.label}: could not read an existing solumbe entry .*not carried over`));
+    assert.deepEqual(item.keptEnv, []);
+  }
+  assert.equal("env" in JSON.parse(fs.readFileSync(cursorFile, "utf8")).mcpServers.solumbe, false);
+  assert.match(formatHostInstallSummary(result), /Codex CLI: could not read an existing solumbe entry/);
+});
+
+test("installHosts names the variables a failed re-add leaves unregistered, without their values", () => {
+  const home = tempHome();
+  fs.writeFileSync(
+    path.join(home, ".claude.json"),
+    JSON.stringify({ mcpServers: { solumbe: { command: "node", args: [], env: { KEPT_NAME: "kept-value" } } } }),
+  );
+
+  const result = installHosts({ hosts: ["claude-code"] }, deps(home, { has: ["claude"], fail: { "claude mcp add-json": "boom" } }));
+
+  assert.equal(result.ok, false);
+  assert.match(result.results[0].detail, /claude mcp add-json failed: boom/);
+  assert.match(result.results[0].warnings?.[0] ?? "", /removed before the add failed. It carried KEPT_NAME;/);
+  assert.doesNotMatch(JSON.stringify(result.results), /kept-value/);
 });
 
 test("installHosts errors for a named host whose CLI is missing", () => {
