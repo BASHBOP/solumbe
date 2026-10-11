@@ -28,7 +28,7 @@ Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep
     - The gate delegates to gitleaks, Semgrep and osv-scanner when they are installed, each as its own check. Nothing is installed or fetched, `SOLUMBE_SCANNERS` selects them, and a repository with none set up sees no change.
     - A request that predicts no owner file is `inconclusive`, with no convergence score, and the gate's convergence floor warns on it instead of failing. A request its words do not ground is grounded in the import graph. The convergence engine moves to `0.6.0`.
     - The attestation record is version 2: it binds the verdict to the stated request, the scope contract, the exact subject and the convergence receipt, and has a published schema. `solumbe attest --sign-key` signs it with an Ed25519 key and `--status` posts it as a commit status. Older and unsigned ledgers verify as before.
-    - A Go import reaches the files of the package it names, so Go repositories get import edges in a context pack; the index cache rebuilds once. `Secret safety` stops flagging a placeholder in a source-file comment.
+    - A Go import reaches the files of the package it names, so Go repositories get import edges in a context pack; the index cache rebuilds once. `Secret safety` stops flagging a placeholder in a source-file comment. `solumbe help` now lists the core commands, and `solumbe help --all` lists every command.
 
     [npm v4.5.0](https://www.npmjs.com/package/@bashbop/solumbe/v/4.5.0) · [GitHub Release](https://github.com/BASHBOP/solumbe/releases/tag/v4.5.0) · [MCP Registry](https://registry.modelcontextprotocol.io/?q=io.github.BASHBOP%2Fsolumbe)
 
