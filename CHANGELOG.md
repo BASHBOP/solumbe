@@ -6,6 +6,17 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`solumbe install --host codex` connects a Codex CLI that has no `codex mcp add`.**
+  - On codex-cli 0.31.0, `codex mcp` runs Codex as an MCP server and takes no subcommand. The install ended "codex mcp add failed: error: unexpected argument 'add' found" and left the host unconnected.
+  - The install now asks first, with `codex mcp add --help`. Where that fails, it writes the `[mcp_servers.solumbe]` table in `~/.codex/config.toml` itself.
+  - An existing table is replaced where it stands, together with any `[mcp_servers.solumbe.*]` sub-table, and a missing one is added at the end. Every other line of the file is left as it was, and the previous file is kept as `config.toml.solumbe.bak`.
+  - A config that sets the server another way (`solumbe = { … }` under `[mcp_servers]`, dotted keys, or an inline `mcp_servers`) is left unchanged and reported, because a second definition would stop Codex reading the file.
+  - `--dry-run` names the path: `would run: codex mcp add solumbe …`, or `would add the [mcp_servers.solumbe] table directly: this Codex CLI has no codex mcp add`.
+  - A Codex CLI that has `codex mcp add` is connected through it as before, after the one `--help` call.
+  - The fallback writes to `~/.codex/config.toml` and does not read `CODEX_HOME`.
+
 ## [4.5.0] - 2026-10-11
 
 A request can declare what it will touch before the edit, and the gate fails a file that was never declared. The gate can also delegate to gitleaks, Semgrep and osv-scanner where they are installed, and the attestation record is version 2 and can be signed. No command or field was removed. `convergence_score` can now return `band: "inconclusive"` with `convergence: null`, so a client that reads `convergence` as a number, or `band` as one of three values, must accept them. The convergence engine moves to `0.6.0`, the impact engine to 5 and the index cache to version 13, so `0.5.0` receipts do not recompute and existing indexes rebuild once.

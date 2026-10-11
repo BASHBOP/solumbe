@@ -8,12 +8,14 @@ import { commandExists, runCommand } from "./tools.js";
 
 const SERVER_NAME = "solumbe";
 const PACKAGE_NAME = "@bashbop/solumbe";
+const CODEX_TABLE = `mcp_servers.${SERVER_NAME}`;
 const cliPath = fileURLToPath(new URL("../cli.js", import.meta.url));
 
 /**
  * Agent hosts `solumbe install --host` can connect. JSON hosts are written
  * directly; CLI hosts go through the host's own `mcp add` so its config format
- * (TOML for Codex, the live ~/.claude.json for Claude Code) is never hand-edited.
+ * (TOML for Codex, the live ~/.claude.json for Claude Code) is not hand-edited.
+ * The one exception is a Codex CLI with no `mcp add`: see installCodexConfig.
  * @typedef {"claude-code" | "claude-desktop" | "codex" | "cursor" | "vscode" | "gemini" | "kimi"} HostId
  */
 
@@ -180,7 +182,7 @@ export function installHosts(options, deps = {}) {
       return installClaudeCode(entry, { dryRun, all: options.all, has, run });
     }
     if (host === "codex") {
-      return installCodex(entry, { dryRun, all: options.all, has, run });
+      return installCodex(entry, { dryRun, all: options.all, has, run, home });
     }
     const config = /** @type {NonNullable<ReturnType<typeof jsonHostConfig>>} */ (jsonHostConfig(host, { home, platform, appData }));
     return installJsonHost(host, config, entry, { dryRun, all: options.all });
@@ -327,10 +329,10 @@ function installClaudeCode(entry, { dryRun, all, has, run }) {
 
 /**
  * @param {{ command: string, args: string[], env?: Record<string, string> }} entry
- * @param {{ dryRun: boolean, all?: boolean, has: (command: string) => boolean, run: NonNullable<HostDeps["run"]> }} options
+ * @param {{ dryRun: boolean, all?: boolean, has: (command: string) => boolean, run: NonNullable<HostDeps["run"]>, home: string }} options
  * @returns {HostResult}
  */
-function installCodex(entry, { dryRun, all, has, run }) {
+function installCodex(entry, { dryRun, all, has, run, home }) {
   const base = { host: /** @type {HostId} */ ("codex"), label: HOST_LABELS.codex };
   const envArgs = Object.entries(entry.env ?? {}).flatMap(([key, value]) => ["--env", `${key}=${value}`]);
   const addArgs = ["mcp", "add", SERVER_NAME, ...envArgs, "--", entry.command, ...entry.args];
@@ -338,6 +340,11 @@ function installCodex(entry, { dryRun, all, has, run }) {
     return all
       ? { ...base, status: "skipped", detail: "not found on this machine" }
       : { ...base, status: "error", detail: `the codex CLI is not on the PATH. Run this once it is: codex ${addArgs.join(" ")}` };
+  }
+
+  // Asked before anything is run or planned, so a dry run can name the path too.
+  if (!run("codex", ["mcp", "add", "--help"]).ok) {
+    return installCodexConfig(entry, { dryRun, home });
   }
 
   const listed = run("codex", ["mcp", "list", "--json"]);
@@ -362,6 +369,213 @@ function installCodex(entry, { dryRun, all, has, run }) {
     return { ...base, status: "error", detail: `codex mcp add failed: ${(added.stderr || added.stdout).trim()}`, warnings };
   }
   return { ...base, status: "configured", detail: "added to ~/.codex/config.toml; start a new Codex session to load it", warnings };
+}
+
+/**
+ * A Codex CLI with no `codex mcp add` (0.31.0: `codex mcp` runs Codex as an MCP
+ * server and rejects any subcommand) still reads servers from config.toml, so
+ * the entry is written there. Only the solumbe table changes; every other line
+ * is carried over as it was.
+ * @param {{ command: string, args: string[], env?: Record<string, string> }} entry
+ * @param {{ dryRun: boolean, home: string }} options
+ * @returns {HostResult}
+ */
+function installCodexConfig(entry, { dryRun, home }) {
+  const file = path.join(home, ".codex", "config.toml");
+  const base = { host: /** @type {HostId} */ ("codex"), label: HOST_LABELS.codex, configPath: file };
+  const exists = fs.existsSync(file);
+  const raw = exists ? fs.readFileSync(file, "utf8") : "";
+  const plan = planCodexTable(raw, entry);
+  const warnings = staleEntryWarnings(plan.servers, HOST_LABELS.codex);
+
+  if (plan.blocked) {
+    return {
+      ...base,
+      status: "error",
+      detail: `${file} sets the ${SERVER_NAME} server inline or with dotted keys, which is not rewritten. It was left unchanged; replace that with a [${CODEX_TABLE}] table by hand.`,
+      warnings,
+    };
+  }
+  if (plan.next === raw) {
+    return { ...base, status: "unchanged", detail: "already connected", warnings };
+  }
+
+  const reason = "this Codex CLI has no `codex mcp add`";
+  if (dryRun) {
+    return { ...base, status: "planned", detail: `would ${plan.action} the [${CODEX_TABLE}] table directly: ${reason}`, warnings };
+  }
+
+  /** @type {string | undefined} */
+  let backupPath;
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    if (exists) {
+      backupPath = `${file}.solumbe.bak`;
+      fs.copyFileSync(file, backupPath);
+    }
+    fs.writeFileSync(file, plan.next);
+  } catch (error) {
+    return { ...base, status: "error", detail: `could not write ${file}: ${/** @type {Error} */ (error).message}`, warnings };
+  }
+  return {
+    ...base,
+    status: "configured",
+    detail: `${plan.action === "add" ? "added" : "replaced"} the [${CODEX_TABLE}] table directly (${reason}); start a new Codex session to load it`,
+    backupPath,
+    warnings,
+  };
+}
+
+/**
+ * The config.toml text with the solumbe table set to `entry`. An existing
+ * table, and any `[mcp_servers.solumbe.*]` sub-table, is replaced where it
+ * stands; otherwise the table is added at the end.
+ * @param {string} raw the current file, "" when there is none
+ * @param {{ command: string, args: string[], env?: Record<string, string> }} entry
+ * @returns {{ next: string, action: "add" | "replace", blocked: boolean, servers: { name: string, value: string }[] }}
+ *   `blocked` when the server is set in a form a second table would collide with.
+ */
+function planCodexTable(raw, entry) {
+  // A JSON string is a valid TOML basic string, and a JSON array of them a TOML array.
+  const env = Object.entries(entry.env ?? {}).map(([key, value]) => `${/^[\w-]+$/.test(key) ? key : JSON.stringify(key)} = ${JSON.stringify(value)}`);
+  const block = [
+    `[${CODEX_TABLE}]`,
+    `command = ${JSON.stringify(entry.command)}`,
+    `args = [${entry.args.map((arg) => JSON.stringify(arg)).join(", ")}]`,
+    ...(env.length ? [`env = { ${env.join(", ")} }`] : []),
+  ];
+
+  const lines = raw.split("\n");
+  const kinds = classifyTomlLines(lines);
+  /** @type {Map<string, { name: string, value: string }>} */
+  const servers = new Map();
+  /** @type {{ start: number, end: number }[]} */
+  const regions = [];
+  /** @type {string[] | undefined} */
+  let table = [];
+  /** @type {{ name: string, value: string } | undefined} */
+  let server;
+  let blocked = false;
+
+  lines.forEach((line, index) => {
+    const kind = kinds[index];
+    if (kind === "header") {
+      table = line.trimStart().startsWith("[[") ? undefined : tomlKeyPath(line, line.indexOf("[") + 1, "]");
+      const name = table?.[0] === "mcp_servers" ? table[1] : undefined;
+      server = name === undefined ? undefined : (servers.get(name) ?? { name, value: "" });
+      if (server) {
+        servers.set(server.name, server);
+      }
+      if (name === SERVER_NAME) {
+        regions.push({ start: index, end: index });
+      }
+    } else if (kind !== "blank" && server) {
+      server.value += line;
+      if (server.name === SERVER_NAME) {
+        regions[regions.length - 1].end = index;
+      }
+    } else if (kind === "statement" && table) {
+      // `mcp_servers = { … }` at the root, or solumbe set by an inline table or dotted keys.
+      const keys = tomlKeyPath(line, 0, "=");
+      const full = keys ? [...table, ...keys] : [];
+      blocked ||= full[0] === "mcp_servers" && (full.length === 1 || full[1] === SERVER_NAME);
+    }
+  });
+  const found = { blocked, servers: [...servers.values()] };
+
+  if (!regions.length) {
+    const eol = raw.includes("\r\n") ? "\r\n" : "\n";
+    const gap = !raw.trim() || /\n\r?\n$/.test(raw) ? "" : raw.endsWith("\n") ? eol : eol + eol;
+    return { next: `${raw}${gap}${block.join(eol)}${eol}`, action: "add", ...found };
+  }
+
+  // A sub-table that follows its parent with only blank lines between is one stretch.
+  /** @type {{ start: number, end: number }[]} */
+  const stretches = [];
+  for (const region of regions) {
+    const last = stretches.at(-1);
+    if (last && lines.slice(last.end + 1, region.start).every((line) => !line.trim())) {
+      last.end = region.end;
+    } else {
+      stretches.push(region);
+    }
+  }
+  const [first, ...rest] = stretches;
+  for (const stretch of rest.reverse()) {
+    lines.splice(stretch.start, stretch.end - stretch.start + 1);
+  }
+  const cr = raw.includes("\r\n") ? "\r" : "";
+  const lastCr = lines[first.end].endsWith("\r") ? "\r" : "";
+  lines.splice(first.start, first.end - first.start + 1, ...block.map((text, index) => text + (index === block.length - 1 ? lastCr : cr)));
+  return { next: lines.join("\n"), action: "replace", ...found };
+}
+
+/**
+ * What each line of a TOML document is. Multi-line strings and arrays are
+ * tracked so a `[` inside a value is never read as a table header.
+ * @param {string[]} lines
+ * @returns {("header" | "statement" | "value" | "blank")[]} `value` continues the statement above; `blank` covers comment lines
+ */
+function classifyTomlLines(lines) {
+  let quote = ""; // the multi-line string delimiter still open: `"""` or `'''`
+  let depth = 0; // arrays and inline tables still open
+  return lines.map((line) => {
+    const text = line.trim();
+    const kind = quote || depth > 0 ? "value" : !text || text.startsWith("#") ? "blank" : text.startsWith("[") ? "header" : "statement";
+    if (kind === "blank" || kind === "header") {
+      return kind;
+    }
+    for (let at = 0; at < line.length; at += 1) {
+      const char = line[at];
+      if (quote) {
+        if (char === "\\" && quote === '"""') {
+          at += 1;
+        } else if (line.startsWith(quote, at)) {
+          at += 2;
+          quote = "";
+        }
+      } else if (char === "#") {
+        break;
+      } else if (char === '"' || char === "'") {
+        if (line.startsWith(char.repeat(3), at)) {
+          quote = char.repeat(3);
+          at += 2;
+        } else {
+          for (at += 1; at < line.length && line[at] !== char; at += 1) {
+            if (char === '"' && line[at] === "\\") {
+              at += 1;
+            }
+          }
+        }
+      } else if (char === "[" || char === "{") {
+        depth += 1;
+      } else if (char === "]" || char === "}") {
+        depth -= 1;
+      }
+    }
+    return kind;
+  });
+}
+
+/**
+ * Read a dotted TOML key (`a."b c".d`) starting at `from` and closed by `end`.
+ * @param {string} line
+ * @param {number} from
+ * @param {"]" | "="} end
+ * @returns {string[] | undefined} undefined when it is not a key this reader understands
+ */
+function tomlKeyPath(line, from, end) {
+  const part = /\s*(?:"((?:[^"\\]|\\.)*)"|'([^']*)'|([\w-]+))\s*([.\]=])/y;
+  part.lastIndex = from;
+  /** @type {string[]} */
+  const keys = [];
+  for (let match = part.exec(line); match; match = part.exec(line)) {
+    keys.push(match[1] ?? match[2] ?? match[3]);
+    if (match[4] !== ".") {
+      return match[4] === end ? keys : undefined;
+    }
+  }
+  return undefined;
 }
 
 /**
