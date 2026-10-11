@@ -41,7 +41,7 @@ solumbe install --host all
 | --- | --- |
 | Claude Code | user scope, through `claude mcp add-json` |
 | Claude Desktop | `claude_desktop_config.json` |
-| Codex CLI | `~/.codex/config.toml`, through `codex mcp add` |
+| Codex CLI | `~/.codex/config.toml`, through `codex mcp add`, or written directly when the Codex CLI has no `mcp add` |
 | Cursor | `~/.cursor/mcp.json` |
 | VS Code | user `mcp.json` |
 | Gemini CLI | `~/.gemini/settings.json` |

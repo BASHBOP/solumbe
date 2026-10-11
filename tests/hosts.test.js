@@ -154,6 +154,7 @@ test("installHosts uses the claude and codex CLIs, replacing any old entry", () 
   assert.deepEqual(calls, [
     ["claude", "mcp", "remove", "solumbe", "--scope", "user"],
     ["claude", "mcp", "add-json", "solumbe", JSON.stringify({ type: "stdio", ...launch, env: { ...env, SOLUMBE_HOST: "claude-code" } }), "--scope", "user"],
+    ["codex", "mcp", "add", "--help"],
     ["codex", "mcp", "list", "--json"],
     ["codex", "mcp", "remove", "solumbe"],
     [
