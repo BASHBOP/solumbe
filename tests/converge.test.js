@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { bandFor, generateConvergence, inferInScopeFiles, makeReceipt } from "../src/lib/converge.js";
+import { bandFor, formatConvergenceMarkdown, generateConvergence, inferInScopeFiles, makeReceipt } from "../src/lib/converge.js";
 
 // The engine's git/diff scoring path is integration-tested end-to-end in
 // tests/mcp-dispatch.test.js ("convergence_score scores intent vs diff against a
@@ -266,6 +266,7 @@ function driftFixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "solumbe-converge-drift-"));
   for (const [file, body] of Object.entries({
     "src/index.ts": "export const a = 1;\n",
+    "src/greeting/greeting.ts": "export function greetingMessage(name) { return `hi ${name}`; }\n",
     "src/payment/checkout.service.ts": "export const c = 1;\n",
     "docs/auth-guide.md": "# auth\n",
     "docs/setup-guide.md": "# setup\n",
@@ -286,7 +287,9 @@ function riskAlignmentAfterDrifting(root, file) {
   fs.appendFileSync(path.join(root, file), "// drift\n");
   convergeGit(root, "add", file);
   try {
-    return generateConvergence("update the index module", { path: root, base: "HEAD", staged: true }).subScores.riskAlignment;
+    const data = generateConvergence("update the greeting message", { path: root, base: "HEAD", staged: true });
+    assert.equal(data.drivers.grounded, true, "the task must ground, or risk alignment is not measured at all");
+    return data.subScores.riskAlignment;
   } finally {
     convergeGit(root, "restore", "--staged", file);
     convergeGit(root, "checkout", "--", file);
@@ -312,6 +315,50 @@ test("a genuinely risky drifted path is still penalised more than a doc", () => 
   const service = riskAlignmentAfterDrifting(root, "src/payment/checkout.service.ts");
   const doc = riskAlignmentAfterDrifting(root, "docs/auth-guide.md");
   assert.ok(service < doc, `payment service drift should cost more than doc drift, got service=${service} doc=${doc}`);
+});
+
+// --- a task that predicts nothing has no score ---
+
+function stagedConvergence(root, task, file) {
+  fs.appendFileSync(path.join(root, file), "// change\n");
+  convergeGit(root, "add", file);
+  try {
+    return generateConvergence(task, { path: root, base: "HEAD", staged: true });
+  } finally {
+    convergeGit(root, "restore", "--staged", file);
+    convergeGit(root, "checkout", "--", file);
+  }
+}
+
+test("a task that predicts no owner file is inconclusive, with no score and no sub-scores", () => {
+  const root = driftFixture();
+  const data = stagedConvergence(root, "tidy things up", "docs/setup-guide.md");
+
+  assert.equal(data.drivers.grounded, false);
+  assert.equal(data.band, "inconclusive");
+  assert.equal(data.convergence, null);
+  assert.deepEqual(data.subScores, { coverage: null, scope: null, riskAlignment: null });
+  assert.match(data.recommendations[0], /did not ground .* inconclusive: there is no score/);
+  assert.ok(!data.recommendations.some((rec) => /scope drift/.test(rec)), "nothing was predicted, so nothing can be called drift");
+  assert.match(data.receipt.id, /^rcpt_[0-9a-f]{12}$/, "an inconclusive result still has a recomputable receipt");
+
+  const markdown = formatConvergenceMarkdown(data);
+  assert.match(markdown, /^# Convergence: inconclusive$/m);
+  assert.ok(!markdown.includes("/100"), "no number is printed for a result that was not measured");
+  assert.match(markdown, /Not measured: the task predicted no owner file/);
+  assert.match(markdown, /Changed, not predicted: `docs\/setup-guide\.md`/);
+});
+
+test("an ungrounded task reads the same for a harmless change and a risky one, and names the risky path", () => {
+  const root = driftFixture();
+  const harmless = stagedConvergence(root, "tidy things up", "docs/setup-guide.md");
+  const risky = stagedConvergence(root, "tidy things up", "src/payment/checkout.service.ts");
+
+  assert.equal(harmless.band, "inconclusive");
+  assert.equal(risky.band, "inconclusive");
+  assert.equal(risky.convergence, null);
+  assert.ok(risky.recommendations.some((rec) => /Risk-sensitive paths changed: `src\/payment\/checkout\.service\.ts`/.test(rec)));
+  assert.match(formatConvergenceMarkdown(risky), /Risk-sensitive changes: src\/payment\/checkout\.service\.ts \[/);
 });
 
 // --- exact commit subject: score base..head without the working tree ---

@@ -66,7 +66,7 @@ test("regenerates (without throwing) when the cache file is corrupted JSON", () 
 
   // The corrupted file is replaced with a valid one.
   const onDisk = JSON.parse(fs.readFileSync(cachePath, "utf8"));
-  assert.equal(onDisk.version, 12);
+  assert.equal(onDisk.version, 13);
   assert.ok(onDisk.map);
 });
 
@@ -99,7 +99,7 @@ test("writes the cache atomically and leaves no temp files behind", () => {
 
   // The single file present is complete, valid JSON (never a half-written index).
   const parsed = JSON.parse(fs.readFileSync(cachePathFor(root), "utf8"));
-  assert.equal(parsed.version, 12);
+  assert.equal(parsed.version, 13);
   assert.ok(parsed.map.ok);
 });
 
@@ -154,7 +154,7 @@ test("memo returns equivalent repo data across calls", () => {
 function poisonIndexWithCapabilities(root, capabilities) {
   const fresh = getCachedCodeMap(root);
   const record = {
-    version: 12,
+    version: 13,
     generatedAt: "2026-09-07T04:38:45.098Z",
     fingerprint: fresh.cache.fingerprint,
     map: { ok: true, repo: { root }, poisoned: true },
@@ -234,7 +234,7 @@ test("a pre-markdown index is rebuilt even though version and fingerprint still 
     cachePath,
     JSON.stringify(
       {
-        version: 12,
+        version: 13,
         generatedAt: "2026-09-07T04:38:45.098Z",
         fingerprint: fresh.cache.fingerprint,
         capabilities: "cap1:premarkdownindexer",

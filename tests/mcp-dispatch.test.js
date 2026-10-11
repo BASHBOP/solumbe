@@ -681,13 +681,13 @@ test("convergence_score scores intent vs diff against a real git fixture, with a
       jsonrpc: "2.0",
       id: 1,
       method: "tools/call",
-      params: { name: "convergence_score", arguments: { path: fixture, base: "HEAD~1", query: "update the greeting" } },
+      params: { name: "convergence_score", arguments: { path: fixture, base: "HEAD~1", query: "update greet in src/index.ts" } },
     },
     {
       jsonrpc: "2.0",
       id: 2,
       method: "tools/call",
-      params: { name: "convergence_score", arguments: { path: fixture, base: "HEAD~1", query: "update the greeting", includeMarkdown: true } },
+      params: { name: "convergence_score", arguments: { path: fixture, base: "HEAD~1", query: "update greet in src/index.ts", includeMarkdown: true } },
     },
     // Missing base and missing query are both -32602.
     { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "convergence_score", arguments: { path: fixture, query: "update the greeting" } } },
@@ -711,6 +711,47 @@ test("convergence_score scores intent vs diff against a real git fixture, with a
 
   assert.equal(byId(messages, 3).error?.code, -32602, "missing base is rejected");
   assert.equal(byId(messages, 4).error?.code, -32602, "missing query is rejected");
+});
+
+test("change_impact declares and amends an intent, and review_gate holds the change against it", async () => {
+  const fixture = makeGitRepoFixture("intent");
+  const query = "update greet in src/index.ts";
+  const call = (id, name, args) => ({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: { path: fixture, ...args } } });
+
+  const declared = structured(await runRequests([call(1, "change_impact", { query, declare: true })]), 1);
+  const intent = declared.intent;
+  assert.equal(intent.request, query);
+  assert.deepEqual(intent.declared.owners, ["src/index.ts"]);
+  assert.match(intent.contractHash, /^[0-9a-f]{64}$/);
+  assert.ok(!fs.existsSync(path.join(fixture, ".solumbe")), "declaring through the tool writes nothing");
+
+  // The requested edit, plus a file the request never named.
+  writeFiles(fixture, { "src/index.ts": "export const greet = () => 'declared';\n", "src/auth/session.ts": "export const ttl = 1;\n" });
+  git(fixture, "add", ".");
+
+  const held = await runRequests([
+    call(1, "review_gate", { base: "HEAD", staged: true, intent }),
+    call(2, "convergence_score", { base: "HEAD", staged: true, query, intent }),
+    call(3, "change_impact", { query, intent, amend: { files: ["src/auth/session.ts"], reason: "greet needs a session lifetime" } }),
+    call(4, "change_impact", { query: "something else", intent, amend: { files: ["src/auth/session.ts"], reason: "why" } }),
+    call(5, "convergence_score", { base: "HEAD", staged: true, query: "something else", intent }),
+  ]);
+  const contract = structured(held, 1).checks.find((check) => check.name === "Scope contract");
+  assert.equal(contract.status, "FAIL");
+  assert.match(contract.summary, /^Touched `src\/auth\/session\.ts`, which was never declared\./);
+  assert.equal(structured(held, 1).verdict, "FAIL");
+  assert.deepEqual(structured(held, 2).contract, { tip: intent.contractHash, undeclared: ["src/auth/session.ts"] });
+
+  const amended = structured(held, 3).intent;
+  assert.equal(amended.amendments.length, 1);
+  assert.equal(amended.amendments[0].prevHash, intent.contractHash);
+  assert.equal(byId(held, 4).result.isError, true, "an amendment for another request is refused");
+  assert.equal(byId(held, 5).result.isError, true, "an intent declared for another request is refused");
+
+  const regated = structured(await runRequests([call(1, "review_gate", { base: "HEAD", staged: true, intent: JSON.stringify(amended) })]), 1);
+  const passed = regated.checks.find((check) => check.name === "Scope contract");
+  assert.equal(passed.status, "PASS");
+  assert.ok(passed.details.includes("Amended #1: src/auth/session.ts (greet needs a session lifetime)"));
 });
 
 test("convergence_score staged mode returns a Git-index-bound receipt", async () => {
@@ -842,21 +883,18 @@ function withCwd(t, dir) {
 function withFakeGh(t, responses) {
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), "solumbe-mcp-gh-"));
   const gh = path.join(bin, "gh");
-  fs.writeFileSync(
-    gh,
-    [
-      "#!/usr/bin/env node",
-      `const responses = ${JSON.stringify(responses)};`,
-      "const joined = process.argv.slice(2).join(' ');",
-      "const key = Object.keys(responses).find((prefix) => joined === prefix || joined.startsWith(prefix + ' '));",
-      "if (key === undefined) {",
-      "  console.error('unexpected gh args: ' + joined);",
-      "  process.exit(1);",
-      "}",
-      "process.stdout.write(responses[key]);",
-      "",
-    ].join("\n"),
-  );
+  // A shell script, not a node one: a PR gate calls gh several times in a row
+  // under 20 and 30 second timeouts, and on a loaded machine a node start
+  // alone has taken longer than that. /bin/sh starts in milliseconds. Each
+  // canned answer sits in its own file beside the script, so none of it needs
+  // quoting; the first prefix that matches answers, as before.
+  const cases = Object.keys(responses).map((prefix, index) => {
+    const answer = path.join(bin, `answer-${index}`);
+    fs.writeFileSync(answer, responses[prefix]);
+    const literal = `"${prefix.replace(/[\\"$`]/g, "\\$&")}"`;
+    return `  ${literal} | ${literal}" "*) cat "${answer}"; exit 0 ;;`;
+  });
+  fs.writeFileSync(gh, ["#!/bin/sh", 'case "$*" in', ...cases, "esac", 'echo "unexpected gh args: $*" >&2', "exit 1", ""].join("\n"));
   fs.chmodSync(gh, 0o755);
   const saved = process.env.PATH;
   process.env.PATH = `${bin}${path.delimiter}${saved}`;
@@ -1261,7 +1299,7 @@ test("the check trial withholds a warning or a score in the withheld arm and lea
   });
   const call = (id, name, args) => ({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: { path: fixture, base: "HEAD~1", ...args } } });
   const requests = [
-    call(1, "convergence_score", { query: "add an events endpoint" }),
+    call(1, "convergence_score", { query: "update greet in src/index.ts" }),
     call(2, "review_gate", {}),
     call(3, "change_impact", { query: "add an events endpoint" }),
   ];

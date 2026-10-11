@@ -48,6 +48,7 @@ import { listRepoFiles } from "./repo.js";
  * @property {string[]} [localIdentifiers] - Local semantic identifier names used by the file.
  * @property {boolean} [isVendor]
  * @property {CodeMapDataAccess[]} [dataAccess]
+ * @property {string[]} [importDirs] - Repository directories of the Go packages the file imports.
  */
 
 /**
@@ -132,7 +133,9 @@ import { listRepoFiles } from "./repo.js";
 // below; they do not need a bump here.
 // 12: string names a registry gives tools and commands (`name: "context_pack"`,
 // `case "context_pack":`) are indexed as `registered` symbols.
-const cacheVersion = 12;
+// 13: a Go file records the repository directories its imports name
+// (`importDirs`), read against the repository's go.mod files.
+const cacheVersion = 13;
 const externalCacheDirectory = "solumbe-index-cache";
 
 // Bound on the in-process memo. MCP hosts call repo-map tools repeatedly for the

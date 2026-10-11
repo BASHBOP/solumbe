@@ -6,6 +6,62 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+## [4.5.0] - 2026-10-11
+
+A request can declare what it will touch before the edit, and the gate fails a file that was never declared. The gate can also delegate to gitleaks, Semgrep and osv-scanner where they are installed, and the attestation record is version 2 and can be signed. No command or field was removed. `convergence_score` can now return `band: "inconclusive"` with `convergence: null`, so a client that reads `convergence` as a number, or `band` as one of three values, must accept them. The convergence engine moves to `0.6.0`, the impact engine to 5 and the index cache to version 13, so `0.5.0` receipts do not recompute and existing indexes rebuild once.
+
+### Added
+
+- **The attestation record is version 2, can be signed, has a published schema, and is posted as a commit status.**
+  - A record now binds the verdict to the request that was stated, the scope contract the change was held against (its hash, amendments and undeclared count), the exact subject (kind, base, head and tree SHA), a hash of the sorted changed paths, and the convergence score, band and receipt hash. Each is `null` when the verdict did not carry it. The diff and the source are still never recorded.
+  - `solumbe attest --sign-key <pem>` signs `recordHash` with an Ed25519 key (`SOLUMBE_ATTEST_KEY` or `SOLUMBE_ATTEST_KEY_PEM` also work); `--verify --public-key <pem>` checks the signatures and `--require-signature` fails an unsigned record. The signature sits outside the hash, so older and unsigned ledgers verify as before.
+  - `solumbe attest --status` publishes a record as the `solumbe/receipt` commit status on the commit it attests, with the verdict, record hash, tree and key id; `FAIL` is a failed status. The reusable workflow posts it for each record, signs with the `attest_key` secret when one is passed, and needs `statuses: write`.
+  - The schema is at `docs/schemas/attestation-record.v2.json`, and a test holds every written record to it.
+  - `solumbe review --json` now carries `requestStated`, `pass.changedFiles`, `pass.subject`, `pass.contract`, `pass.convergence`, `pass.band` and `pass.receipt`, which the record is built from.
+
+- **The gate delegates to gitleaks, Semgrep and osv-scanner when they are installed.**
+  - Each runs over a temporary copy of the changed files as the gate read them (staged tree, head commit or working tree) and reports as its own check: `Secret scan (gitleaks)`, `Code patterns (semgrep)`, `Known vulnerabilities (osv-scanner)`.
+  - gitleaks runs where the repository has a `.gitleaks.toml`, and a finding fails with the file, line and rule, never the secret. Semgrep runs only with the repository's own rules, never the registry; an `ERROR` finding fails and anything else warns. osv-scanner sends package names to the OSV API, so it runs only when named in `SOLUMBE_SCANNERS`, and a known vulnerability warns.
+  - `SOLUMBE_SCANNERS` selects them (`off`, or a list such as `gitleaks,osv-scanner`), and `SOLUMBE_<SCANNER>_BIN` points at a binary. Nothing is installed or fetched, and the local and PR gates both run them. `solumbe calibrate --gate` does not.
+  - A repository with none of these set up sees no change.
+
+- **A scope contract: declare what a request will touch before the edit, and the gate fails a file that was never declared.**
+  - `solumbe declare <repo> "<request>"` records the files Solumbe predicts for the request, the commit and a contract hash in `.solumbe/intent.json`. `solumbe amend <file...> --reason "<why>"` adds files, each amendment hashed onto the one before it.
+  - `solumbe gate`, `pass`, `pass-pr` and `review` take `--intent <file>` and add a `Scope contract` check. A changed file is declared, amended, implied by a declared file under convergence's existing rules (its test, a new sibling, an importer, the changelog), or undeclared, which fails with "Touched `src/auth/session.ts`, which was never declared."
+  - Over MCP no tool is added: `change_impact` takes `declare: true` and `amend`, and `review_gate`, `review_verdict` and `convergence_score` take `intent`. Declaring through a tool writes nothing.
+  - With an intent, `--min-convergence` and `--receipt` score against the declared files, and the convergence receipt carries the contract hash. A record whose request, files or amendments were edited afterwards does not verify and fails the gate.
+  - The check is opt-in. Without an intent the gate is unchanged.
+  - A declaration covers more than the files it lists. The record also holds `terms`, the request's words that few paths carry (never a tree name such as `src`, a file extension, or the parts of a tracked path written in the request), and `modules`, the directories named for one of its words, both under the contract hash. Seven rules then place a changed file in scope: `request-word` (its path, without the extension, carries a term), `request-module` (it is under a named module), `request-config` (a config or data file whose added lines carry a term), `owner-module` (it is in a declared owner's directory), `scope-import` (it imports, or is imported by, a changed file in scope, where the imported file has at most five importers), `scope-test` and `scope-doc`.
+  - A secret path is never implied, and `owner-module` and `scope-import` do not bring in an auth or payment path their anchor is not on.
+  - Replayed on bashbop-api, declaring each commit's subject at its parent: without these rules 3 of the 30 most recent commits passed; with them 16 of 30 do, and 15 of the 30 commits before those, which the rules were not tuned on (5 of 30 without them). One unrelated change planted on each commit (auth, payment, plain service, config file) was caught 156 of 157 times on the first set and 142 of 142 on the second; the one miss was a payment file the declaration itself had predicted.
+  - The commits that still fail change a database schema, a feature-flag snapshot, a shared constants or error file, or a module the request never named. Those need `solumbe amend`.
+
+### Changed
+
+- **`solumbe help` is the core; `solumbe help --all` is every command.**
+  - The first page lists what runs before the edit (`context`, `declare`), after it (`converge`), before the merge (`gate`) and after it (`attest`), then how to set up. `help --all` is the full usage block as before, with `impact`, `pr`, `review`, `map`, `search`, `calibrate`, `route`, `ax`, `obsidian`, `dashboard` and the rest. No command, flag or MCP tool was removed or renamed.
+  - The README's "The core" names four of them (`context`, `converge`, `gate`, `attest`) with what each proves.
+
+- **A Go import reaches the files of the package it names.**
+  - A Go import names a package directory by module path (`example.com/shop/internal/stock`), never a file, so a context pack for a Go repository had no import edges: a file's callers and the packages it uses reached the pack only when their names shared a word with the request.
+  - The code map now reads every `go.mod` and records on each Go file the repository directories its imports name (`importDirs`). `solumbe context` and `context_pack` link the file to that package's non-test `.go` files, as "imported by primary file" and "imports primary file", and select a test in an external test package as "imports selected file". A nested module resolves against its own `go.mod`; the standard library and dependencies resolve to nothing.
+  - The edge is to the whole package, not to the one file that declares the name used. `impact`, `converge` and the gate do not read these edges.
+  - The index cache is version 13, so an existing cache rebuilds once.
+  - Two fixture repositories, `python-orders-api` and `go-inventory-api`, add ten accuracy cases; the Go importer case fails without this change. 35 of 35 cases pass (p@5 0.833, r@5 1.0, mrr 0.985). The ten new cases average p@5 0.767 because four Python requests return unlabeled primary files, so the precision floor moved from 0.85 to 0.82; the 25 earlier cases are unchanged at 0.861.
+
+- **A request its words do not ground is grounded in the import graph.**
+  - `solumbe impact`, `change_impact` and everything built on them (`converge`, the gate's convergence floor) predicted no owner for "refactor util helpers" in a repository with one `util.js`: the file ranked first but under the lexical floor, so the request was ungrounded.
+  - When no file clears that floor, a file is now an owner if a word of the request is its name or a symbol it exports, no other source file shares that name or export, and it has at least one import edge. Candidates are ordered by how many files import them; the lexical score only breaks ties.
+  - It is a fallback: a request that already has an owner is ranked as before, and the accuracy eval is unchanged (p@5 0.861, r@5 1.0, 25 of 25 cases). A file with no import edge, a name two files share, a test, and words such as `refactor`, `index` or `test` ground nothing.
+  - The impact engine is version 5.
+
+- **A request that predicts no owner file is `inconclusive`, with no convergence score.**
+  - `solumbe converge` and the MCP `convergence_score` tool scored such a request about 20 and banded it `drift`, the same for a correct change and an unrelated one. They now return `band: "inconclusive"`, `convergence: null` and `null` sub-scores, and the report prints "inconclusive" where the number was. A client that reads `convergence` as a number, or `band` as one of three values, must accept the new ones.
+  - The report lists the changed files as "changed, not predicted" rather than as scope drift, and still names any on a risk-sensitive path.
+  - With `--min-convergence` above 0, the gate's `Convergence` check reports `WARN` for an inconclusive result where it reported `FAIL`. A pipeline that blocks only on `FAIL` no longer blocks an ungrounded request. A floor of 0 passes, and a receipt that does not match still fails.
+  - `solumbe calibrate --gate` grades `inconclusive` as a fourth band. Its ordering claims still read `aligned`, `partial` and `drift`, and published band figures will move, since some `drift` commits were ungrounded.
+  - The convergence engine is 0.6.0, so receipts from 0.5.0 do not recompute.
+
 ### Fixed
 
 - **`Secret safety` stops flagging a placeholder in a source-file comment.**

@@ -19,8 +19,17 @@ name: Solumbe post-merge attestation
 # the ledger tip and `target_sha` is attested oldest-first, so a merge that
 # skipped CI is still recorded. Verify at any time with
 # `npx @bashbop/solumbe attest . --verify --ledger <file>`.
+#
+# Pass `attest_key` (an Ed25519 private key, PEM) to sign each record, and
+# verify with its public half: `attest . --verify --public-key <pem>`. Each
+# record is also posted as the `solumbe/receipt` commit status on the commit it
+# attests, so the verdict and record hash are visible from the commit itself.
 on:
   workflow_call:
+    secrets:
+      attest_key:
+        description: An Ed25519 private key (PEM) that signs each ledger record. Records are unsigned without it.
+        required: false
     inputs:
       target_sha:
         description: The commit on the default branch to attest through.
@@ -64,6 +73,7 @@ jobs:
       actions: read
       contents: write
       pull-requests: read
+      statuses: write
     env:
       SOLUMBE_TOOL_DIR: .solumbe-tool
     steps:
@@ -121,7 +131,22 @@ jobs:
           # Not GITHUB_SHA: the runner keeps its own value for GITHUB_* variables.
           SOLUMBE_TARGET_SHA: ${{ inputs.target_sha }}
           SOLUMBE_ATTEST_RESET_LEDGER: ${{ inputs.reset_ledger && '1' || '0' }}
+          # Signs each record written in this run; `attest --verify` checks
+          # the signatures with the same key. Empty when no key was passed.
+          SOLUMBE_ATTEST_KEY_PEM: ${{ secrets.attest_key }}
         run: bash "$SOLUMBE_TOOL_DIR/scripts/reconcile-attestations.sh"
+
+      - name: Publish the record as a commit status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LEDGER_PATH: ${{ inputs.ledger_path }}
+          TARGET_SHA: ${{ inputs.target_sha }}
+          LEDGER_BRANCH: ${{ inputs.ledger_branch }}
+        run: |
+          set -euo pipefail
+          node "$SOLUMBE_TOOL_DIR/src/cli.js" attest . --status --ledger "$LEDGER_PATH" --merge "$TARGET_SHA" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$LEDGER_BRANCH/$LEDGER_PATH"
 
       - name: Persist the ledger
         env:

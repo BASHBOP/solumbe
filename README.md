@@ -71,15 +71,35 @@ $ solumbe gate . --staged --base origin/main --request "add refund handling to c
 
 The convergence score is the part a model cannot grade for itself: it compares the stated intent against the files the diff actually changed, and produces a receipt bound to the exact base, parent, and staged-tree identity.
 
+**Hold the change to what was declared.** Record the files a request is expected to touch before the edit, and the gate names any file that was never declared:
+
+```console
+$ solumbe declare . "add refund handling to checkout"
+$ # ... the agent edits ...
+$ solumbe gate . --staged --base HEAD --intent .solumbe/intent.json
+
+  [FAIL]  Scope contract         Touched `src/auth/session.ts`, which was never declared. Amend the intent with the reason it belongs (`solumbe amend <file> --reason "<why>"`), or take it out of the change.
+     |- Request: "add refund handling to checkout"
+     |- Contract: fe655c2af2b31b7e3edec6aedd248b379235811d1228c829f87ff73796ace487
+     |- Changed files: 3 (1 declared, 0 amended, 1 implied, 1 undeclared)
+     |- Implied: tests/checkout.service.test.ts (owner-test of src/payment/checkout.service.ts)
+     |- Undeclared on a risk-sensitive path: src/auth/session.ts [auth/security]
+```
+
+An amendment adds a file with its reason, hashed onto the contract, so a reviewer reads why the scope grew. Over MCP it is `change_impact` with `declare: true`, and `review_gate` with `intent`.
+
 ## The core
 
-Three commands are the product. They call no model, open no socket, and read nothing outside the repository.
+Four commands are the product. They call no model, open no socket, and read nothing outside the repository.
 
-| Step             | Command                                                                      |
-| ---------------- | ---------------------------------------------------------------------------- |
-| Before the edit  | `solumbe context "add refund handling" --path .`                             |
-| Before the merge | `solumbe gate . --staged --base origin/main --request "add refund handling"` |
-| For the reviewer | `solumbe pr . --base origin/main --out .solumbe/pr-review.md`                |
+| Step             | Command                                                                      | What it proves                                             |
+| ---------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Before the edit  | `solumbe context "add refund handling" --path .`                             | Which files, tests and commands the request needs          |
+| After the edit   | `solumbe converge . "add refund handling" --base origin/main --staged`       | How far the diff is from the request, with a receipt       |
+| Before the merge | `solumbe gate . --staged --base origin/main --request "add refund handling"` | PASS / WARN / FAIL on the exact staged tree                |
+| After the merge  | `solumbe attest . --verdict verdict.json --merge <sha>`                      | A hash-chained record of what shipped, under which verdict |
+
+`solumbe help` shows these and how to set up; `solumbe help --all` lists every command, including the ones that support them (`impact`, `declare`, `pr`, `review`, `map`, `calibrate`, `route`, `ax`, `dashboard` and the rest). Nothing was removed.
 
 Nothing hosted is required, and nothing hosted can change a verdict. [Local Core, Optional Hosted](https://bashbop.github.io/solumbe/19-local-core-optional-hosted/) lists exactly what the optional pieces send, and where.
 

@@ -580,6 +580,45 @@ test("generateContextPack names a repo by a capitalised short segment and keeps 
   fs.rmSync(small, { recursive: true, force: true });
 });
 
+// A Go import names a package by module path, so before go.mod was read the
+// only caller of a helper in another directory never reached the pack.
+test("generateContextPack relates a Go file to the files that import its package", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "go-imports-"));
+  const write = (/** @type {string} */ file, /** @type {string} */ text) => {
+    fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+    fs.writeFileSync(path.join(root, file), text);
+  };
+  write("go.mod", "module example.com/shop\n");
+  write("internal/platform/retry.go", "package platform\n\n// WithBackoff retries fn.\nfunc WithBackoff(fn func() error) error { return fn() }\n");
+  write(
+    "internal/stock/store.go",
+    'package stock\n\nimport "example.com/shop/internal/platform"\n\nfunc Adjust() error { return platform.WithBackoff(func() error { return nil }) }\n',
+  );
+  write(
+    "internal/stock/store_external_test.go",
+    'package stock_test\n\nimport (\n  "testing"\n\n  "example.com/shop/internal/platform"\n)\n\nfunc TestStoreAdjust(t *testing.T) { _ = platform.WithBackoff }\n',
+  );
+  write("internal/pricing/discount.go", "package pricing\n\nfunc ApplyDiscount(total int) int { return total }\n");
+
+  const pack = generateContextPack("change the retry backoff", { path: root, limit: 5 });
+  assert.deepEqual(
+    pack.data.primaryFiles.map((file) => file.path),
+    ["internal/platform/retry.go"],
+  );
+  const store = pack.data.relatedFiles.find((file) => file.path === "internal/stock/store.go");
+  assert.ok(store?.reasons.includes("imports primary file"), JSON.stringify(pack.data.relatedFiles.map((file) => [file.path, file.reasons])));
+  assert.ok(!pack.data.relatedFiles.some((file) => file.path === "internal/pricing/discount.go"));
+  const test = pack.data.tests.find((file) => file.path === "internal/stock/store_external_test.go");
+  assert.ok(test?.reasons.includes("imports selected file"), JSON.stringify(pack.data.tests.map((file) => [file.path, file.reasons])));
+
+  const caller = generateContextPack("adjust the stock store", { path: root, limit: 5 });
+  assert.equal(caller.data.primaryFiles[0].path, "internal/stock/store.go");
+  const retry = caller.data.relatedFiles.find((file) => file.path === "internal/platform/retry.go");
+  assert.ok(retry?.reasons.includes("imported by primary file"), JSON.stringify(caller.data.relatedFiles.map((file) => [file.path, file.reasons])));
+
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
 // Regression (dogfood): "dogfood solumbe by reviewing bashbop" came back with
 // intent "unknown" because only the bare verb "review" counted.
 test("generateContextPack reads an inflected action word as the intent", () => {

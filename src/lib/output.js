@@ -87,7 +87,42 @@ export function printJson(value) {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
-export function printHelp() {
+/**
+ * `solumbe help` is the core: what runs before the edit, before the merge and
+ * after it. `solumbe help --all` is every command. Nothing is removed by being
+ * left off the first page; a reader who wants the rest is told where it is.
+ * @param {{ all?: boolean }} [options]
+ */
+export function printHelp(options = {}) {
+  if (!options.all) {
+    printText(`solumbe
+
+Usage:
+  solumbe context <query> [--path repo] [--limit n] [--online] [--out file] [--json]        # before the edit: the files, tests and commands the request needs
+  solumbe declare <repo> <request> [--top n] [--out file] [--json]                          # before the edit: record the files it is expected to touch
+  solumbe converge <repo> <query> --base <ref> [--head ref | --staged] [--out file] [--json]   # after the edit: how far the diff is from the request, with a receipt
+  solumbe gate [repo | --path repo] [--base ref] [--head ref | --staged] [--request text] [--intent file] [--min-convergence n] [--receipt hash|file] [--out file] [--json]   # before the merge: PASS / WARN / FAIL on the exact tree
+  solumbe gate --pr <selector> [repo | --path repo] [--request text] [--intent file] [--min-convergence n] [--receipt hash|file] [--json]   # the same, for a GitHub pull request
+  solumbe attest [repo] --verdict file --merge sha [--prev sha] [--pr n] [--ledger file] [--sign-key pem] [--json]   # after the merge: append a hash-chained record of the merged commit, signed when given a key
+  solumbe attest [repo] --verify [--ledger file] [--public-key pem] [--require-signature] [--json]   # recompute the chain and check signatures; exits 1 if any record was altered
+
+Set up:
+  solumbe install --host all          # connect the MCP server to every agent host it finds
+  solumbe doctor                      # check the local toolchain
+  solumbe mcp                         # run the MCP server over stdio
+  solumbe init <path>                 # scaffold CI, a pre-commit hook and .solumbe/ in a repository
+
+More:
+  solumbe help --all                  # every command: impact, amend, pr, review, map, search, calibrate, route, ax, dashboard and the rest
+  solumbe <command> --json            # every command prints the same evidence as data
+
+Global flags (every command that prints for a terminal):
+  --emoji | --no-emoji        emoji glyphs on, or ASCII glyphs off; the default is plain Unicode (ASCII under CI, NO_EMOJI=1 or TERM=dumb)
+  --color | --no-color        ANSI colour on or off; the default follows the terminal, NO_COLOR and FORCE_COLOR
+  --theme name                default | color | minimal | high-contrast
+`);
+    return;
+  }
   printText(`solumbe
 
 Usage:
@@ -104,18 +139,21 @@ Usage:
   solumbe ax <repo> <query> [--top n] [--out file] [--json]
   solumbe route <repo> <query> [--host id] [--tier-only] [--offline] [--top n] [--out file] [--json]   # recommend a model tier before spending on the task
   solumbe converge <repo> <query> --base <ref> [--head ref | --staged] [--include-untracked] [--top n] [--out file] [--json]
-  solumbe attest [repo] --verdict file --merge sha [--prev sha] [--pr n] [--author name] [--committed iso] [--ledger file] [--json]   # append a hash-chained record of a merged commit
-  solumbe attest [repo] --verify [--ledger file] [--json]                                     # recompute the chain; exits 1 if any record was altered
+  solumbe declare <repo> <request> [--top n] [--out file] [--json]                            # before the edit: record the files the request is expected to touch
+  solumbe amend <file...> --reason text [--path repo] [--intent file] [--json]                # add files to the declared intent, with the reason they belong
+  solumbe attest [repo] --verdict file --merge sha [--prev sha] [--pr n] [--author name] [--committed iso] [--ledger file] [--sign-key pem] [--json]   # append a hash-chained record of a merged commit, signed when given a key
+  solumbe attest [repo] --verify [--ledger file] [--public-key pem] [--require-signature] [--json]   # recompute the chain and check signatures; exits 1 if any record was altered
+  solumbe attest [repo] --status [--merge sha] [--ledger file] [--repo owner/name] [--target-url url] [--dry-run] [--json]   # publish a record as the solumbe/receipt commit status
   solumbe calibrate <repo> [--window days] [--min-sample n] [--since date] [--max n] [--json]   # grade risk flags against this repo's own history
   solumbe calibrate <repo> --gate [--window days] [--min-sample n] [--since date] [--max commits] [--policy x] [--governance x] [--quiet] [--out file] [--json]   # replay the gate and the convergence score over history; grade verdict and band
   solumbe calibrate <repo> --follow-through [--all] [--window-min minutes] [--min-sample n] [--out file] [--json]   # from the usage log: how often a warning had cleared on the next run
   solumbe calibrate <repo> --trial [--log file] [--window days] [--min-sample n] [--out file] [--json]   # grade the shown and withheld arms of SOLUMBE_CHECK_MODE=trial
   solumbe regret <repo> [--window days] [--min-sample n] [--since date] [--max commits] [--offline] [--quiet] [--out file] [--json]   # grade route tiers against this repo's own history
   solumbe regret --rescore run.json [--out file] [--json]                                     # regrade a saved run with the current arithmetic; replays and calls nothing
-  solumbe pass <repo> [--base ref] [--head ref | --staged] [--run-validation] [--policy standard|company|high-risk] [--governance team|solo] [--request text] [--min-convergence n] [--receipt hash|file] [--out file] [--json]
-  solumbe gate [repo | --path repo] [--base ref] [--head ref | --staged] [--run-validation] [--policy standard|company|high-risk] [--governance team|solo] [--request text] [--min-convergence n] [--receipt hash|file] [--out file] [--json]
-  solumbe pass-pr [selector] [--path repo] [--policy x] [--governance x] [--request text] [--min-convergence n] [--receipt hash|file] [--out file] [--json]
-  solumbe review [repo | --path repo] [request] [--request text] [--base ref] [--pr selector] [--policy x] [--governance x] [--min-convergence n] [--receipt hash|file] [--json] [--mermaid]
+  solumbe pass <repo> [--base ref] [--head ref | --staged] [--run-validation] [--policy standard|company|high-risk] [--governance team|solo] [--request text] [--min-convergence n] [--receipt hash|file] [--intent file] [--out file] [--json]
+  solumbe gate [repo | --path repo] [--base ref] [--head ref | --staged] [--run-validation] [--policy standard|company|high-risk] [--governance team|solo] [--request text] [--min-convergence n] [--receipt hash|file] [--intent file] [--out file] [--json]
+  solumbe pass-pr [selector] [--path repo] [--policy x] [--governance x] [--request text] [--min-convergence n] [--receipt hash|file] [--intent file] [--out file] [--json]
+  solumbe review [repo | --path repo] [request] [--request text] [--base ref] [--pr selector] [--policy x] [--governance x] [--min-convergence n] [--receipt hash|file] [--intent file] [--json] [--mermaid]
   solumbe install|i [--global|--link] [--json]
   solumbe install --host all|claude-code,claude-desktop,codex,cursor,vscode,gemini,kimi [--dry-run] [--canvas url] [--json]   # connect the MCP server to agent hosts
   solumbe map <path> [--out file] [--json] [--mermaid]

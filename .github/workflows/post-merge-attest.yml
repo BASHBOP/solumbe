@@ -112,7 +112,12 @@ jobs:
       # Resetting the audit chain is a decision, so only a person starting
       # the workflow by hand can ask for it; a CI-triggered run never can.
       reset_ledger: ${{ github.event_name == 'workflow_dispatch' && inputs.reset_ledger || false }}
+    secrets:
+      # Set SOLUMBE_ATTEST_KEY (an Ed25519 private key, PEM) in the repository's
+      # secrets to sign the ledger; records are unsigned until then.
+      attest_key: ${{ secrets.SOLUMBE_ATTEST_KEY }}
     permissions:
       actions: read
       contents: write
       pull-requests: read
+      statuses: write

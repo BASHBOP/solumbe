@@ -45,6 +45,36 @@ function extractGoImports(text) {
 }
 
 /**
+ * The module path a `go.mod` declares.
+ * @param {string} text
+ * @returns {string | undefined}
+ */
+export function goModulePath(text) {
+  return /^\s*module\s+"?([^\s"]+)"?/m.exec(text)?.[1];
+}
+
+/**
+ * The repository directory a Go import path names. An import is a module path
+ * followed by the package's directory under that module's `go.mod`, so it
+ * resolves only against the modules the repository declares: the standard
+ * library and dependencies name no directory here. Nested modules resolve
+ * against the longest module path that matches.
+ * @param {string} specifier
+ * @param {{ dir: string, module: string }[]} modules `dir` is the directory holding the `go.mod`, "" at the root
+ * @returns {string | undefined}
+ */
+export function goImportDir(specifier, modules) {
+  /** @type {{ dir: string, module: string } | undefined} */
+  let owner;
+  for (const candidate of modules) {
+    if (specifier !== candidate.module && !specifier.startsWith(`${candidate.module}/`)) continue;
+    if (!owner || candidate.module.length > owner.module.length) owner = candidate;
+  }
+  if (!owner) return undefined;
+  return [owner.dir, specifier.slice(owner.module.length + 1)].filter(Boolean).join("/");
+}
+
+/**
  * @param {string} text
  * @returns {CodeSymbol[]}
  */

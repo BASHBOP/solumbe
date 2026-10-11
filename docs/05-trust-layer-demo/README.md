@@ -105,9 +105,11 @@ solumbe review . --pr 123 --json > verdict.json
 solumbe attest . --verdict verdict.json --merge <sha> --prev <base> \
      --pr 123 --author "Name" --committed <iso>
 solumbe attest . --verify        # exits non-zero if any record was altered
+solumbe attest . --verify --public-key attest.pub.pem   # and that every record was signed by this key
+solumbe attest . --status --merge <sha>                 # publish it as the solumbe/receipt commit status
 ```
 
-Records go to `audit-pilot/ledger.jsonl` under the repository unless `--ledger` names another file. Each carries a `schemaVersion`, and the verdict it was built from carries its own.
+Records go to `audit-pilot/ledger.jsonl` under the repository unless `--ledger` names another file. Each is one line of [the published schema](../schemas/attestation-record.v2.json): the request that was stated, the scope contract, the exact tree, a hash of the changed paths, the verdict and the convergence receipt, chained to the record before it and signed when `--sign-key` is given. That is the receipt an auditor reads: "request R, declared files P, diff D, verdict V, at tree T", recomputable by anyone with the repository.
 
 See [audit-pilot/README.md](https://github.com/BASHBOP/solumbe/blob/main/audit-pilot/README.md) for the hash-chained ledger pilot and production notes.
 

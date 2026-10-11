@@ -102,8 +102,8 @@ test("gate calibration replays the gate on each commit and joins the verdict to 
   assert.equal(safeRow.repairedAfter, null);
   assert.deepEqual(safeRow.skipped, ["Review state"], "the review state the local gate cannot see does not make a verdict");
   for (const row of data.commits) {
-    assert.ok(["aligned", "partial", "drift"].includes(row.band), row.band);
-    assert.equal(typeof row.convergence, "number");
+    assert.ok(["aligned", "partial", "drift", "inconclusive"].includes(row.band), row.band);
+    assert.equal(typeof row.convergence, row.band === "inconclusive" ? "object" : "number");
   }
 
   // The gate read each commit's own tree: the lockfile did not exist yet when
@@ -182,5 +182,5 @@ test("solumbe calibrate --gate prints the replay as JSON and as a report, and ta
   const both = cli(["calibrate", root, "--gate", "--trial"]);
   assert.equal(both.status, 1);
   assert.match(both.stderr, /one of --gate, --follow-through or --trial/);
-  assert.match(cli(["help"]).stdout, /calibrate <repo> --gate/);
+  assert.match(cli(["help", "--all"]).stdout, /calibrate <repo> --gate/);
 });

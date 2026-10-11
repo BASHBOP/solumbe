@@ -33,9 +33,9 @@ function diagramCommands(html) {
   return new Set([...html.matchAll(/data-command="([a-z-]+)"/g)].map((match) => match[1]));
 }
 
-/** Command words from the Usage block of `solumbe help`, `install|i` split. */
+/** Command words from the Usage block of `solumbe help --all`, `install|i` split. */
 function helpCommands() {
-  const help = execFileSync(process.execPath, [path.join(repoRoot, "src", "cli.js"), "help"], { encoding: "utf8" });
+  const help = execFileSync(process.execPath, [path.join(repoRoot, "src", "cli.js"), "help", "--all"], { encoding: "utf8" });
   const usage = help.split(/\n(?=Examples:)/)[0];
   const commands = new Set();
   for (const match of usage.matchAll(/^\s+solumbe (\S+)/gm)) {

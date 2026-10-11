@@ -37,6 +37,7 @@ export const VERDICT_SCHEMA_VERSION = 3;
  * @property {string} [governance]
  * @property {number | string} [minConvergence]
  * @property {string} [receipt]
+ * @property {unknown} [intent]
  * @property {Runner} [runner]
  */
 
@@ -49,6 +50,10 @@ export async function generateReview(repoPath, options = {}) {
   const request = asked || "review this change";
   const wantsPr = Boolean(options.prSelector || options.pr);
   const head = String(options.head ?? "").trim();
+  // A declared intent carries its own request. The placeholder is not one the
+  // caller gave, so it must not be read as a different request than the one
+  // declared.
+  const gateRequest = options.intent && !asked ? undefined : request;
 
   /** @type {any} */
   let passReport;
@@ -58,9 +63,10 @@ export async function generateReview(repoPath, options = {}) {
       head: head || undefined,
       policy: options.policy,
       governance: options.governance,
-      request,
+      request: gateRequest,
       minConvergence: options.minConvergence,
       receipt: options.receipt,
+      intent: options.intent,
     });
   }
 
@@ -85,9 +91,10 @@ export async function generateReview(repoPath, options = {}) {
     passReport = await evaluatePR(repoPath, options.prSelector ?? "", {
       policy: options.policy,
       governance: options.governance,
-      request,
+      request: gateRequest,
       minConvergence: options.minConvergence,
       receipt: options.receipt,
+      intent: options.intent,
       runner: options.runner,
     });
   }
@@ -100,7 +107,11 @@ export async function generateReview(repoPath, options = {}) {
     generatedAt: new Date().toISOString(),
     schemaVersion: VERDICT_SCHEMA_VERSION,
     reviewEngineVersion,
-    request,
+    // The request the caller gave, or the one a declared intent carries. With
+    // neither it is the placeholder, and `requestStated` is false: an
+    // attestation records a request only when someone stated one.
+    request: asked || passReport.contract?.request || request,
+    requestStated: Boolean(asked || passReport.contract?.request),
     verdict: passReport.verdict,
     confidence,
     repo: { root: passReport.repo.root, name: passReport.repo.name },
@@ -123,6 +134,13 @@ export async function generateReview(repoPath, options = {}) {
       policy: passReport.policy,
       governance: passReport.governance,
       checks: passReport.checks.map((/** @type {any} */ check) => ({ name: check.name, status: check.status, summary: check.summary })),
+      // What an attestation binds a verdict to: the exact subject, the changed
+      // paths, the declared contract and the convergence receipt, when the
+      // gate had them.
+      changedFiles: passReport.changedFiles ?? [],
+      ...(passReport.subject ? { subject: passReport.subject } : {}),
+      ...(passReport.contract ? { contract: passReport.contract } : {}),
+      ...(passReport.receipt ? { convergence: passReport.convergence ?? null, band: passReport.band ?? null, receipt: passReport.receipt } : {}),
     },
   };
   data.tokenEstimate = { fullJson: estimateTokens(data) };

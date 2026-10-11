@@ -4,7 +4,7 @@
 
 > For teams that want any coding agent to produce evidence a human can trust before merge.
 
-**v4.4.0** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
+**v4.5.0** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
 
 Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep -->
 
@@ -20,6 +20,17 @@ Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep
 ---
 
 ## What's New
+
+!!! tip "v4.5.0 published (2026-10-11)"
+    A request can declare what it will touch before the edit, and the gate can delegate to the scanners you already run. No command or field was removed.
+
+    - `solumbe declare <repo> "<request>"` records the files Solumbe predicts for a request, and `solumbe amend <file...> --reason "<why>"` adds to them. With `--intent`, the gate adds a `Scope contract` check that fails a changed file that was never declared. It is opt-in, and over MCP it uses the existing tools.
+    - The gate delegates to gitleaks, Semgrep and osv-scanner when they are installed, each as its own check. Nothing is installed or fetched, `SOLUMBE_SCANNERS` selects them, and a repository with none set up sees no change.
+    - A request that predicts no owner file is `inconclusive`, with no convergence score, and the gate's convergence floor warns on it instead of failing. A request its words do not ground is grounded in the import graph. The convergence engine moves to `0.6.0`.
+    - The attestation record is version 2: it binds the verdict to the stated request, the scope contract, the exact subject and the convergence receipt, and has a published schema. `solumbe attest --sign-key` signs it with an Ed25519 key and `--status` posts it as a commit status. Older and unsigned ledgers verify as before.
+    - A Go import reaches the files of the package it names, so Go repositories get import edges in a context pack; the index cache rebuilds once. `Secret safety` stops flagging a placeholder in a source-file comment. `solumbe help` now lists the core commands, and `solumbe help --all` lists every command.
+
+    [npm v4.5.0](https://www.npmjs.com/package/@bashbop/solumbe/v/4.5.0) · [GitHub Release](https://github.com/BASHBOP/solumbe/releases/tag/v4.5.0) · [MCP Registry](https://registry.modelcontextprotocol.io/?q=io.github.BASHBOP%2Fsolumbe)
 
 !!! tip "v4.4.0 published (2026-10-10)"
     A check the gate cannot run reports `SKIPPED` instead of `WARN`, so a clean change can return `PASS`, and `solumbe calibrate` grades the gate's verdict against what happened next. No command or field was removed.
@@ -247,7 +258,7 @@ flowchart LR
 === "Install"
 
     ```bash
-    npm install -g @bashbop/solumbe@4.4.0
+    npm install -g @bashbop/solumbe@4.5.0
     solumbe doctor
     solumbe context "review this change" --path .
     ```
@@ -255,7 +266,7 @@ flowchart LR
 === "No Global Install"
 
     ```bash
-    npx -y @bashbop/solumbe@4.4.0 doctor
+    npx -y @bashbop/solumbe@4.5.0 doctor
     ```
 
 === "Source Checkout"

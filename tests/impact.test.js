@@ -418,6 +418,87 @@ test("a weak incidental match does not become a coverage obligation", () => {
   assert.deepEqual(result.data.classifications.requiredOwners, [], "no file matches this request; nothing should ground");
 });
 
+// --- grounding in the import graph ---
+
+// A small repository with real imports: `util.js` is shared by two modules,
+// and `index.js` is the entry point that nothing imports.
+const GRAPH_FILES = {
+  "package.json": JSON.stringify({ name: "shop", version: "1.0.0", type: "module", scripts: { test: "node --test" } }),
+  "src/lib/util.js": "export function isAdmin(user) { return user.role === 'admin'; }\nexport function formatName(user) { return user.name.trim(); }\n",
+  "src/auth/session.js":
+    "import { isAdmin } from '../lib/util.js';\nexport const sessionTtl = 3600;\nexport function canExtend(user) { return isAdmin(user); }\n",
+  "src/payment/charge.js": "import { formatName } from '../lib/util.js';\nexport function charge(user, amount) { return { who: formatName(user), amount }; }\n",
+  "src/index.js":
+    "import { charge } from './payment/charge.js';\nimport { canExtend } from './auth/session.js';\nexport function greet(user) { return `hi ${user.name}`; }\nexport { charge, canExtend };\n",
+  "tests/auth.test.js": "import { canExtend } from '../src/auth/session.js';\n",
+};
+
+const ownersOf = (root, request) => generateImpact(request, { path: root, top: 10 }).data;
+
+test("a request its words do not ground is grounded by the file the import graph names", () => {
+  const root = writeFixture("graph-stem", GRAPH_FILES);
+  const data = ownersOf(root, "refactor util helpers");
+  assert.deepEqual(data.classifications.requiredOwners, ["src/lib/util.js"]);
+  const util = data.topFiles.find((file) => file.path === "src/lib/util.js");
+  assert.ok(
+    util.reasons.includes("grounded in the import graph: the only source file named `util`, a word in the request; imported by 2 file(s)"),
+    util.reasons.join("; "),
+  );
+});
+
+test("the only exporter of a word in the request is grounded, when it has an import edge", () => {
+  const root = writeFixture("graph-export", GRAPH_FILES);
+  const data = ownersOf(root, "update the greet function");
+  assert.deepEqual(data.classifications.requiredOwners, ["src/index.js"]);
+  const index = data.topFiles.find((file) => file.path === "src/index.js");
+  assert.ok(
+    index.reasons.includes("grounded in the import graph: the only source file that exports `greet`, a word in the request; importing 2 file(s)"),
+    index.reasons.join("; "),
+  );
+});
+
+test("the import graph only grounds what words left ungrounded, and adds nothing to a request that already has an owner", () => {
+  const root = writeFixture("graph-fallback-only", GRAPH_FILES);
+  const data = ownersOf(root, "fix session expiry in util");
+  assert.deepEqual(data.classifications.requiredOwners, ["src/auth/session.js"], "the lexical owner stands alone");
+  assert.ok(!data.topFiles.some((file) => file.reasons.some((reason) => reason.startsWith("grounded in the import graph"))));
+});
+
+test("the import graph does not ground a stray file, a shared name, a test, or a word that names no module", () => {
+  // No import edge: the file is not part of any graph.
+  const stray = writeFixture("graph-stray", {
+    "package.json": JSON.stringify({ name: "lib-fixture", scripts: { test: "node --test" } }),
+    "src/lib/util.js": "export function isAdmin(user) { return user.role === 'admin'; }\n",
+    "src/lib/report.js": "export function buildReport() { return 'report'; }\n",
+  });
+  assert.deepEqual(ownersOf(stray, "refactor util helpers").classifications.requiredOwners, []);
+
+  // Two files answer to the name, so the graph cannot say which one is meant.
+  const shared = writeFixture("graph-shared", {
+    ...GRAPH_FILES,
+    "src/payment/util.js": "import { charge } from './charge.js';\nexport function refundAmount(amount) { return charge({ name: 'x' }, -amount); }\n",
+  });
+  assert.deepEqual(ownersOf(shared, "refactor util helpers").classifications.requiredOwners, []);
+
+  // `index` and `test` say what to do or name code in general.
+  const root = writeFixture("graph-stop-terms", GRAPH_FILES);
+  assert.deepEqual(ownersOf(root, "tidy the index").classifications.requiredOwners, []);
+  assert.deepEqual(ownersOf(root, "tidy things up").classifications.requiredOwners, []);
+});
+
+test("convergence measures a change that only the import graph grounds, where it was inconclusive", () => {
+  const root = gitFixture("graph-converge", GRAPH_FILES);
+  fs.writeFileSync(
+    path.join(root, "src/lib/util.js"),
+    "export const isAdmin = (user) => user.role === 'admin';\nexport const formatName = (user) => user.name.trim();\n",
+  );
+  spawnSync("git", ["add", "."], { cwd: root });
+  const score = generateConvergence("refactor util helpers", { path: root, base: "HEAD", staged: true });
+  assert.equal(score.drivers.grounded, true);
+  assert.deepEqual(score.drivers.confirmedDirect, ["src/lib/util.js"]);
+  assert.equal(score.band, "aligned");
+});
+
 // Regression: a run could report `verdict: "missed"` while `missedChangedFiles`
 // was empty, which reads as a contradiction. Files that were ranked but only as
 // advisory leads now have their own bucket, so the verdict is explainable.

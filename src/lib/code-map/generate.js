@@ -3,6 +3,7 @@ import path from "node:path";
 import { inspectRepo, listRepoFiles } from "../repo.js";
 import { estimateTokens, estimateTokenSections } from "../tokens.js";
 import { extractAstFacts } from "./ast.js";
+import { goImportDir, goModulePath } from "./ast-languages.js";
 import { classifyFile, extractHttpMethods, inferControllerBasePath, inferDomainInfo, inferNextRoute, isMarkdownFilePath } from "./classify.js";
 import { extractDataAccess } from "./data-access.js";
 import { isVendorFile } from "./vendor.js";
@@ -80,6 +81,7 @@ export function isSourceFilePath(file) {
  * @property {string[]} localIdentifiers
  * @property {boolean} isVendor
  * @property {DataAccessHit[]} [dataAccess]
+ * @property {string[]} [importDirs]
  */
 
 /**
@@ -125,10 +127,61 @@ export function isSourceFilePath(file) {
  */
 export function generateCodeMap(repoPath = ".", options = {}) {
   const repo = inspectRepo(repoPath);
-  const files = listRepoFiles(repo.root).filter(isSourceFilePath);
+  const repoFiles = listRepoFiles(repo.root);
+  const files = repoFiles.filter(isSourceFilePath);
   const maxSymbols = Number(options.maxSymbols ?? 5000);
   const sourceFiles = /** @type {FileRecord[]} */ (files.map((file) => analyzeFile(repo.root, file, maxSymbols)).filter(Boolean));
+  recordGoImportDirs(sourceFiles, readGoModules(repo.root, repoFiles));
   return assembleCodeMap(repo, sourceFiles);
+}
+
+/**
+ * @param {string} file
+ * @returns {string} the file's directory, "" at the repository root
+ */
+function repoDirectory(file) {
+  const directory = path.posix.dirname(file);
+  return directory === "." ? "" : directory;
+}
+
+/**
+ * @param {string} root
+ * @param {string[]} repoFiles
+ * @returns {{ dir: string, module: string }[]}
+ */
+function readGoModules(root, repoFiles) {
+  /** @type {{ dir: string, module: string }[]} */
+  const modules = [];
+  for (const file of repoFiles) {
+    if (path.posix.basename(file) !== "go.mod") continue;
+    const module = goModulePath(safeRead(path.join(root, file)));
+    if (module) modules.push({ dir: repoDirectory(file), module });
+  }
+  return modules;
+}
+
+/**
+ * A Go import names a package directory, never a file, and names it by module
+ * path (`example.com/shop/internal/stock`), so the specifier alone resolves to
+ * nothing in the repository. Record on each Go file the directories its
+ * imports name that hold a Go package here; the import graph links the file to
+ * that package's files.
+ * @param {FileRecord[]} sourceFiles
+ * @param {{ dir: string, module: string }[]} modules
+ */
+function recordGoImportDirs(sourceFiles, modules) {
+  if (modules.length === 0) return;
+  const isGo = (/** @type {FileRecord} */ file) => file.path.endsWith(".go");
+  const packageDirs = new Set(sourceFiles.filter((file) => isGo(file) && file.kind !== "test").map((file) => repoDirectory(file.path)));
+  for (const file of sourceFiles.filter(isGo)) {
+    /** @type {Set<string>} */
+    const dirs = new Set();
+    for (const specifier of file.imports) {
+      const dir = goImportDir(specifier, modules);
+      if (dir !== undefined && packageDirs.has(dir)) dirs.add(dir);
+    }
+    if (dirs.size) file.importDirs = [...dirs];
+  }
 }
 
 /**

@@ -146,6 +146,52 @@ test("generateCodeMap classifies Go source and test files", () => {
   assert.ok(testFile.symbols.some((symbol) => symbol.name === "TestEvaluate"));
 });
 
+test("generateCodeMap records the repository packages a Go file imports", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "solumbe-map-go-imports-"));
+  const write = (/** @type {string} */ file, /** @type {string} */ text) => {
+    fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+    fs.writeFileSync(path.join(root, file), text);
+  };
+  write("go.mod", '// module example.com/commented\nmodule "example.com/shop"\n\ngo 1.22\n');
+  write("shop.go", 'package shop\n\nimport "example.com/shop/internal/stock"\n\nfunc Open() error { return stock.Reserve() }\n');
+  write(
+    "internal/stock/reserve.go",
+    [
+      "package stock",
+      "",
+      "import (",
+      '  "errors"',
+      '  "example.com/shop/internal/platform"',
+      '  "example.com/shop/internal/onlytests"',
+      '  "example.com/shopping/internal/platform"',
+      '  "github.com/other/lib/internal/platform"',
+      ")",
+      "",
+      "func Reserve() error { return platform.Retry(errors.New) }",
+      "",
+    ].join("\n"),
+  );
+  write("internal/platform/retry.go", "package platform\n\nfunc Retry(fn func(string) error) error { return nil }\n");
+  write("internal/onlytests/helper_test.go", "package onlytests\n");
+  // A nested module: its packages resolve against its own go.mod.
+  write("tools/lint/go.mod", "module example.com/lint\n");
+  write("tools/lint/main.go", 'package main\n\nimport (\n  "example.com/lint/rules"\n  "example.com/shop"\n)\n\nfunc main() {}\n');
+  write("tools/lint/rules/rules.go", "package rules\n\nfunc All() []string { return nil }\n");
+
+  const result = generateCodeMap(root);
+  const importDirs = (/** @type {string} */ file) => result.files.find((entry) => entry.path === file)?.importDirs;
+
+  assert.deepEqual(importDirs("shop.go"), ["internal/stock"]);
+  // The standard library, a dependency, a module that only shares a prefix,
+  // and a directory with no Go package name nothing here.
+  assert.deepEqual(importDirs("internal/stock/reserve.go"), ["internal/platform"]);
+  // The root package is the directory "".
+  assert.deepEqual(importDirs("tools/lint/main.go"), ["tools/lint/rules", ""]);
+  assert.equal(importDirs("internal/platform/retry.go"), undefined);
+
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
 test("generateCodeMap extracts C# namespace, class, interface, enum, methods, and using-directives", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "solumbe-map-cs-"));
   fs.writeFileSync(

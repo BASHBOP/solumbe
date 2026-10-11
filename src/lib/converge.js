@@ -18,8 +18,9 @@ import path from "node:path";
 import { generateCodeMapFromSources } from "./code-map.js";
 import { isTestFilePath } from "./code-map/classify.js";
 import { isSourceFilePath } from "./code-map/generate.js";
-import { DIFF_RENAME_LIMIT, generateImpact } from "./impact.js";
-import { resolveImportSpecifier } from "./ranking-rules.js";
+import { DIFF_RENAME_LIMIT, generateImpact, pathScopeTokens, scopeTokens } from "./impact.js";
+import { getCachedCodeMap } from "./index-cache.js";
+import { importDegrees, resolveImportSpecifier } from "./ranking-rules.js";
 import { classifyPath, isDocPath, isSecretPath, isTestDataPath, RISK_FLAGS } from "./risk-paths.js";
 import { runCommand } from "./tools.js";
 import { estimateTokens } from "./tokens.js";
@@ -32,7 +33,12 @@ import { estimateTokens } from "./tokens.js";
 // in scope. Scores change again, so 0.2.0 receipts do not recompute here.
 // 0.4.0: a file the change wires to a confirmed one is in scope: a test or
 // source file whose added lines import it, and a doc whose added lines name it.
-export const convergenceEngineVersion = "0.5.0";
+// 0.6.0: a task that predicts no owner file is `inconclusive` and carries no
+// score or sub-scores, where it used to score about 20 and band as `drift`.
+export const convergenceEngineVersion = "0.6.0";
+
+/** The band of a task that did not ground: there is no prediction to measure the diff against. */
+export const INCONCLUSIVE_BAND = "inconclusive";
 
 // Sub-score weights. Coverage (did intent happen?) leads, scope discipline (did
 // only intent happen?) is next, risk alignment (did drift land somewhere
@@ -74,7 +80,7 @@ const GENERIC_STEMS = new Set(["__init__", "app", "config", "constants", "helper
 
 /**
  * @param {string} query
- * @param {{ path?: string, base?: string, head?: string, top?: number, staged?: boolean, includeUntracked?: boolean, subject?: Record<string, unknown>, diffFiles?: string[] }} [options]
+ * @param {{ path?: string, base?: string, head?: string, top?: number, staged?: boolean, includeUntracked?: boolean, subject?: Record<string, unknown>, diffFiles?: string[], declared?: { tip: string, owners: string[], related: string[], terms?: string[], modules?: string[] } }} [options]
  * @returns {Record<string, any>}
  */
 export function generateConvergence(query, options = {}) {
@@ -140,35 +146,57 @@ export function generateConvergence(query, options = {}) {
     throw new Error(validation.error ?? "converge failed to read the git diff");
   }
 
-  const changedFiles = validation.changedFiles ?? [];
-  const confirmedDirect = validation.confirmedDirect ?? [];
-  const confirmedRelated = validation.confirmedRelated ?? [];
-  const unconfirmedCandidates = validation.unconfirmedCandidates ?? [];
+  // A scope contract (src/lib/intent.js) replaces the live prediction with the
+  // files declared before the edit, so the diff is held against what was
+  // promised and not against what the edited tree now predicts.
+  const declared = normalizeDeclaredScope(options.declared);
+  const compared = declared ? compareWithDeclared(validation.changedFiles ?? [], declared) : validation;
+
+  const changedFiles = compared.changedFiles ?? [];
+  const confirmedDirect = compared.confirmedDirect ?? [];
+  const confirmedRelated = compared.confirmedRelated ?? [];
+  const unconfirmedCandidates = compared.unconfirmedCandidates ?? [];
 
   // A confirmed owner rarely changes alone: a feature commit adds components
   // beside it and tests for what it touched. Those are the task's own fan-out,
   // not drift, so they are moved out of the drift and advisory buckets under a
   // named rule before scope and risk alignment are computed.
   const addedFiles = subject ? addedFilesForSubject(root, subject) : [...addedFilesInWorkingTree(root, base), ...(includeUntracked ? (untracked ?? []) : [])];
-  const candidates = [...(validation.missedChangedFiles ?? []), ...(validation.advisoryChangedFiles ?? [])];
+  const candidates = [...(compared.missedChangedFiles ?? []), ...(compared.advisoryChangedFiles ?? [])];
+  const addedLines = addedLinesFor(root, base, subject, candidates, includeUntracked ? (untracked ?? []) : []);
   const inferredRelated = inferInScopeFiles({
     confirmedDirect,
     confirmedRelated,
     candidates,
     addedFiles,
     mappedFiles: impact.diffEvidence?.mappedFiles ?? [],
-    addedLines: addedLinesFor(root, base, subject, candidates, includeUntracked ? (untracked ?? []) : []),
+    addedLines,
   });
+  // Under a contract the declaration itself says more than a list of files:
+  // the words of the request, the modules its owners live in, and what the
+  // change wires to them. Those bring the rest of a real change into scope.
+  if (declared) {
+    const settled = new Set(inferredRelated.map((entry) => entry.file));
+    inferredRelated.push(
+      ...inferDeclaredScope({
+        declared,
+        inScope: [...confirmedDirect, ...confirmedRelated, ...settled],
+        candidates: candidates.filter((file) => !settled.has(file)),
+        imports: importEdges(changedFiles, (codeMap ?? getCachedCodeMap(repoPath)).files ?? []),
+        addedLines,
+      }),
+    );
+    inferredRelated.sort((left, right) => left.file.localeCompare(right.file));
+  }
   const inferredFiles = new Set(inferredRelated.map((entry) => entry.file));
-  const missedChangedFiles = (validation.missedChangedFiles ?? []).filter((/** @type {string} */ file) => !inferredFiles.has(file));
-  const advisoryChangedFiles = (validation.advisoryChangedFiles ?? []).filter((/** @type {string} */ file) => !inferredFiles.has(file));
+  const missedChangedFiles = (compared.missedChangedFiles ?? []).filter((/** @type {string} */ file) => !inferredFiles.has(file));
+  const advisoryChangedFiles = (compared.advisoryChangedFiles ?? []).filter((/** @type {string} */ file) => !inferredFiles.has(file));
 
   const predictedDirect = confirmedDirect.length + unconfirmedCandidates.length;
   const grounded = predictedDirect > 0;
 
   // Coverage — did the intent actually happen? Share of predicted owner files
-  // that were really changed. Ungrounded tasks (no prediction) are unmeasurable,
-  // so coverage is 0 and a recommendation explains why.
+  // that were really changed.
   const coverage = grounded ? (100 * confirmedDirect.length) / predictedDirect : 0;
 
   // Scope discipline — did *only* the intent happen? Share of changed files that
@@ -185,8 +213,16 @@ export function generateConvergence(query, options = {}) {
   const riskPenalty = missedChangedFiles.reduce((/** @type {number} */ sum, /** @type {string} */ file) => sum + riskWeightFor(file), 0);
   const riskAlignment = clamp(100 - riskPenalty, 0, 100);
 
-  const convergence = Math.round(WEIGHTS.coverage * coverage + WEIGHTS.scope * scope + WEIGHTS.riskAlignment * riskAlignment);
-  const band = bandFor(convergence);
+  // An ungrounded task predicted no owner file, so coverage, scope and drift
+  // have nothing to be measured against. The arithmetic above still yields a
+  // number (about 20, from risk alignment alone) that is the same for a correct
+  // change and an unrelated one, so it is not reported: the outcome is
+  // `inconclusive`, with no score and no sub-scores.
+  const convergence = grounded ? Math.round(WEIGHTS.coverage * coverage + WEIGHTS.scope * scope + WEIGHTS.riskAlignment * riskAlignment) : null;
+  const band = convergence === null ? INCONCLUSIVE_BAND : bandFor(convergence);
+  const subScores = grounded
+    ? { coverage: Math.round(coverage), scope: Math.round(scope), riskAlignment: Math.round(riskAlignment) }
+    : { coverage: null, scope: null, riskAlignment: null };
 
   const commit = subject?.headSha ?? subject?.parentSha ?? currentCommit(impact.repo?.root ?? repoPath);
 
@@ -214,11 +250,7 @@ export function generateConvergence(query, options = {}) {
     repo: { name: impact.repo?.name ?? path.basename(path.resolve(repoPath)), root: impact.repo?.root ?? path.resolve(repoPath) },
     convergence,
     band,
-    subScores: {
-      coverage: Math.round(coverage),
-      scope: Math.round(scope),
-      riskAlignment: Math.round(riskAlignment),
-    },
+    subScores,
     drivers,
     recommendations: buildRecommendations({
       grounded,
@@ -227,10 +259,15 @@ export function generateConvergence(query, options = {}) {
       advisoryChangedFiles,
       riskyDrift,
       excludedUntracked: includeUntracked ? [] : (untracked ?? []),
+      contract: Boolean(declared),
     }),
     weights: WEIGHTS,
   };
   if (subject) data.subject = subject;
+  // Under a contract every changed file is declared, implied by a declared
+  // one, or undeclared. `undeclared` is what the gate's Scope contract check
+  // fails on.
+  if (declared) data.contract = { tip: declared.tip, undeclared: missedChangedFiles };
   if (untracked) {
     data.untracked = { included: includeUntracked, count: untracked.length, files: untracked.slice(0, MAX_LISTED_UNTRACKED) };
   }
@@ -246,13 +283,14 @@ export function generateConvergence(query, options = {}) {
     commit,
     subject,
     convergence,
-    subScores: data.subScores,
+    subScores,
     changedFiles,
     confirmedDirect,
     confirmedRelated,
     inferredRelated: inferredRelated.map((entry) => entry.file),
     unconfirmedCandidates,
     missedChangedFiles,
+    contract: declared?.tip,
   });
 
   data.tokenEstimate = { fullJson: estimateTokens(data) };
@@ -262,8 +300,8 @@ export function generateConvergence(query, options = {}) {
 /**
  * @typedef {Object} InferredFile
  * @property {string} file
- * @property {"owner-sibling" | "owner-test" | "owner-import" | "owner-changelog" | "owner-test-data" | "owner-doc"} rule
- * @property {string} anchor the confirmed file that brought `file` into scope
+ * @property {"owner-sibling" | "owner-test" | "owner-import" | "owner-changelog" | "owner-test-data" | "owner-doc" | "request-word" | "request-module" | "request-config" | "owner-module" | "scope-import" | "scope-test" | "scope-doc"} rule
+ * @property {string} anchor the file, or for `request-word` the word, that brought `file` into scope
  */
 
 /**
@@ -366,6 +404,158 @@ export function inferInScopeFiles({ confirmedDirect, confirmedRelated, candidate
   }
 
   return inferred.sort((left, right) => left.file.localeCompare(right.file));
+}
+
+// The flags a file may not bring into scope on a neighbour's say-so. A
+// controller beside a declared service is ordinary fan-out; an auth or payment
+// file beside an unrelated owner is exactly the change a contract should name.
+const SEVERE_RISK_FLAGS = [RISK_FLAGS.authSecurity, RISK_FLAGS.moneyFlow];
+
+/** @param {string} file @param {string} anchor */
+function addsSevereRisk(file, anchor) {
+  if (isSecretPath(file)) return true;
+  const anchored = riskFlagsFor(anchor);
+  return riskFlagsFor(file).some((flag) => SEVERE_RISK_FLAGS.includes(flag) && !anchored.includes(flag));
+}
+
+const TEMPLATE_FILE = /\.(example|sample|template|dist)$/i;
+
+/**
+ * What a declared intent covers beyond the files it lists. Applied only under
+ * a scope contract, after `inferInScopeFiles`, to the changed files that are
+ * still unaccounted for:
+ *
+ * - `request-word`: the path, without its extension, carries one of the
+ *   request's distinctive words (`declared.terms`): `docs/hubspot-crm-sync.md`
+ *   under "hubspot: …". The request named it, so no risk check applies.
+ * - `request-module`: the file is under a directory the request names
+ *   outright (`declared.modules`): `src/user/` under "user: …".
+ * - `request-config`: a configuration or data file (JSON, YAML, TOML, a
+ *   snapshot, a script) whose added lines carry one of those words: the flag
+ *   the feature ships behind, the workflow step that runs it. Its path says
+ *   nothing, so its content has to.
+ * - `owner-module`: the file sits in, or under, the directory of a declared
+ *   owner, changed or not. A directory at the repository root or one level
+ *   down (`src`) is a tree, not a module, and anchors nothing.
+ * - `scope-import`: the file imports, or is imported by, a changed file that
+ *   is already in scope, where the imported side has few importers. An edge
+ *   into a module half the repository imports says nothing about this change.
+ * - `scope-test`: a test that covers, or imports, a file in scope.
+ * - `scope-doc`: documentation, or a template such as `.env.example`, changed
+ *   alongside code that is in scope.
+ *
+ * `owner-module` and `scope-import` never bring in an auth or payment path
+ * their anchor is not itself: that file stays undeclared and needs a reason.
+ * The import and test rules repeat until nothing more joins.
+ * @param {{ declared: { owners: string[], terms?: string[], modules?: string[] }, inScope: string[], candidates: string[], imports: { edges: Map<string, Set<string>>, importers: Map<string, number> }, addedLines?: Map<string, string[]> }} input
+ * @returns {InferredFile[]}
+ */
+export function inferDeclaredScope({ declared, inScope, candidates, imports, addedLines = new Map() }) {
+  /** @type {InferredFile[]} */
+  const inferred = [];
+  const scope = new Set(inScope);
+  const pending = new Set([...candidates].filter((file) => !isSecretPath(file)).sort());
+  /** @param {string} file @param {InferredFile["rule"]} rule @param {string} anchor */
+  const admit = (file, rule, anchor) => {
+    inferred.push({ file, rule, anchor });
+    scope.add(file);
+    pending.delete(file);
+  };
+
+  const terms = new Set(declared.terms ?? []);
+  if (terms.size) {
+    for (const file of [...pending]) {
+      const word = pathScopeTokens(file).find((token) => terms.has(token));
+      if (word) admit(file, "request-word", word);
+    }
+  }
+  const named = [...(declared.modules ?? [])].sort();
+  for (const file of [...pending]) {
+    const directory = named.find((module) => file.startsWith(`${module}/`));
+    if (directory) admit(file, "request-module", directory);
+  }
+  if (terms.size) {
+    for (const file of [...pending]) {
+      if (!CONFIG_FILE.test(file) || isDocPath(file)) continue;
+      const word = scopeTokens((addedLines.get(file) ?? []).join("\n")).find((token) => terms.has(token));
+      if (word) admit(file, "request-config", word);
+    }
+  }
+
+  const modules = [...new Set(declared.owners)].filter((owner) => path.posix.dirname(owner).split("/").length >= 2).sort();
+  for (const file of [...pending]) {
+    const anchor = modules.find((owner) => file.startsWith(`${path.posix.dirname(owner)}/`) && !addsSevereRisk(file, owner));
+    if (anchor) admit(file, "owner-module", anchor);
+  }
+
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const file of [...pending]) {
+      const sources = [...scope].filter((source) => !isTestFilePath(source) && !isDocPath(source)).sort();
+      const connected = sources.filter((source) => specificEdge(imports, file, source) || specificEdge(imports, source, file));
+      if (isTestFilePath(file)) {
+        const anchor = connected[0] ?? sources.find((source) => testCovers(file, source));
+        if (anchor) admit(file, "scope-test", anchor);
+        grew ||= Boolean(anchor);
+        continue;
+      }
+      if (isDocPath(file)) continue;
+      const anchor = connected.find((source) => !addsSevereRisk(file, source));
+      if (anchor) admit(file, "scope-import", anchor);
+      grew ||= Boolean(anchor);
+    }
+  }
+
+  const code = [...scope].filter((file) => !isDocPath(file) && !isTestFilePath(file)).sort()[0];
+  if (code) {
+    for (const file of [...pending]) {
+      if (isDocPath(file) || TEMPLATE_FILE.test(file)) admit(file, "scope-doc", code);
+    }
+  }
+  return inferred;
+}
+
+const CONFIG_FILE = /(\.(json|ya?ml|toml|ini|env|snapshot|snap|sh|bash|mjs|cjs)|(^|\/)\.[^/.]+)$/i;
+
+// More importers than this and a file is shared infrastructure: importing it,
+// or being imported by it, relates a file to half the repository.
+const HUB_IMPORTERS = 5;
+
+/**
+ * Whether `from` imports `to` and `to` is specific enough for that to mean
+ * something.
+ * @param {{ edges: Map<string, Set<string>>, importers: Map<string, number> }} imports
+ * @param {string} from
+ * @param {string} to
+ */
+function specificEdge(imports, from, to) {
+  return Boolean(imports.edges.get(from)?.has(to)) && (imports.importers.get(to) ?? 0) <= HUB_IMPORTERS;
+}
+
+/**
+ * Import edges among the changed files, from the code map of the tree under
+ * review: for each changed file, the changed files it imports, and for every
+ * file how many files import it.
+ * @param {string[]} changedFiles
+ * @param {any[]} mapFiles
+ * @returns {{ edges: Map<string, Set<string>>, importers: Map<string, number> }}
+ */
+function importEdges(changedFiles, mapFiles) {
+  const changed = new Set(changedFiles);
+  const { importers } = importDegrees(mapFiles);
+  /** @type {Map<string, Set<string>>} */
+  const edges = new Map();
+  for (const file of mapFiles) {
+    if (!changed.has(file.path)) continue;
+    /** @type {Set<string>} */
+    const targets = new Set();
+    for (const specifier of file.imports ?? []) {
+      const target = resolveImportSpecifier(file.path, specifier, changed);
+      if (target && target !== file.path) targets.add(target);
+    }
+    if (targets.size) edges.set(file.path, targets);
+  }
+  return { edges, importers };
 }
 
 const IMPORT_SPECIFIERS = [/\bfrom\s+["']([^"']+)["']/g, /\bimport\s+["']([^"']+)["']/g, /\b(?:require|import)\(\s*["']([^"']+)["']\s*\)/g];
@@ -495,6 +685,45 @@ function testSubjectStem(file) {
 }
 
 /**
+ * @param {unknown} value
+ * @returns {{ tip: string, owners: string[], related: string[], terms: string[], modules: string[] } | null}
+ */
+function normalizeDeclaredScope(value) {
+  if (value === undefined || value === null) return null;
+  const scope = /** @type {any} */ (value);
+  const isFiles = (/** @type {unknown} */ list) => Array.isArray(list) && list.every((item) => typeof item === "string" && item.length > 0);
+  if (typeof scope !== "object" || !/^[0-9a-f]{64}$/.test(String(scope.tip ?? "")) || !isFiles(scope.owners) || !isFiles(scope.related)) {
+    throw new Error("converge received an invalid declared scope");
+  }
+  if ((scope.terms !== undefined && !isFiles(scope.terms)) || (scope.modules !== undefined && !isFiles(scope.modules))) {
+    throw new Error("converge received an invalid declared scope");
+  }
+  return { tip: scope.tip, owners: [...scope.owners], related: [...scope.related], terms: [...(scope.terms ?? [])], modules: [...(scope.modules ?? [])] };
+}
+
+/**
+ * The comparison `validateChangedFiles` makes against a live prediction, made
+ * against a declared scope instead. Nothing is advisory under a contract: a
+ * changed file was declared or it was not.
+ * @param {string[]} changedFiles
+ * @param {{ owners: string[], related: string[] }} declared
+ */
+function compareWithDeclared(changedFiles, declared) {
+  const owners = new Set(declared.owners);
+  const related = new Set(declared.related);
+  const changed = new Set(changedFiles);
+  return {
+    changedFiles,
+    confirmedDirect: changedFiles.filter((file) => owners.has(file)),
+    confirmedRelated: changedFiles.filter((file) => !owners.has(file) && related.has(file)),
+    unconfirmedCandidates: declared.owners.filter((file) => !changed.has(file)),
+    missedChangedFiles: changedFiles.filter((file) => !owners.has(file) && !related.has(file)),
+    /** @type {string[]} */
+    advisoryChangedFiles: [],
+  };
+}
+
+/**
  * Deterministic receipt over a canonical, timestamp-free payload. Same inputs →
  * same id, so a CI step (or a human) can recompute and verify it.
  * @param {Record<string, any>} payload
@@ -525,6 +754,9 @@ export function makeReceipt(payload) {
   // Present only when a file was inferred into scope, so a payload without
   // inference keeps the exact canonical bytes it had before the rule existed.
   if (payload.inferredRelated?.length) canonical.inferredRelated = [...payload.inferredRelated].sort();
+  // Present only when the diff was held against a declared intent, so the
+  // receipt names the contract it was measured under.
+  if (payload.contract) canonical.contract = String(payload.contract);
   // Subject-aware receipts are v2. When no subject is supplied, the canonical
   // v1 payload remains byte-for-byte compatible with existing receipt IDs.
   if (subject) {
@@ -968,19 +1200,34 @@ function riskWeightFor(file) {
 }
 
 /**
- * @param {{ grounded: boolean, unconfirmedCandidates: string[], missedChangedFiles: string[], advisoryChangedFiles?: string[], riskyDrift: {file: string}[], excludedUntracked?: string[] }} input
+ * @param {{ grounded: boolean, unconfirmedCandidates: string[], missedChangedFiles: string[], advisoryChangedFiles?: string[], riskyDrift: {file: string}[], excludedUntracked?: string[], contract?: boolean }} input
  * @returns {string[]}
  */
-function buildRecommendations({ grounded, unconfirmedCandidates, missedChangedFiles, advisoryChangedFiles = [], riskyDrift, excludedUntracked = [] }) {
+function buildRecommendations({
+  grounded,
+  unconfirmedCandidates,
+  missedChangedFiles,
+  advisoryChangedFiles = [],
+  riskyDrift,
+  excludedUntracked = [],
+  contract = false,
+}) {
   /** @type {string[]} */
   const recs = [];
   if (!grounded) {
-    recs.push("The task did not ground to any predicted owner files; rephrase it or run `solumbe impact` to check grounding before trusting this score.");
+    recs.push(
+      "The task did not ground to any predicted owner files, so convergence is inconclusive: there is no score. Rephrase it to name the files, symbols or feature it changes, or run `solumbe impact` to check grounding.",
+    );
     if (advisoryChangedFiles.length) {
-      recs.push(
-        `Changed files were ranked only as advisory leads, never as owners: ${formatList(advisoryChangedFiles)} — this is why the score reports no coverage rather than scope drift.`,
-      );
+      recs.push(`Changed files were ranked only as advisory leads, never as owners: ${formatList(advisoryChangedFiles)}.`);
     }
+    // Nothing was predicted, so no changed file can be called drift. A
+    // risk-sensitive one is still worth naming.
+    if (riskyDrift.length) {
+      recs.push(`Risk-sensitive paths changed: ${formatList(riskyDrift.map((d) => d.file))} — the task did not ground, so nothing shows they were requested.`);
+    }
+    recs.push(...untrackedRecommendation(excludedUntracked));
+    return recs;
   }
   if (riskyDrift.length) {
     recs.push(
@@ -988,22 +1235,35 @@ function buildRecommendations({ grounded, unconfirmedCandidates, missedChangedFi
     );
   }
   if (missedChangedFiles.length) {
-    recs.push(`Unrequested changes (scope drift): ${formatList(missedChangedFiles)} — confirm they belong in this change or split them out.`);
-  }
-  if (unconfirmedCandidates.length) {
-    recs.push(`Predicted owner files were not changed: ${formatList(unconfirmedCandidates)} — verify the change landed in the right place.`);
-  }
-  if (excludedUntracked.length) {
-    const listed = excludedUntracked.slice(0, MAX_LISTED_UNTRACKED);
-    const more = excludedUntracked.length - listed.length;
     recs.push(
-      `Untracked files were not scored: ${formatList(listed)}${more > 0 ? ` and ${more} more` : ""} — \`git add\` the ones that belong to this change, pass --include-untracked, or score a commit exactly with --head.`,
+      contract
+        ? `Changed but never declared: ${formatList(missedChangedFiles)} — amend the intent with the reason they belong (\`solumbe amend\`), or take them out of this change.`
+        : `Unrequested changes (scope drift): ${formatList(missedChangedFiles)} — confirm they belong in this change or split them out.`,
     );
   }
+  if (unconfirmedCandidates.length) {
+    recs.push(
+      `${contract ? "Declared" : "Predicted"} owner files were not changed: ${formatList(unconfirmedCandidates)} — verify the change landed in the right place.`,
+    );
+  }
+  recs.push(...untrackedRecommendation(excludedUntracked));
   if (recs.length === 0) {
     recs.push("Change converges on the stated task with no scope drift. Stamp the receipt on the commit as durable evidence.");
   }
   return recs;
+}
+
+/**
+ * @param {string[]} excludedUntracked
+ * @returns {string[]}
+ */
+function untrackedRecommendation(excludedUntracked) {
+  if (!excludedUntracked.length) return [];
+  const listed = excludedUntracked.slice(0, MAX_LISTED_UNTRACKED);
+  const more = excludedUntracked.length - listed.length;
+  return [
+    `Untracked files were not scored: ${formatList(listed)}${more > 0 ? ` and ${more} more` : ""} — \`git add\` the ones that belong to this change, pass --include-untracked, or score a commit exactly with --head.`,
+  ];
 }
 
 /**
@@ -1012,8 +1272,9 @@ function buildRecommendations({ grounded, unconfirmedCandidates, missedChangedFi
  */
 export function formatConvergenceMarkdown(data) {
   const d = data.drivers;
+  const inconclusive = data.band === INCONCLUSIVE_BAND;
   const lines = [
-    `# Convergence: ${data.convergence}/100 (${data.band})`,
+    inconclusive ? "# Convergence: inconclusive" : `# Convergence: ${data.convergence}/100 (${data.band})`,
     "",
     `Repo: ${data.repo.name}`,
     `Task: "${data.task}"`,
@@ -1022,12 +1283,17 @@ export function formatConvergenceMarkdown(data) {
     `Receipt handle: ${data.receipt.id} (${data.receipt.algorithm})`,
     ...(data.receipt.receiptVersion === 2 ? [`Inputs hash: ${data.receipt.inputsHash}`] : []),
     ...(data.subject ? [`Subject: ${formatReceiptSubject(data.subject)}`] : []),
+    ...(data.contract ? [`Contract: ${data.contract.tip} (the diff is held against the declared intent, not a live prediction)`] : []),
     "",
     "## Sub-scores",
     "",
-    `- Coverage:       ${data.subScores.coverage} (did the intent happen?)`,
-    `- Scope:          ${data.subScores.scope} (did only the intent happen?)`,
-    `- Risk alignment: ${data.subScores.riskAlignment} (did drift land somewhere dangerous?)`,
+    ...(inconclusive
+      ? ["Not measured: the task predicted no owner file, so there is nothing to compare the diff with."]
+      : [
+          `- Coverage:       ${data.subScores.coverage} (did the intent happen?)`,
+          `- Scope:          ${data.subScores.scope} (did only the intent happen?)`,
+          `- Risk alignment: ${data.subScores.riskAlignment} (did drift land somewhere dangerous?)`,
+        ]),
     "",
     "## Drivers",
     "",
@@ -1037,10 +1303,12 @@ export function formatConvergenceMarkdown(data) {
     `- Confirmed related: ${formatList(d.confirmedRelated)}`,
     `- Inferred in scope: ${d.inferredRelated?.length ? d.inferredRelated.map(formatInferred).join(", ") : "none"}`,
     `- Unconfirmed candidates: ${formatList(d.unconfirmedCandidates)}`,
-    `- Missed (scope drift): ${formatList(d.missedChangedFiles)}`,
+    `- ${data.contract ? "Undeclared" : inconclusive ? "Changed, not predicted" : "Missed (scope drift)"}: ${formatList(d.missedChangedFiles)}`,
   ];
   if (d.riskyDrift.length) {
-    lines.push(`- Risky drift: ${d.riskyDrift.map((/** @type {any} */ r) => `${r.file} [${r.flags.join(", ")}]`).join("; ")}`);
+    lines.push(
+      `- ${inconclusive ? "Risk-sensitive changes" : "Risky drift"}: ${d.riskyDrift.map((/** @type {any} */ r) => `${r.file} [${r.flags.join(", ")}]`).join("; ")}`,
+    );
   }
   if (data.untracked?.count) {
     lines.push(`- Untracked (${data.untracked.included ? "scored" : "not scored"}): ${data.untracked.count}`);
@@ -1068,6 +1336,13 @@ const INFERRED_RULE_LABELS = {
   "owner-doc": "documents",
   "owner-changelog": "changelog for",
   "owner-test-data": "test data for",
+  "request-word": "path carries the request's word",
+  "request-module": "under the module the request names,",
+  "request-config": "adds lines carrying the request's word",
+  "owner-module": "in the module of",
+  "scope-import": "import-connected to",
+  "scope-test": "test of",
+  "scope-doc": "documents the change to",
 };
 
 /** @param {InferredFile} entry @returns {string} */

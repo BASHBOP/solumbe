@@ -37,7 +37,10 @@ export const gateCalibrationEngineVersion = "0.1.0";
 const DAY_SECONDS = 86400;
 const VERDICTS = /** @type {const} */ ([STATUS.pass, STATUS.warn, STATUS.fail]);
 // Best first, so the ordering check reads the way the level and tier checks do.
-const BANDS = /** @type {const} */ (["aligned", "partial", "drift"]);
+// `inconclusive` (the request predicted no owner file) is graded beside the
+// three scored bands and stays last: the ordering claims below read the first
+// three by position.
+const BANDS = /** @type {const} */ (["aligned", "partial", "drift", "inconclusive"]);
 
 /**
  * @typedef {object} GateCalibrationOptions
@@ -293,7 +296,7 @@ function gradeRows(graded, windowDays, minSample) {
       convergenceBase.rate,
     ),
   );
-  const bandRates = bands.map((row) => row.rate);
+  const bandRates = bands.slice(0, 3).map((row) => row.rate);
 
   return {
     base,

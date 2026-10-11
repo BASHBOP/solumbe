@@ -283,7 +283,7 @@ test("solumbe calibrate --trial grades a decision log, and says when there is no
 
   const report = cli(["calibrate", root, "--trial", "--log", log, "--no-color"]);
   assert.match(report.stdout, /CHECK TRIAL/);
-  assert.match(cli(["help"]).stdout, /calibrate <repo> --trial/);
+  assert.match(cli(["help", "--all"]).stdout, /calibrate <repo> --trial/);
 
   const off = cli(["calibrate", root, "--trial"], { SOLUMBE_CHECK_LOG: "off" });
   assert.equal(off.status, 1);

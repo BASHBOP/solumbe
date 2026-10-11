@@ -50,6 +50,8 @@ const commandHandlers = {
   ax: handleAx,
   route: handleRoute,
   converge: handleConverge,
+  declare: handleDeclare,
+  amend: handleAmend,
   attest: handleAttest,
   calibrate: handleCalibrate,
   regret: handleRegret,
@@ -753,6 +755,58 @@ async function handleConverge(parsed) {
   });
 }
 
+/**
+ * `declare "<request>" [--path repo]` or `declare <repo> "<request>"`: record
+ * the files the request is expected to touch, before the edit.
+ * @param {CliArgs} parsed
+ */
+async function handleDeclare(parsed) {
+  const { DEFAULT_INTENT_PATH, declareIntent, formatIntentMarkdown, intentRoot, writeIntent } = await import("./lib/intent.js");
+  let repoPath;
+  let request;
+  if (parsed.flags.path) {
+    repoPath = parsed.flags.path;
+    request = parsed.positionals.join(" ").trim();
+  } else if (parsed.positionals.length >= 2) {
+    repoPath = parsed.positionals[0];
+    request = parsed.positionals.slice(1).join(" ").trim();
+  } else {
+    repoPath = ".";
+    request = parsed.positionals.join(" ").trim();
+  }
+  const intent = declareIntent(request, { path: repoPath, top: parsed.flags.top ? Number(parsed.flags.top) : undefined });
+  const file = writeIntent(intentRoot(repoPath), intent, typeof parsed.flags.out === "string" ? parsed.flags.out : DEFAULT_INTENT_PATH);
+
+  if (parsed.flags.json) {
+    printJson({ ok: true, path: file, intent });
+    return;
+  }
+  printText(formatIntentMarkdown(intent));
+  printText(`\nDeclared intent written: ${file}`);
+  printText("Gate the change against it with `solumbe gate . --staged --intent <file>`.");
+}
+
+/**
+ * `amend <file...> --reason "<why>" [--path repo] [--intent file]`: add files
+ * to the declared intent, with the reason they belong to the change.
+ * @param {CliArgs} parsed
+ */
+async function handleAmend(parsed) {
+  const { DEFAULT_INTENT_PATH, amendIntent, formatIntentMarkdown, intentRoot, readIntent, writeIntent } = await import("./lib/intent.js");
+  const root = intentRoot(typeof parsed.flags.path === "string" ? parsed.flags.path : ".");
+  const source = typeof parsed.flags.intent === "string" ? parsed.flags.intent : DEFAULT_INTENT_PATH;
+  const reason = typeof parsed.flags.reason === "string" ? parsed.flags.reason : "";
+  const intent = amendIntent(readIntent(root, source), parsed.positionals, reason);
+  const file = writeIntent(root, intent, source);
+
+  if (parsed.flags.json) {
+    printJson({ ok: true, path: file, intent });
+    return;
+  }
+  printText(formatIntentMarkdown(intent));
+  printText(`\nAmended intent written: ${file}`);
+}
+
 /** @param {CliArgs} parsed */
 async function handlePass(parsed) {
   const { evaluateLocal, formatPassMarkdown, formatPassOutcome, formatPassTerminal } = await import("./lib/pass-local.js");
@@ -768,6 +822,7 @@ async function handlePass(parsed) {
       request: parsed.flags.request,
       minConvergence: parsed.flags.min_convergence,
       receipt: parsed.flags.receipt,
+      intent: parsed.flags.intent,
       staged: parsed.flags.staged,
       runValidation: parsed.flags.run_validation,
     })
@@ -817,6 +872,7 @@ async function handlePassPr(parsed) {
       request: parsed.flags.request,
       minConvergence: parsed.flags.min_convergence,
       receipt: parsed.flags.receipt,
+      intent: parsed.flags.intent,
     })
   );
   noteResult(data);
@@ -849,12 +905,21 @@ async function handlePassPr(parsed) {
  * @param {CliArgs} parsed
  */
 async function handleAttest(parsed) {
-  const { appendAttestation, formatAttested, formatVerify, resolveLedgerPath, verifyLedger } = await import("./lib/attest.js");
+  const { appendAttestation, formatAttested, formatVerify, loadAttestKey, postReceiptStatus, readLedger, resolveLedgerPath, verifyLedger } =
+    await import("./lib/attest.js");
   const repoPath = parsed.flags.path ?? parsed.positionals[0] ?? ".";
   const ledgerPath = resolveLedgerPath({ ledger: parsed.flags.ledger, path: repoPath });
+  /** @param {unknown} flag @param {string[]} names the environment variables to fall back to */
+  const keySource = (flag, names) => (typeof flag === "string" ? flag : names.map((name) => process.env[name]).find(Boolean));
+  // The private key signs a new record; its public half checks the ledger
+  // when no public key was given.
+  const signingKey = loadAttestKey(keySource(parsed.flags.sign_key, ["SOLUMBE_ATTEST_KEY", "SOLUMBE_ATTEST_KEY_PEM"]));
+  const publicKey =
+    loadAttestKey(keySource(parsed.flags.public_key, ["SOLUMBE_ATTEST_PUBLIC_KEY", "SOLUMBE_ATTEST_PUBLIC_KEY_PEM"]), { asPublic: true }) ??
+    (signingKey ? loadAttestKey(signingKey.export({ type: "pkcs8", format: "pem" }).toString(), { asPublic: true }) : null);
 
   if (parsed.flags.verify) {
-    const result = verifyLedger(ledgerPath);
+    const result = verifyLedger(ledgerPath, { publicKey, requireSignature: Boolean(parsed.flags.require_signature) });
     if (!result.ok) process.exitCode = 1;
     if (parsed.flags.json) {
       printJson(result);
@@ -862,11 +927,49 @@ async function handleAttest(parsed) {
     }
     printText(formatVerify(result));
     const broken = result.chain.find((row) => !row.valid);
+    const badSignature = result.chain.find((row) => row.signature === "invalid");
+    const unsigned = result.chain.find((row) => row.signature === "unsigned");
     printClose(
       parsed,
       result.ok
         ? { status: "verified" }
-        : { status: "not-verified", detail: broken ? `record #${broken.seq} does not match its hash` : "the ledger chain is broken" },
+        : {
+            status: "not-verified",
+            detail: broken
+              ? `record #${broken.seq} does not match its hash`
+              : badSignature
+                ? `record #${badSignature.seq} was not signed by the key given`
+                : unsigned
+                  ? `record #${unsigned.seq} carries no signature`
+                  : "the ledger chain is broken",
+          },
+    );
+    return;
+  }
+
+  // `attest --status` publishes a record that is already in the ledger as a
+  // commit status on the commit it attests.
+  if (parsed.flags.status) {
+    const rows = readLedger(ledgerPath);
+    const wanted = typeof parsed.flags.merge === "string" ? parsed.flags.merge : "";
+    const record = wanted ? rows.find((row) => row.mergeSha === wanted || row.mergeSha.startsWith(wanted)) : rows[rows.length - 1];
+    if (!record) throw new Error(wanted ? `no record for ${wanted} in ${ledgerPath}` : `${ledgerPath} holds no record to publish`);
+    const result = postReceiptStatus(record, {
+      repo: typeof parsed.flags.repo === "string" ? parsed.flags.repo : undefined,
+      targetUrl: typeof parsed.flags.target_url === "string" ? parsed.flags.target_url : undefined,
+      cwd: String(repoPath),
+      dryRun: Boolean(parsed.flags.dry_run),
+    });
+    if (result.error) process.exitCode = 1;
+    if (parsed.flags.json) {
+      printJson({ ok: !result.error, ...result });
+      return;
+    }
+    const where = `${result.repo ?? "the repository"}@${result.sha.slice(0, 7)}`;
+    printText(
+      result.error
+        ? `Could not publish ${result.status.context} on ${where}: ${result.error}`
+        : `${result.posted ? "Published" : "Would publish"} ${result.status.context} on ${where}: ${result.status.state} · ${result.status.description}`,
     );
     return;
   }
@@ -883,13 +986,14 @@ async function handleAttest(parsed) {
     pr: parsed.flags.pr === undefined ? null : String(parsed.flags.pr),
     author: parsed.flags.author === undefined ? undefined : String(parsed.flags.author),
     committed: parsed.flags.committed === undefined ? null : String(parsed.flags.committed),
+    signingKey,
   });
   if (parsed.flags.json) {
     printJson({ ok: true, ledger: ledgerPath, record });
     return;
   }
   printText(formatAttested(record));
-  const reread = verifyLedger(ledgerPath);
+  const reread = verifyLedger(ledgerPath, { publicKey });
   printClose(
     parsed,
     reread.ok && reread.tip === record.recordHash
@@ -1060,6 +1164,7 @@ async function handleReview(parsed) {
     governance,
     minConvergence: parsed.flags.min_convergence,
     receipt: parsed.flags.receipt,
+    intent: parsed.flags.intent,
     impactTop: parsed.flags.top,
   });
   noteResult(data);
@@ -1940,22 +2045,28 @@ function writeMermaid(parsed, diagram, label) {
  * @returns {void}
  */
 function handleHelp(_parsed) {
-  printHelp();
+  const all = Boolean(_parsed?.flags?.all);
+  printHelp({ all });
   // v2 supplement: the canonical merge-gate command plus the canonical-vs-legacy
   // mapping. The base usage block lives in output.js; this keeps the v2 surface
-  // discoverable without rewriting it.
+  // discoverable without rewriting it. The first page carries only the mapping.
+  const v2 = all
+    ? [
+        "Merge gate (v2):",
+        "  solumbe gate [repo | --path repo] [--base ref] [--head ref | --staged] [--run-validation] [--policy x] [--governance x] [--request text] [--min-convergence n] [--receipt hash|file] [--intent file] [--json]   # local gate",
+        "  solumbe gate --pr <selector> [repo | --path repo] [--policy x] [--governance x] [--request text] [--min-convergence n] [--receipt hash|file] [--intent file] [--json]            # GitHub PR gate",
+        "  solumbe workspace-gate <repo...> [--base ref] [--run-validation] [--policy x] [--governance x] [--request text] [--json]                           # one staged receipt across repositories",
+        "",
+        "Evaluation gates (v2):",
+        "  solumbe eval --accuracy [--corpus path] [--json] [--out file]   # labeled retrieval + risk corpus; non-zero exit below thresholds",
+        "  solumbe eval --harness [--corpus path] [--json] [--out file]    # run inferred install/test/typecheck/build commands in isolated fixtures",
+        "  solumbe eval --gate-effectiveness [--corpus path] [--json] [--out file] # assert gate verdicts and deterministic reasons in isolated Git fixtures",
+        "",
+      ]
+    : [];
   printText(
     [
-      "Merge gate (v2):",
-      "  solumbe gate [repo | --path repo] [--base ref] [--head ref | --staged] [--run-validation] [--policy x] [--governance x] [--request text] [--min-convergence n] [--receipt hash|file] [--json]   # local gate",
-      "  solumbe gate --pr <selector> [repo | --path repo] [--policy x] [--governance x] [--request text] [--min-convergence n] [--receipt hash|file] [--json]            # GitHub PR gate",
-      "  solumbe workspace-gate <repo...> [--base ref] [--run-validation] [--policy x] [--governance x] [--request text] [--json]                           # one staged receipt across repositories",
-      "",
-      "Evaluation gates (v2):",
-      "  solumbe eval --accuracy [--corpus path] [--json] [--out file]   # labeled retrieval + risk corpus; non-zero exit below thresholds",
-      "  solumbe eval --harness [--corpus path] [--json] [--out file]    # run inferred install/test/typecheck/build commands in isolated fixtures",
-      "  solumbe eval --gate-effectiveness [--corpus path] [--json] [--out file] # assert gate verdicts and deterministic reasons in isolated Git fixtures",
-      "",
+      ...v2,
       "Canonical vs legacy commands:",
       "  gate                 canonical merge gate; `pass` (local) and `pass-pr` (PR) remain as legacy aliases",
       "  review               canonical composite verdict (impact + review context + gate)",

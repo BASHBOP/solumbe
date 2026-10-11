@@ -48,7 +48,16 @@ Coverage = predictedDirect > 0 ? 100 * confirmedDirect / predictedDirect : 0
 ```
 
 Share of the task's predicted owner files that were actually changed. A task that grounds to
-no predicted files is unmeasurable; Coverage is 0 and a recommendation says so.
+no predicted file is unmeasurable: the result is `inconclusive` (3.4), with no Coverage at all.
+
+Owners are predicted from the request's words first: the paths, symbols, exports and routes
+that match it. When no file clears that bar, the import graph is asked. A file is then an
+owner when a word of the request is its name (`util` for `src/lib/util.js`) or a symbol it
+exports, no other source file shares that name or export, and it has at least one import edge,
+so it is a module the repository uses and not a stray file. Candidates are ordered by how many
+files import them, and the lexical score only breaks ties. Words that say what to do or name
+code in general (`refactor`, `index`, `test`) anchor nothing. The file's reasons say
+"grounded in the import graph" and which word and edge count did it.
 
 ### 3.2 Scope (did only intent happen?)
 
@@ -116,6 +125,15 @@ secret 30 · auth/security 25 · money flow 25 · data model 15 · contract 15
 
 `aligned` ≥ 80 · `partial` ≥ 50 · `drift` < 50.
 
+A fourth outcome carries no score. When the task predicts no owner file (`drivers.grounded` is
+`false`), there is nothing to measure the diff against: coverage, scope and drift are all
+relative to a prediction that does not exist. The result is `band: "inconclusive"` with
+`convergence: null` and every sub-score `null`. Before engine 0.6.0 such a task scored about
+20 (risk alignment alone) and banded as `drift`, the same for a correct change and an
+unrelated one. The drivers still list the changed files, as "changed, not predicted" rather
+than as drift, and name any that sit on a risk-sensitive path. The receipt is computed as
+usual, so an inconclusive result can still be recomputed and verified.
+
 ### 3.5 What is scored
 
 | Mode | Changed files | Receipt |
@@ -154,7 +172,9 @@ changelog and test data to that inference, so a `0.2.0` receipt does not recompu
 `0.3.0` either. Engine `0.4.0` added the rules that read added lines (`owner-import`,
 `owner-doc`, and tests by import), so a `0.3.0` receipt does not recompute under `0.4.0`.
 Engine `0.5.0` follows root-alias imports in those rules, so a `0.4.0` receipt does not
-recompute under `0.5.0`. Re-issue it with the current engine.
+recompute under `0.5.0`. Engine `0.6.0` reports an ungrounded task as `inconclusive` with no
+score, so a `0.5.0` receipt does not recompute under `0.6.0`. Re-issue it with the current
+engine.
 
 Calls without an exact subject retain the byte-for-byte v1 canonical payload and receipt
 shape for compatibility. A subject-bound receipt uses v2 and adds both of these fields to
@@ -197,7 +217,7 @@ full 64-character `inputsHash`. The receipt is hashed but not yet cryptographica
 ```jsonc
 {
   "ok": true,
-  "convergenceEngineVersion": "0.5.0",
+  "convergenceEngineVersion": "0.6.0",
   "task": "add Stripe refunds",
   "base": "origin/main",
   "head": "HEAD",
@@ -289,6 +309,14 @@ than reporting a bare hash mismatch. With `--head`, the gate's changed-path, ris
 convergence checks all read the head commit's tree. Receipt enforcement is opt-in so existing
 gate verdicts remain backward-compatible.
 
+An `inconclusive` result has no score to hold against a floor. With a `--min-convergence`
+above 0 the `Convergence` check reports `WARN` and says the request did not ground; it does
+not report `FAIL`, because the failure would say nothing about the change. A floor of 0 asks
+for no score and passes, and a receipt that does not match fails whether or not the task
+grounded. A pipeline that blocks only on `FAIL` therefore lets an ungrounded request through
+with a warning: block on `WARN` as well, or name the files or symbols in the request, where
+that matters.
+
 This is an exact **convergence receipt**, not yet a complete Gate attestation. Release checks,
 optional local analyzers, base-branch CODEOWNERS, GitHub review state, and signer identity are
 not all bound into this envelope yet. In staged mode, `solumbe gate --run-validation` can produce
@@ -298,11 +326,150 @@ outcomes plus output hashes without retaining raw output. A linked local `node_m
 when present, is reported as not attested. The Gate still reports every remaining working-tree
 boundary explicitly.
 
-## 9. Open questions
+## 9. Scope contract
+
+The score above predicts the owner files after the edit, from the tree the edit produced. A
+scope contract makes the prediction before the edit and freezes it, so the gate can say
+"touched `src/auth/session.ts`, which was never declared" rather than "78/100". The score
+stays as secondary evidence.
+
+```bash
+solumbe declare . "update the greeting message"        # writes .solumbe/intent.json
+# ... make the change ...
+solumbe gate . --staged --base HEAD --intent .solumbe/intent.json
+solumbe amend src/auth/session.ts --reason "the greeting now outlives the session"
+```
+
+Over MCP no tool is added: `change_impact` with `declare: true` returns the same record under
+`intent` and writes nothing, `change_impact` with `intent` and `amend: { files, reason }`
+returns the amended record, and `review_gate`, `review_verdict` and `convergence_score` take
+it as `intent` (the record, its JSON, or a path).
+
+**The record** (`solumbe.intent/v1`) holds the request, the commit it was declared at, the
+impact engine version, the declared files (`owners` and `supporting`, the required owners and
+predictable supporting files `solumbe impact` ranks for the request) and
+`dirtyAtDeclaration`, the tracked files that already differed from `HEAD`, so a contract
+written after the edit began says so. It also holds what the request's own words scope:
+
+- `terms`: the words of the request that few tracked paths carry (at most 20 paths, or 3% of
+  the repository if that is more). `hubspot` in an events platform is on a dozen paths and is
+  a term; `event` is on hundreds and is not. A word no path carries yet is kept, since it
+  names what the change adds. Words are compared in the singular, so `fees` meets
+  `fee-calculator.ts`. Three things are never terms: a tree name (`src`, `lib`, `tests`), a
+  file extension (`ts`), and the parts of a tracked path written out in the request.
+  "update greet in src/index.ts" names that one file, which the prediction holds, and
+  scopes neither `src` nor every `index`.
+- `modules`: the directories whose whole name is a word of the request: `src/user` for
+  "user: …", not `src/user-settings`. A directory holding more than a fifth of the
+  repository, a tree name (`src`, `lib`, `tests`, …) or a dot-directory names nothing, and a
+  request that names more than six directories names none.
+
+```
+contractHash   = sha256( canonical({ schema, request, head, impactEngineVersion,
+                                     owners, supporting, dirtyAtDeclaration,
+                                     terms, modules }) )
+amendment.hash = sha256( prevHash + canonical({ seq, files, reason }) )
+```
+
+`terms` and `modules` enter the hash only when the record carries them, so a record declared
+before they existed verifies as it did.
+
+`prevHash` is the previous amendment's hash, or `contractHash` for the first. Editing the
+request, a declared file, or any amendment's files or reason breaks the chain, and the gate
+refuses a record that does not verify. `declaredAt` and `amendedAt` are outside the hashes:
+declaring the same request on the same tree gives the same contract.
+
+**The `Scope contract` check** runs when the gate is given an intent. Each changed file is one
+of four things:
+
+| Bucket | Meaning |
+| --- | --- |
+| declared | An owner or supporting file in the record. |
+| amended | Named in an amendment, which carries its reason. |
+| implied | Placed in scope by one of the rules in 3.2, anchored on a declared or amended file (its test, a new file beside it, a file whose added lines import it, the changelog entry), or by one of the declaration rules below. |
+| undeclared | None of the above. The check fails and names the file, with its risk flags when it sits on a risk-sensitive path. |
+
+A declared owner that was not changed is listed and does not fail the check. A gate given a
+`--request` other than the declared one fails, since it would be holding the change against a
+different promise. With an intent, `--min-convergence` and `--receipt` measure against the
+declared files too, and the convergence receipt carries the contract hash, so it names the
+contract it was scored under. A request that predicts no owner file declares no file: a
+changed file is then in scope only through the request's own words (the first three rules
+below) or an amendment, which is the explicit way to name files by path.
+
+**What a declaration implies.** A real change is wider than the files a request predicts: the
+controller beside the service, the feature flag, the workflow step, the doc. Under a contract,
+after the rules in 3.2, seven more rules place a changed file in scope. They run in this
+order, and each implied file is reported with its rule and anchor:
+
+| Rule | A changed file is in scope when |
+| --- | --- |
+| `request-word` | its path, without the extension, carries one of the record's `terms`: `docs/hubspot-crm-sync.md` under "hubspot: …". |
+| `request-module` | it is under one of the record's `modules`: `src/user/dto/me.dto.ts` under "user: …". |
+| `request-config` | it is a configuration or data file (JSON, YAML, TOML, INI, a dotfile, a snapshot, a shell or `.mjs`/`.cjs` script) and the lines the change adds to it carry one of the `terms`: the flag the feature ships behind, the workflow step that runs it. |
+| `owner-module` | it sits in, or under, the directory of a declared owner, changed or not. A directory at the repository root or one level down (`src`) is a tree and anchors nothing. |
+| `scope-import` | it imports, or is imported by, a changed source file already in scope, and the imported side has at most five importers. An edge into a module half the repository imports relates nothing. |
+| `scope-test` | it is a test that imports, or is named for, a source file in scope. |
+| `scope-doc` | it is documentation, or a template such as `.env.example`, and at least one source file is in scope. Documentation alone joins nothing. |
+
+`scope-import` and `scope-test` repeat until nothing more joins, so a chain of imports from a
+declared file is followed through the change. Import edges come from the code map of the tree
+under review, and only edges between changed files count.
+
+Two limits keep the rules from waving a change through:
+
+- A secret path is never implied.
+- `owner-module` and `scope-import` do not bring in a file on an authentication or payment
+  path unless the anchor is on one too. A payment service beside a declared mailer stays
+  undeclared and needs an amendment. The three request rules carry no such limit: the request
+  named the file.
+
+The request rules take the request at its word, and cannot tell a module named on purpose
+from one a sentence happens to mention: "allow one ticket type per guest" names `src/types`
+and `src/guests` as surely as "guests: …" does. A change inside a directory or to
+a path that shares a distinctive word with the request is in scope by definition. What the
+rules hold out is the change that shares none.
+
+These rules widen what a declaration covers and do not change the score without one: a
+`converge` or gate run with no intent applies only the rules in 3.2.
+
+**Measured on a real repository.** `bashbop-api` (a NestJS service, about 1,400 tracked
+files) was replayed commit by commit: the intent is declared from the commit's subject at its
+parent, the commit is gated against it, and then one unrelated change at a time is planted on
+top (an authentication service, a payment service, two plain services, a compose file, a
+workflow) and gated again. A plant counts as caught when the check fails and names it, and a
+plant whose path or module shares a word with the request is skipped, since the rules place
+it in scope by definition.
+
+| | Commits that pass | Changed files undeclared | Planted changes caught |
+| --- | --- | --- | --- |
+| Rules of 3.2 only, 30 most recent commits | 3 of 30 | 153 of 199 | not measured |
+| With the declaration rules, the same 30 (the rules were tuned on these) | 16 of 30 | 36 of 199 | 156 of 157 |
+| Rules of 3.2 only, the 30 commits before those | 5 of 30 | 172 of 219 | 143 of 143 |
+| With the declaration rules, the 30 commits before those (held out, run once) | 15 of 30 | 71 of 219 | 142 of 142 |
+
+The held-out commits were measured once. The repository's own tests then showed that a
+request naming a file turned `src` and `ts` into terms, so tree names, extensions and written
+paths were excluded, and both sets were measured again: every figure above was unchanged.
+
+The one plant that passed was a payment service the declaration itself had listed as a
+supporting file for an unrelated request: a wrong prediction, which no rule here corrects.
+
+About half of real commits still fail, and by design. Their undeclared files are a database
+schema or migration, a feature-flag snapshot whose added lines do not carry the request's
+words, a shared constants or error-dictionary file, or a module the subject line never named
+(a change to how emails format dates that also edits the user and scheduled-task modules).
+Each is a file a reviewer should see a reason for, and `solumbe amend` records one. The figures are
+from one repository with conventional `scope: subject` commit messages; a repository with
+terser subjects will declare less.
+
+What the contract does not prove: that the declared files were the right ones, or that the
+code in them is correct. An agent can amend any file in; the amendment and its reason are what
+a reviewer reads.
+
+## 10. Open questions
 
 - **Weights & risk penalties**: defaults are placeholders; calibrate against known-good and
   known-drifted PRs before locking, then move into `config.js`.
-- **Ungrounded tasks**: Coverage 0 is harsh for a real change with a vague task description;
-  consider a separate `ungrounded` band rather than folding it into `drift`.
 - **Calibration**: tune the score weights and risk penalties against known-good and
   known-drifted PRs before making a default floor part of a policy profile.

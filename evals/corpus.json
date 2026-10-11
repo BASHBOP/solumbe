@@ -3,9 +3,9 @@
   "description": "Labeled evaluation corpus for solumbe retrieval, risk classification, fixture-backed harness command execution, and gate effectiveness. Gate cases initialize an isolated Git repository from a committed base, apply one committed change-set, and assert both the verdict and deterministic check reason. See docs/EVALS.md for how to add a case and how thresholds work.",
   "k": 5,
   "thresholds": {
-    "comment": "Floors set to current-baseline-minus-slack so the suite is green today but a regression trips it. Baseline (2026-10-06): retrieval p@5=0.861 r@5=1.0 mrr=0.979 (25/25); risk accuracy=1.0 (22/22). Aggregate metrics must be >= these floors for exit code 0. The risk floor is 0.96 so that a single failing case (21/22 = 0.955) still trips the gate. Re-record both baseline and floors in docs/EVALS.md after any intentional behavior change.",
+    "comment": "Floors set to current-baseline-minus-slack so the suite is green today but a regression trips it. Baseline (2026-10-10): retrieval p@5=0.833 r@5=1.0 mrr=0.985 (35/35); risk accuracy=1.0 (22/22). The precision floor moved from 0.85 to 0.82 when the Python and Go fixtures were added: their ten cases average p@5=0.767 because the Python queries return unlabeled sibling primaries, and the 25 earlier cases are unchanged at 0.861. tests/cli.test.js asserts the same floor. Aggregate metrics must be >= these floors for exit code 0. The risk floor is 0.96 so that a single failing case (21/22 = 0.955) still trips the gate. Re-record both baseline and floors in docs/EVALS.md after any intentional behavior change.",
     "retrieval": {
-      "precisionAtK": 0.85,
+      "precisionAtK": 0.82,
       "recallAtK": 0.9,
       "mrr": 0.9
     },
@@ -30,7 +30,9 @@
     "gate-node": "evals/fixtures/gate-node",
     "multi-locale-web": "evals/fixtures/multi-locale-web",
     "telemetry-web": "evals/fixtures/telemetry-web",
-    "tool-registry": "evals/fixtures/tool-registry"
+    "tool-registry": "evals/fixtures/tool-registry",
+    "python-orders-api": "evals/fixtures/python-orders-api",
+    "go-inventory-api": "evals/fixtures/go-inventory-api"
   },
   "retrieval": [
     {
@@ -209,6 +211,72 @@
       "query": "fix convergence_score so a renamed test still counts",
       "repoFixture": "tool-registry",
       "expectedPrimary": ["src/lib/converge.js", "src/lib/mcp.js"]
+    },
+    {
+      "name": "py-cancel-order",
+      "query": "cancel an order",
+      "repoFixture": "python-orders-api",
+      "expectedPrimary": ["app/orders/service.py"]
+    },
+    {
+      "name": "py-order-repository-symbol",
+      "query": "OrderRepository",
+      "repoFixture": "python-orders-api",
+      "expectedPrimary": ["app/orders/repository.py"]
+    },
+    {
+      "name": "py-order-routes",
+      "query": "order routes",
+      "repoFixture": "python-orders-api",
+      "expectedPrimary": ["app/orders/routes.py"]
+    },
+    {
+      "name": "py-relative-import-importer",
+      "comment": "invoices.py reaches tax.py only through a relative import (`from .tax import compute_tax`); a change to the tax rate should bring its one caller into the pack.",
+      "query": "change the sales tax rate",
+      "repoFixture": "python-orders-api",
+      "expectedPrimary": ["app/billing/tax.py"],
+      "expectedAnyOf": ["app/billing/invoices.py"]
+    },
+    {
+      "name": "py-absolute-import-importer",
+      "comment": "service.py reaches clock.py only through a package-absolute import (`from app.shared.clock import utc_now`), in another directory with no shared name.",
+      "query": "replace the utc clock",
+      "repoFixture": "python-orders-api",
+      "expectedPrimary": ["app/shared/clock.py"],
+      "expectedAnyOf": ["app/orders/service.py"]
+    },
+    {
+      "name": "go-reserve-stock",
+      "query": "reserve stock for an order",
+      "repoFixture": "go-inventory-api",
+      "expectedPrimary": ["internal/stock/reservation.go"]
+    },
+    {
+      "name": "go-apply-discount-symbol",
+      "query": "ApplyDiscount",
+      "repoFixture": "go-inventory-api",
+      "expectedPrimary": ["internal/pricing/discount.go"]
+    },
+    {
+      "name": "go-server-entrypoint",
+      "query": "where does the server start",
+      "repoFixture": "go-inventory-api",
+      "expectedPrimary": ["cmd/server/main.go"]
+    },
+    {
+      "name": "go-reservation-http-handler",
+      "query": "reservation http handler",
+      "repoFixture": "go-inventory-api",
+      "expectedPrimary": ["internal/httpapi/handler.go"]
+    },
+    {
+      "name": "go-module-import-importer",
+      "comment": "store.go reaches retry.go only through a module-path import (`example.com/inventory/internal/platform`), resolved against go.mod; a change to the backoff should bring its one caller into the pack.",
+      "query": "change the retry backoff",
+      "repoFixture": "go-inventory-api",
+      "expectedPrimary": ["internal/platform/retry.go"],
+      "expectedAnyOf": ["internal/stock/store.go"]
     }
   ],
   "risk": [
