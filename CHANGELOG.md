@@ -16,6 +16,11 @@ This project follows SemVer.
   - `--dry-run` names the path: `would run: codex mcp add solumbe …`, or `would add the [mcp_servers.solumbe] table directly: this Codex CLI has no codex mcp add`.
   - A Codex CLI that has `codex mcp add` is connected through it as before, after the one `--help` call.
   - The fallback writes to `~/.codex/config.toml` and does not read `CODEX_HOME`.
+- **`solumbe install --host` keeps the env of an entry it re-registers.**
+  - Re-running the install replaced a host's `solumbe` entry with a new command and args and no env. On Claude Code that dropped `SOLUMBE_CHECK_MODE`, so the check trial stopped applying to new sessions, and `SOLUMBE_CANVAS_URL`, so tool calls stopped reaching the Canvas. Nothing reported it.
+  - The existing entry's env is now read first and carried onto the new entry unchanged. It is read from the config file for Claude Desktop, Cursor, VS Code, Gemini CLI and Kimi Code CLI, from `~/.claude.json` for Claude Code (or `claude mcp get solumbe` when that file is missing or cannot be parsed), and from `codex mcp list --json` for Codex CLI, or from the `[mcp_servers.solumbe]` table (an inline `env`, `env.KEY` keys or an `env` sub-table) where the install writes `~/.codex/config.toml` directly. A variable the run sets itself, such as the two `--canvas` adds, wins. A fresh install still writes no env.
+  - The summary and `--dry-run` name the variables kept (`keeps env SOLUMBE_CANVAS_URL, SOLUMBE_HOST`) and never print a value, because an env block can hold a key. `--json` carries the names as `keptEnv` on each host result. A command a dry run shows has `<hidden>` in place of each value, and the message for a host CLI that is not on the `PATH` says to run the install again instead of printing a command to run by hand.
+  - When an env cannot be read (a Codex listing that does not parse, a `config.toml` env that is not one-line strings, a Claude Code entry that `claude mcp get` shows at another scope, an `env` that is not an object), that host gets a line under Check saying it was not carried over. When the add fails after the old entry was removed, the line names the variables that entry carried.
 
 ## [4.5.0] - 2026-10-11
 

@@ -38,6 +38,7 @@ const HOST_LABELS = {
  * @property {string} [home]
  * @property {NodeJS.Platform} [platform]
  * @property {string} [appData]
+ * @property {string} [claudeConfigDir] the directory that holds Claude Code's .claude.json
  * @property {(command: string) => boolean} [has] whether a host CLI is on the PATH
  * @property {(command: string, args: string[]) => { ok: boolean, stdout: string, stderr: string }} [run]
  * @property {ServerLaunch} [launch]
@@ -56,8 +57,12 @@ const HOST_LABELS = {
  * @property {string} detail
  * @property {string} [configPath]
  * @property {string} [backupPath]
+ * @property {string[]} [keptEnv] names of the variables carried over from the entry that was replaced, never their values
  * @property {string[]} [warnings]
  */
+
+// An env block can hold a key, so only variable names are ever printed.
+const HIDDEN = "<hidden>";
 
 /**
  * How a host should start the server. GUI hosts (Claude Desktop, Cursor,
@@ -159,6 +164,8 @@ export function installHosts(options, deps = {}) {
   const run = deps.run ?? ((command, args) => runCommand(command, args, { timeout: 30000 }));
   const launch = deps.launch ?? resolveServerLaunch({ platform });
   const dryRun = Boolean(options.dryRun);
+  // Claude Code keeps its user-scope servers here, under CLAUDE_CONFIG_DIR when that is set.
+  const claudeConfig = path.join(deps.claudeConfigDir ?? (process.env.CLAUDE_CONFIG_DIR || home), ".claude.json");
 
   const verify = deps.verify ?? verifyServerLaunch;
   // Prove the exact command every host will run answers an MCP handshake
@@ -179,7 +186,7 @@ export function installHosts(options, deps = {}) {
     const entry = { command: launch.command, args: [...launch.args], ...(Object.keys(env).length ? { env } : {}) };
 
     if (host === "claude-code") {
-      return installClaudeCode(entry, { dryRun, all: options.all, has, run });
+      return installClaudeCode(entry, { dryRun, all: options.all, has, run, configFile: claudeConfig });
     }
     if (host === "codex") {
       return installCodex(entry, { dryRun, all: options.all, has, run, home });
@@ -264,11 +271,16 @@ function installJsonHost(host, config, entry, options) {
   }
 
   const servers = /** @type {Record<string, unknown>} */ (document[config.key] && typeof document[config.key] === "object" ? document[config.key] : {});
-  const desired = config.stdioType ? { type: "stdio", ...entry } : entry;
-  const warnings = staleEntryWarnings(
-    Object.entries(servers).map(([name, value]) => ({ name, value })),
-    label,
-  );
+  const existing = existingEnv(servers[SERVER_NAME]);
+  const { entry: next, keptEnv } = carryEnv(entry, existing.env);
+  const desired = config.stdioType ? { type: "stdio", ...next } : next;
+  const warnings = [
+    ...staleEntryWarnings(
+      Object.entries(servers).map(([name, value]) => ({ name, value })),
+      label,
+    ),
+    ...(existing.unreadable ? [envNotCarried(label, "its env is not a JSON object")] : []),
+  ];
 
   if (JSON.stringify(servers[SERVER_NAME]) === JSON.stringify(desired)) {
     return { ...base, status: "unchanged", detail: "already connected", warnings };
@@ -276,7 +288,7 @@ function installJsonHost(host, config, entry, options) {
 
   const action = servers[SERVER_NAME] ? "replace the existing solumbe entry" : "add a solumbe entry";
   if (options.dryRun) {
-    return { ...base, status: "planned", detail: `would ${action}`, warnings };
+    return { ...base, status: "planned", detail: `would ${action}`, keptEnv, warnings };
   }
 
   /** @type {string | undefined} */
@@ -297,34 +309,141 @@ function installJsonHost(host, config, entry, options) {
     status: "configured",
     detail: `${action === "add a solumbe entry" ? "added" : "replaced"}; restart ${label} to load it`,
     backupPath,
+    keptEnv,
     warnings,
   };
 }
 
 /**
+ * The env an existing entry carries. `unreadable` marks one that is there but
+ * is not an object, so it cannot be carried over.
+ * @param {unknown} value an existing server entry
+ * @returns {{ env: Record<string, string>, unreadable?: boolean }}
+ */
+function existingEnv(value) {
+  const env = value && typeof value === "object" ? /** @type {{ env?: unknown }} */ (value).env : undefined;
+  if (env === undefined || env === null) {
+    return { env: {} };
+  }
+  if (typeof env !== "object" || Array.isArray(env)) {
+    return { env: {}, unreadable: true };
+  }
+  return { env: /** @type {Record<string, string>} */ (env) };
+}
+
+/**
+ * Re-registering a host replaces its entry, so the variables the old entry
+ * carried (a canvas URL, a check mode, a key) go onto the new one unchanged.
+ * A variable this run sets itself wins.
  * @param {{ command: string, args: string[], env?: Record<string, string> }} entry
- * @param {{ dryRun: boolean, all?: boolean, has: (command: string) => boolean, run: NonNullable<HostDeps["run"]> }} options
+ * @param {Record<string, string>} existing
+ * @returns {{ entry: { command: string, args: string[], env?: Record<string, string> }, keptEnv: string[] }}
+ */
+function carryEnv(entry, existing) {
+  const env = { ...existing, ...entry.env };
+  return {
+    entry: Object.keys(env).length ? { ...entry, env } : entry,
+    keptEnv: Object.keys(existing).filter((name) => !(name in (entry.env ?? {}))),
+  };
+}
+
+/**
+ * @param {Record<string, string>} [env]
+ * @returns {Record<string, string>}
+ */
+function hideValues(env) {
+  return Object.fromEntries(Object.keys(env ?? {}).map((name) => [name, HIDDEN]));
+}
+
+/**
+ * @param {string} label
+ * @param {string} why
+ * @returns {string}
+ */
+function envNotCarried(label, why) {
+  return `${label}: could not read an existing ${SERVER_NAME} entry (${why}), so any env it had is not carried over. Add those variables back by hand.`;
+}
+
+/**
+ * @param {string} label
+ * @param {string[]} keptEnv
+ * @returns {string}
+ */
+function envLost(label, keptEnv) {
+  return `${label}: the old ${SERVER_NAME} entry was removed before the add failed. It carried ${keptEnv.join(", ")}; set them again when you add it.`;
+}
+
+/**
+ * The env on Claude Code's user-scope entry. The user config is read first
+ * because its JSON is exact; `claude mcp get` is asked when that file is missing
+ * or cannot be parsed, and its text is trusted only when it shows the user scope.
+ * @param {string} configFile
+ * @param {NonNullable<HostDeps["run"]>} run
+ * @returns {{ env: Record<string, string>, unreadable?: boolean }}
+ */
+function claudeCodeEnv(configFile, run) {
+  try {
+    const document = JSON.parse(fs.readFileSync(configFile, "utf8"));
+    if (document && typeof document === "object" && !Array.isArray(document)) {
+      return existingEnv(document.mcpServers?.[SERVER_NAME]);
+    }
+  } catch {
+    // No readable user config; ask the CLI.
+  }
+  const shown = run("claude", ["mcp", "get", SERVER_NAME]);
+  if (!shown.ok) {
+    // "No MCP server named ..." means there is nothing to carry.
+    return /no mcp server/i.test(`${shown.stdout}${shown.stderr}`) ? { env: {} } : { env: {}, unreadable: true };
+  }
+  const lines = shown.stdout.split(/\r?\n/);
+  if (!lines.some((line) => /^\s*Scope:\s*User\b/.test(line))) {
+    return { env: {}, unreadable: true };
+  }
+  /** @type {Record<string, string>} */
+  const env = {};
+  const start = lines.findIndex((line) => line.trim() === "Environment:");
+  for (const line of start < 0 ? [] : lines.slice(start + 1)) {
+    const match = /^\s+([^\s=]+)=(.*)$/.exec(line);
+    if (!match) {
+      break;
+    }
+    env[match[1]] = match[2];
+  }
+  return { env };
+}
+
+/**
+ * @param {{ command: string, args: string[], env?: Record<string, string> }} entry
+ * @param {{ dryRun: boolean, all?: boolean, has: (command: string) => boolean, run: NonNullable<HostDeps["run"]>, configFile: string }} options
  * @returns {HostResult}
  */
-function installClaudeCode(entry, { dryRun, all, has, run }) {
+function installClaudeCode(entry, { dryRun, all, has, run, configFile }) {
   const base = { host: /** @type {HostId} */ ("claude-code"), label: HOST_LABELS["claude-code"] };
-  const json = JSON.stringify({ type: "stdio", ...entry });
-  const manual = `claude mcp add-json ${SERVER_NAME} '${json}' --scope user`;
   if (!has("claude")) {
     return all
       ? { ...base, status: "skipped", detail: "not found on this machine" }
-      : { ...base, status: "error", detail: `the claude CLI is not on the PATH. Run this once it is: ${manual}` };
+      : { ...base, status: "error", detail: "the claude CLI is not on the PATH. Run this install again once it is." };
   }
+
+  const existing = claudeCodeEnv(configFile, run);
+  const { entry: next, keptEnv } = carryEnv(entry, existing.env);
+  const warnings = existing.unreadable ? [envNotCarried(base.label, `${configFile} and \`claude mcp get ${SERVER_NAME}\``)] : [];
   if (dryRun) {
-    return { ...base, status: "planned", detail: `would run: ${manual}` };
+    const shown = JSON.stringify({ type: "stdio", ...next, ...(next.env ? { env: hideValues(next.env) } : {}) });
+    return { ...base, status: "planned", detail: `would run: claude mcp add-json ${SERVER_NAME} '${shown}' --scope user`, keptEnv, warnings };
   }
   // add-json refuses to overwrite, so clear any old user-scope entry first.
-  run("claude", ["mcp", "remove", SERVER_NAME, "--scope", "user"]);
-  const added = run("claude", ["mcp", "add-json", SERVER_NAME, json, "--scope", "user"]);
+  const removed = run("claude", ["mcp", "remove", SERVER_NAME, "--scope", "user"]);
+  const added = run("claude", ["mcp", "add-json", SERVER_NAME, JSON.stringify({ type: "stdio", ...next }), "--scope", "user"]);
   if (!added.ok) {
-    return { ...base, status: "error", detail: `claude mcp add-json failed: ${(added.stderr || added.stdout).trim()}` };
+    return {
+      ...base,
+      status: "error",
+      detail: `claude mcp add-json failed: ${(added.stderr || added.stdout).trim()}`,
+      warnings: [...warnings, ...(removed.ok && keptEnv.length ? [envLost(base.label, keptEnv)] : [])],
+    };
   }
-  return { ...base, status: "configured", detail: "added at user scope; start a new Claude Code session to load it" };
+  return { ...base, status: "configured", detail: "added at user scope; start a new Claude Code session to load it", keptEnv, warnings };
 }
 
 /**
@@ -334,12 +453,10 @@ function installClaudeCode(entry, { dryRun, all, has, run }) {
  */
 function installCodex(entry, { dryRun, all, has, run, home }) {
   const base = { host: /** @type {HostId} */ ("codex"), label: HOST_LABELS.codex };
-  const envArgs = Object.entries(entry.env ?? {}).flatMap(([key, value]) => ["--env", `${key}=${value}`]);
-  const addArgs = ["mcp", "add", SERVER_NAME, ...envArgs, "--", entry.command, ...entry.args];
   if (!has("codex")) {
     return all
       ? { ...base, status: "skipped", detail: "not found on this machine" }
-      : { ...base, status: "error", detail: `the codex CLI is not on the PATH. Run this once it is: codex ${addArgs.join(" ")}` };
+      : { ...base, status: "error", detail: "the codex CLI is not on the PATH. Run this install again once it is." };
   }
 
   // Asked before anything is run or planned, so a dry run can name the path too.
@@ -350,25 +467,47 @@ function installCodex(entry, { dryRun, all, has, run, home }) {
   const listed = run("codex", ["mcp", "list", "--json"]);
   /** @type {{ name: string, value: unknown }[]} */
   let existing = [];
+  /** @type {ReturnType<typeof existingEnv>} */
+  let own = { env: {}, unreadable: true };
   try {
-    existing = /** @type {{ name: string, transport?: unknown }[]} */ (JSON.parse(listed.stdout)).map((server) => ({
-      name: server.name,
-      value: server.transport,
-    }));
+    const servers = /** @type {{ name: string, transport?: unknown }[]} */ (JSON.parse(listed.stdout));
+    existing = servers.map((server) => ({ name: server.name, value: server.transport }));
+    const mine = servers.find((server) => server.name === SERVER_NAME);
+    // The env sits on the transport, or on the server itself in earlier listings.
+    own = existingEnv(mine?.transport ?? mine);
   } catch {
     // Older Codex builds have no --json listing; stale-entry warnings are best effort.
   }
-  const warnings = staleEntryWarnings(existing, HOST_LABELS.codex, "codex mcp remove");
+  const { entry: next, keptEnv } = carryEnv(entry, own.env);
+  const warnings = [
+    ...staleEntryWarnings(existing, HOST_LABELS.codex, "codex mcp remove"),
+    ...(own.unreadable ? [envNotCarried(base.label, "`codex mcp list --json` did not show it")] : []),
+  ];
+  /** @param {Record<string, string>} env */
+  const addArgs = (env) => [
+    "mcp",
+    "add",
+    SERVER_NAME,
+    ...Object.entries(env).flatMap(([key, value]) => ["--env", `${key}=${value}`]),
+    "--",
+    next.command,
+    ...next.args,
+  ];
 
   if (dryRun) {
-    return { ...base, status: "planned", detail: `would run: codex ${addArgs.join(" ")}`, warnings };
+    return { ...base, status: "planned", detail: `would run: codex ${addArgs(hideValues(next.env)).join(" ")}`, keptEnv, warnings };
   }
-  run("codex", ["mcp", "remove", SERVER_NAME]);
-  const added = run("codex", addArgs);
+  const removed = run("codex", ["mcp", "remove", SERVER_NAME]);
+  const added = run("codex", addArgs(next.env ?? {}));
   if (!added.ok) {
-    return { ...base, status: "error", detail: `codex mcp add failed: ${(added.stderr || added.stdout).trim()}`, warnings };
+    return {
+      ...base,
+      status: "error",
+      detail: `codex mcp add failed: ${(added.stderr || added.stdout).trim()}`,
+      warnings: [...warnings, ...(removed.ok && keptEnv.length ? [envLost(base.label, keptEnv)] : [])],
+    };
   }
-  return { ...base, status: "configured", detail: "added to ~/.codex/config.toml; start a new Codex session to load it", warnings };
+  return { ...base, status: "configured", detail: "added to ~/.codex/config.toml; start a new Codex session to load it", keptEnv, warnings };
 }
 
 /**
@@ -386,7 +525,11 @@ function installCodexConfig(entry, { dryRun, home }) {
   const exists = fs.existsSync(file);
   const raw = exists ? fs.readFileSync(file, "utf8") : "";
   const plan = planCodexTable(raw, entry);
-  const warnings = staleEntryWarnings(plan.servers, HOST_LABELS.codex);
+  const { keptEnv } = plan;
+  const warnings = [
+    ...staleEntryWarnings(plan.servers, HOST_LABELS.codex),
+    ...(plan.unreadable ? [envNotCarried(base.label, `its env in ${file} is not a table of strings`)] : []),
+  ];
 
   if (plan.blocked) {
     return {
@@ -402,7 +545,7 @@ function installCodexConfig(entry, { dryRun, home }) {
 
   const reason = "this Codex CLI has no `codex mcp add`";
   if (dryRun) {
-    return { ...base, status: "planned", detail: `would ${plan.action} the [${CODEX_TABLE}] table directly: ${reason}`, warnings };
+    return { ...base, status: "planned", detail: `would ${plan.action} the [${CODEX_TABLE}] table directly: ${reason}`, keptEnv, warnings };
   }
 
   /** @type {string | undefined} */
@@ -422,6 +565,7 @@ function installCodexConfig(entry, { dryRun, home }) {
     status: "configured",
     detail: `${plan.action === "add" ? "added" : "replaced"} the [${CODEX_TABLE}] table directly (${reason}); start a new Codex session to load it`,
     backupPath,
+    keptEnv,
     warnings,
   };
 }
@@ -429,22 +573,14 @@ function installCodexConfig(entry, { dryRun, home }) {
 /**
  * The config.toml text with the solumbe table set to `entry`. An existing
  * table, and any `[mcp_servers.solumbe.*]` sub-table, is replaced where it
- * stands; otherwise the table is added at the end.
+ * stands, keeping the env it carried; otherwise the table is added at the end.
  * @param {string} raw the current file, "" when there is none
  * @param {{ command: string, args: string[], env?: Record<string, string> }} entry
- * @returns {{ next: string, action: "add" | "replace", blocked: boolean, servers: { name: string, value: string }[] }}
- *   `blocked` when the server is set in a form a second table would collide with.
+ * @returns {{ next: string, action: "add" | "replace", blocked: boolean, servers: { name: string, value: string }[], keptEnv: string[], unreadable?: boolean }}
+ *   `blocked` when the server is set in a form a second table would collide with;
+ *   `unreadable` when the existing table has an env that could not be carried over.
  */
 function planCodexTable(raw, entry) {
-  // A JSON string is a valid TOML basic string, and a JSON array of them a TOML array.
-  const env = Object.entries(entry.env ?? {}).map(([key, value]) => `${/^[\w-]+$/.test(key) ? key : JSON.stringify(key)} = ${JSON.stringify(value)}`);
-  const block = [
-    `[${CODEX_TABLE}]`,
-    `command = ${JSON.stringify(entry.command)}`,
-    `args = [${entry.args.map((arg) => JSON.stringify(arg)).join(", ")}]`,
-    ...(env.length ? [`env = { ${env.join(", ")} }`] : []),
-  ];
-
   const lines = raw.split("\n");
   const kinds = classifyTomlLines(lines);
   /** @type {Map<string, { name: string, value: string }>} */
@@ -481,7 +617,17 @@ function planCodexTable(raw, entry) {
       blocked ||= full[0] === "mcp_servers" && (full.length === 1 || full[1] === SERVER_NAME);
     }
   });
-  const found = { blocked, servers: [...servers.values()] };
+  const existing = codexTableEnv(lines, kinds, regions);
+  const { entry: next, keptEnv } = carryEnv(entry, existing.env);
+  const found = { blocked, servers: [...servers.values()], keptEnv, unreadable: existing.unreadable };
+  // A JSON string is a valid TOML basic string, and a JSON array of them a TOML array.
+  const env = Object.entries(next.env ?? {}).map(([key, value]) => `${/^[\w-]+$/.test(key) ? key : JSON.stringify(key)} = ${JSON.stringify(value)}`);
+  const block = [
+    `[${CODEX_TABLE}]`,
+    `command = ${JSON.stringify(next.command)}`,
+    `args = [${next.args.map((arg) => JSON.stringify(arg)).join(", ")}]`,
+    ...(env.length ? [`env = { ${env.join(", ")} }`] : []),
+  ];
 
   if (!regions.length) {
     const eol = raw.includes("\r\n") ? "\r\n" : "\n";
@@ -508,6 +654,76 @@ function planCodexTable(raw, entry) {
   const lastCr = lines[first.end].endsWith("\r") ? "\r" : "";
   lines.splice(first.start, first.end - first.start + 1, ...block.map((text, index) => text + (index === block.length - 1 ? lastCr : cr)));
   return { next: lines.join("\n"), action: "replace", ...found };
+}
+
+/**
+ * The env the existing solumbe table carries: `env = { … }` or `env.KEY = …`
+ * in the table itself, or the statements of a `[mcp_servers.solumbe.env]`
+ * sub-table. Only one-line string values are read; any other marks it unreadable.
+ * @param {string[]} lines
+ * @param {ReturnType<typeof classifyTomlLines>} kinds
+ * @param {{ start: number, end: number }[]} regions the solumbe table and its sub-tables, each opening on its header
+ * @returns {{ env: Record<string, string>, unreadable?: boolean }}
+ */
+function codexTableEnv(lines, kinds, regions) {
+  const string = /\s*(?:("(?:[^"\\]|\\.)*")|'([^']*)')\s*/y;
+  const separator = /,|$/y;
+  /**
+   * @param {string} text
+   * @param {number} from
+   * @returns {{ value: string, end: number } | undefined}
+   */
+  const readString = (text, from) => {
+    string.lastIndex = from;
+    const match = string.exec(text);
+    try {
+      // A basic string that uses only JSON's escapes is read as JSON; a literal string is taken as written.
+      return match ? { value: match[1] ? JSON.parse(match[1]) : match[2], end: string.lastIndex } : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  /** @type {Record<string, string>} */
+  const env = {};
+  let readable = true;
+
+  for (const { start, end } of regions) {
+    const table = (tomlKeyPath(lines[start], lines[start].indexOf("[") + 1, "]") ?? []).slice(2);
+    for (let index = start + 1; index <= end; index += 1) {
+      const keys = kinds[index] === "statement" ? [...table, ...(tomlKeyPath(lines[index], 0, "=") ?? [])] : [];
+      if (keys[0] !== "env") {
+        continue;
+      }
+      // An env variable's name has no "=", so the first one is the assignment.
+      const text = lines[index].slice(lines[index].indexOf("=") + 1);
+      const oneLine = kinds[index + 1] !== "value";
+      if (keys.length === 2) {
+        // `env.KEY = "value"`, or `KEY = "value"` in the env sub-table.
+        const read = oneLine ? readString(text, 0) : undefined;
+        if (read && /^(#.*)?$/.test(text.slice(read.end))) {
+          env[keys[1]] = read.value;
+        } else {
+          readable = false;
+        }
+        continue;
+      }
+      // `env = { KEY = "value", … }`.
+      const pairs = keys.length === 1 && oneLine ? /^\s*\{(.*)\}\s*(#.*)?$/.exec(text)?.[1] : undefined;
+      let at = 0;
+      while (pairs?.slice(at).trim()) {
+        const name = tomlKeyPath(pairs, at, "=");
+        const read = name?.length === 1 ? readString(pairs, pairs.indexOf("=", at) + 1) : undefined;
+        separator.lastIndex = read?.end ?? 0;
+        if (!name || !read || !separator.test(pairs)) {
+          break;
+        }
+        env[name[0]] = read.value;
+        at = separator.lastIndex;
+      }
+      readable &&= pairs !== undefined && !pairs.slice(at).trim();
+    }
+  }
+  return readable ? { env } : { env: {}, unreadable: true };
 }
 
 /**
@@ -617,7 +833,10 @@ export function formatHostInstallSummary(result, options = {}, close) {
       {
         title: "Hosts",
         glyph: "🧩",
-        items: result.results.map((item) => `${item.label}: ${item.status}, ${item.detail}${item.configPath ? ` (${item.configPath})` : ""}`),
+        items: result.results.map(
+          (item) =>
+            `${item.label}: ${item.status}, ${item.detail}${item.keptEnv?.length ? `; keeps env ${item.keptEnv.join(", ")}` : ""}${item.configPath ? ` (${item.configPath})` : ""}`,
+        ),
       },
       ...(warnings.length || result.launch.note
         ? [{ title: "Check", glyph: "⚠️", items: [...(result.launch.note ? [result.launch.note] : []), ...warnings] }]

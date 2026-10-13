@@ -270,10 +270,12 @@ test("the config.toml fallback updates an existing solumbe table in place", () =
   assert.equal(result.status, "configured");
   assert.match(result.detail, /^replaced the \[mcp_servers\.solumbe\] table directly/);
   const written = fs.readFileSync(file, "utf8");
-  assert.equal(written, before + solumbeTable + after);
+  // The variable the old sub-table carried is kept, on the new table.
+  assert.equal(written, before + solumbeTable + 'env = { SOLUMBE_HOST = "codex" }\n' + after);
+  assert.deepEqual(result.keptEnv, ["SOLUMBE_HOST"]);
   assert.deepEqual(readToml(written), {
     model: "gpt-5",
-    mcp_servers: { other: { command: "other", args: ["--flag"] }, solumbe: launch },
+    mcp_servers: { other: { command: "other", args: ["--flag"] }, solumbe: { ...launch, env: { SOLUMBE_HOST: "codex" } } },
     tools: { web_search: true },
   });
   assert.equal(fs.readFileSync(backup, "utf8"), before + stale + after);
@@ -312,4 +314,195 @@ test("the config.toml fallback refuses a config that sets solumbe another way", 
     assert.equal(fs.readFileSync(file, "utf8"), original);
     assert.equal(fs.existsSync(backup), false);
   }
+});
+
+// What an entry carried before a re-install. The values are ones no summary prints by accident.
+const carried = { SOLUMBE_CANVAS_URL: "http://canvas.invalid:7801", SOLUMBE_HOST: "kept-host-value", SOLUMBE_CHECK_MODE: "kept-mode-value" };
+const oldEntry = { command: "node", args: ["/old/cli.js", "mcp"], env: carried };
+
+/**
+ * A temp HOME with stand-in `claude` and `codex` CLIs first on the PATH. They
+ * are shell scripts, not node ones: an install calls them several times in a
+ * row, and on a loaded machine a node start alone has taken seconds (#296).
+ * Each call is logged one argument per line, so the JSON entry stays whole.
+ * @param {{ claudeGet?: string, codexList?: string }} [canned] what `claude mcp get` and `codex mcp list --json` print
+ * @returns {string}
+ */
+function hostFixture(canned = {}) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "solumbe-install-"));
+  const bin = path.join(home, "bin");
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(home, "codex-list.json"), canned.codexList ?? "[]");
+  if (canned.claudeGet) {
+    fs.writeFileSync(path.join(home, "claude-get.txt"), canned.claudeGet);
+  }
+  const scripts = {
+    claude: [
+      'if [ "$1 $2" = "mcp get" ]; then',
+      `  [ -f '${home}/claude-get.txt' ] || { echo 'No MCP server named "solumbe".' >&2; exit 1; }`,
+      `  cat '${home}/claude-get.txt'`,
+      "fi",
+    ],
+    codex: [`if [ "$1 $2 $3" = "mcp list --json" ]; then cat '${home}/codex-list.json'; fi`],
+  };
+  for (const [name, body] of Object.entries(scripts)) {
+    fs.writeFileSync(path.join(bin, name), ["#!/bin/sh", `printf '%s\\n' "$@" >> '${home}/${name}.calls'`, ...body, "exit 0", ""].join("\n"));
+    fs.chmodSync(path.join(bin, name), 0o755);
+  }
+  // The installer looks a host CLI up from a login shell, which reads this after a system profile that may reset PATH.
+  fs.writeFileSync(path.join(home, ".profile"), `PATH='${bin}':"$PATH"\nexport PATH\n`);
+  return home;
+}
+
+/**
+ * @param {string} home
+ * @param {string[]} args
+ * @returns {{ status: number | null, stdout: string, stderr: string }}
+ */
+function runHostInstall(home, args) {
+  const env = { ...process.env, HOME: home, PATH: `${path.join(home, "bin")}${path.delimiter}${process.env.PATH}`, NO_COLOR: "1" };
+  delete env.CLAUDE_CONFIG_DIR;
+  const result = spawnSync(process.execPath, [cli, "install", "--host", "claude-code,codex,cursor", ...args], { env, encoding: "utf8" });
+  return { status: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
+}
+
+/**
+ * @param {string} home
+ * @param {"claude" | "codex"} name
+ * @returns {string[]} every argument the stand-in was called with, in order
+ */
+function standInArgs(home, name) {
+  const file = path.join(home, `${name}.calls`);
+  return fs.existsSync(file) ? fs.readFileSync(file, "utf8").split("\n").filter(Boolean) : [];
+}
+
+/**
+ * @param {string} home
+ * @param {unknown} [entry]
+ * @returns {string}
+ */
+function cursorConfig(home, entry) {
+  const file = path.join(home, ".cursor", "mcp.json");
+  if (entry) {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ mcpServers: { solumbe: entry } }));
+  }
+  return file;
+}
+
+/** @param {string} output */
+function assertNamesWithoutValues(output) {
+  for (const [name, value] of Object.entries(carried)) {
+    assert.ok(output.includes(name), `${name} is named`);
+    assert.ok(!output.includes(value), `the value of ${name} is not printed`);
+  }
+}
+
+test("install --host keeps every env variable of the entries it re-registers", () => {
+  const home = hostFixture({ codexList: JSON.stringify([{ name: "solumbe", transport: { type: "stdio", ...oldEntry } }]) });
+  fs.writeFileSync(path.join(home, ".claude.json"), JSON.stringify({ mcpServers: { solumbe: { type: "stdio", ...oldEntry } } }));
+  const cursorFile = cursorConfig(home, oldEntry);
+
+  const result = runHostInstall(home, []);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const claudeArgs = standInArgs(home, "claude");
+  assert.deepEqual(claudeArgs.slice(0, 8), ["mcp", "remove", "solumbe", "--scope", "user", "mcp", "add-json", "solumbe"]);
+  const claudeEntry = JSON.parse(claudeArgs[8]);
+  assert.deepEqual(claudeEntry.env, carried);
+  assert.equal(claudeEntry.args[0], cli);
+
+  const codexArgs = standInArgs(home, "codex");
+  assert.deepEqual(
+    codexArgs.filter((_, index) => codexArgs[index - 1] === "--env"),
+    Object.entries(carried).map(([name, value]) => `${name}=${value}`),
+  );
+
+  const cursorEntry = JSON.parse(fs.readFileSync(cursorFile, "utf8")).mcpServers.solumbe;
+  assert.deepEqual(cursorEntry.env, carried);
+  assert.equal(cursorEntry.args[0], cli);
+
+  assertNamesWithoutValues(result.stdout);
+});
+
+test("install --host writes no env on a fresh install", () => {
+  const home = hostFixture();
+
+  const result = runHostInstall(home, []);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const claudeArgs = standInArgs(home, "claude");
+  assert.deepEqual(claudeArgs.slice(0, 3), ["mcp", "get", "solumbe"]);
+  assert.equal("env" in JSON.parse(claudeArgs[claudeArgs.indexOf("add-json") + 2]), false);
+  assert.equal(standInArgs(home, "codex").includes("--env"), false);
+  assert.equal("env" in JSON.parse(fs.readFileSync(cursorConfig(home), "utf8")).mcpServers.solumbe, false);
+  assert.doesNotMatch(result.stdout, /keeps env|not carried over/);
+});
+
+test("install --host --dry-run names the variables it would keep, never their values", () => {
+  const claudeGet = [
+    "solumbe:",
+    "  Scope: User config (available in all your projects)",
+    "  Type: stdio",
+    "  Command: node",
+    "  Args: /old/cli.js mcp",
+    "  Environment:",
+    ...Object.entries(carried).map(([name, value]) => `    ${name}=${value}`),
+    "",
+  ].join("\n");
+  const home = hostFixture({ claudeGet, codexList: JSON.stringify([{ name: "solumbe", transport: { type: "stdio", ...oldEntry } }]) });
+  const cursorFile = cursorConfig(home, oldEntry);
+  const before = fs.readFileSync(cursorFile, "utf8");
+
+  const result = runHostInstall(home, ["--dry-run"]);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  assertNamesWithoutValues(result.stdout);
+  assert.equal(result.stdout.match(/keeps env SOLUMBE_CANVAS_URL, SOLUMBE_HOST, SOLUMBE_CHECK_MODE/g)?.length, 3);
+  assert.match(result.stdout, /--env SOLUMBE_CHECK_MODE=<hidden>/);
+  // Only reads ran, and nothing was written.
+  assert.deepEqual(standInArgs(home, "claude"), ["mcp", "get", "solumbe"]);
+  assert.deepEqual(standInArgs(home, "codex"), ["mcp", "add", "--help", "mcp", "list", "--json"]);
+  assert.equal(fs.readFileSync(cursorFile, "utf8"), before);
+});
+
+test("the config.toml fallback keeps the env of the table it replaces, in either form", () => {
+  const table = ["[mcp_servers.solumbe]", 'command = "node"', 'args = ["/old/cli.js", "mcp"]'];
+  const pairs = Object.entries(carried).map(([name, value]) => `${name} = "${value}"`);
+  const forms = {
+    inline: [...table, `env = { ${pairs.join(", ")} }`, ""],
+    "sub-table": [
+      ...table,
+      "",
+      "[mcp_servers.solumbe.env]",
+      `${pairs[0]} # where the canvas listens`,
+      pairs[1].replaceAll('"', "'"),
+      pairs[2],
+      "",
+      "[tail]",
+      "kept = true",
+      "",
+    ],
+  };
+  for (const [form, lines] of Object.entries(forms)) {
+    const { home, file } = codexHome(lines.join("\n"));
+
+    const result = installCodex(home, standInCodex("0.31.0"));
+
+    assert.equal(result.status, "configured", form);
+    assert.deepEqual(readToml(fs.readFileSync(file, "utf8")).mcp_servers.solumbe, { ...launch, env: carried }, form);
+    assert.deepEqual(result.keptEnv, Object.keys(carried), form);
+    assert.deepEqual(result.warnings, [], form);
+    assert.ok(!Object.values(carried).some((value) => JSON.stringify(result).includes(value)), `${form}: no value in the result`);
+  }
+});
+
+test("the config.toml fallback says so when the table's env cannot be read", () => {
+  const { home, file } = codexHome(["[mcp_servers.solumbe]", 'command = "node"', "env = { RETRIES = 3 }", ""].join("\n"));
+
+  const result = installCodex(home, standInCodex("0.31.0"));
+
+  assert.equal(result.status, "configured");
+  assert.match(result.warnings?.[0] ?? "", /^Codex CLI: could not read an existing solumbe entry .*not carried over/);
+  assert.deepEqual(readToml(fs.readFileSync(file, "utf8")).mcp_servers.solumbe, launch);
 });
