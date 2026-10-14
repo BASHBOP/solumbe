@@ -8,6 +8,13 @@ This project follows SemVer.
 
 ### Fixed
 
+- **`impact` and `context` find git hook scripts.**
+  - Hook scripts such as `.githooks/pre-commit` have no file extension, so the indexer never admitted them, and `.husky/` was skipped as a whole. A request to "add a gate step to the pre-commit hook" ranked `components/ui/stepper/*` and `SubscriptionGate.tsx` and left the hook out entirely.
+  - Files named after a git hook (`pre-commit`, `commit-msg`, `pre-push` and the rest, with or without `.sh`) under `.githooks/` or `.husky/` are now indexed with the new kind `gitHook`. Husky's generated `.husky/_/` shims are still skipped, and their content is not parsed as JavaScript.
+  - `impact` boosts a `gitHook` file (×1.4) when the request names a hook (`hook`, `husky`, `commit`, `push`, …). When a hook is the strongest match, `context` keeps other files as primary only when they score within 80% of it.
+  - The index cache moves to version 14, so existing indexes rebuild once.
+  - New eval fixture `git-hooks` and case `git-hook-pre-commit-gate-step`. Retrieval baseline is now p@5=0.838, r@5=1.0, mrr=0.986 (36/36).
+
 - **`solumbe install --host codex` connects a Codex CLI that has no `codex mcp add`.**
   - On codex-cli 0.31.0, `codex mcp` runs Codex as an MCP server and takes no subcommand. The install ended "codex mcp add failed: error: unexpected argument 'add' found" and left the host unconnected.
   - The install now asks first, with `codex mcp add --help`. Where that fails, it writes the `[mcp_servers.solumbe]` table in `~/.codex/config.toml` itself.

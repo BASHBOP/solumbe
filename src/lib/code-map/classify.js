@@ -8,12 +8,45 @@ import { readDecoratorCalls } from "./text.js";
 const markdownExtensions = new Set([".md", ".mdx", ".markdown"]);
 const docExtensions = new Set([...markdownExtensions, ".rst", ".adoc"]);
 
+// Hook scripts git runs, by the names git gives them. They have no extension,
+// so the extension-based source filter never admitted them, and a request to
+// change the pre-commit hook ranked unrelated files instead.
+const gitHookNames = new Set([
+  "applypatch-msg",
+  "pre-applypatch",
+  "post-applypatch",
+  "pre-commit",
+  "pre-merge-commit",
+  "prepare-commit-msg",
+  "commit-msg",
+  "post-commit",
+  "pre-rebase",
+  "post-checkout",
+  "post-merge",
+  "pre-push",
+  "post-rewrite",
+]);
+
+/**
+ * A git hook script in a committed hooks directory (`.githooks/`, `.husky/`).
+ * Husky's generated `_/` shims are not the repository's hooks.
+ * @param {string} file
+ * @returns {boolean}
+ */
+export function isGitHookPath(file) {
+  const normalized = file.replaceAll("\\", "/");
+  const match = /(?:^|\/)\.(?:githooks|husky)\/([^/]+)$/.exec(normalized);
+  if (!match) return false;
+  return gitHookNames.has(match[1].replace(/\.sh$/, ""));
+}
+
 /**
  * @param {string} file
  * @returns {string}
  */
 export function classifyFile(file) {
   const base = path.basename(file);
+  if (isGitHookPath(file)) return "gitHook";
   if (isTestFilePath(file)) return "test";
   if (/\.(hbs|handlebars)$/i.test(base)) return "template";
   if (/(^|\/)(i18n|locale|locales|translations|messages|languages)(\/|$)/i.test(file) && /\.(json|ya?ml)$/i.test(base)) return "translation";
