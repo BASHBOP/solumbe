@@ -1,0 +1,7 @@
+{
+  "name": "git-hooks-fixture",
+  "private": true,
+  "scripts": {
+    "lint": "eslint ."
+  }
+}

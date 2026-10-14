@@ -619,3 +619,24 @@ test("generateCodeMap does not mine data-access hits from SQL quoted in document
   assert.equal(doc?.kind, "doc");
   assert.equal(doc?.dataAccess, undefined, "a SQL example in prose is not a query this repository runs");
 });
+
+test("generateCodeMap indexes git hook scripts but not husky's generated shims", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "code-map-githook-"));
+  const files = {
+    "package.json": JSON.stringify({ name: "githook-map" }),
+    ".githooks/pre-commit": "#!/bin/sh\nyarn lint\n",
+    ".husky/pre-push": "#!/bin/sh\nyarn test\n",
+    ".husky/_/pre-commit": '#!/bin/sh\n. "$(dirname "$0")/h"\n',
+    ".husky/common.sh": "command_exists () { :; }\n",
+  };
+  for (const [relative, content] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(root, relative)), { recursive: true });
+    fs.writeFileSync(path.join(root, relative), content);
+  }
+  const map = generateCodeMap(root);
+  const byPath = new Map(map.files.map((file) => [file.path, file]));
+  assert.equal(byPath.get(".githooks/pre-commit")?.kind, "gitHook");
+  assert.equal(byPath.get(".husky/pre-push")?.kind, "gitHook");
+  assert.equal(byPath.has(".husky/_/pre-commit"), false);
+  assert.equal(byPath.has(".husky/common.sh"), false);
+});
