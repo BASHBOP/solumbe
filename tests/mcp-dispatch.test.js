@@ -1340,3 +1340,43 @@ test("the check trial withholds a warning or a score in the withheld arm and lea
   assert.equal(typeof structured(off, 1).convergence, "number");
   assert.equal(fs.readFileSync(log, "utf8").trim().split("\n").length, 4, "nothing is logged outside the trial");
 });
+
+test("a path-taking tool called without a path refuses a server cwd of / or home instead of scanning it", async (t) => {
+  // 2026-10-18: Claude Desktop starts its configured MCP servers from /, and a
+  // context_pack with no path walked the whole filesystem until the host timed
+  // out. The call must answer at once, with the fix in the message.
+  const fixture = makeGitRepoFixture("root-cwd");
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "solumbe-mcp-home-"));
+  const savedHome = process.env.HOME;
+  process.env.HOME = home;
+  t.after(() => {
+    if (savedHome === undefined) delete process.env.HOME;
+    else process.env.HOME = savedHome;
+  });
+  const call = (id, name, args) => ({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } });
+
+  for (const dir of [path.parse(process.cwd()).root, home]) {
+    const saved = process.cwd();
+    process.chdir(dir);
+    try {
+      const startedAt = Date.now();
+      const messages = await runRequests([
+        call(1, "context_pack", { query: "where is greet" }),
+        call(2, "change_impact", { query: "rename greet", path: " " }),
+        call(3, "context_pack", { query: "where is greet", path: fixture }),
+        call(4, "repo_search", {}),
+      ]);
+      assert.ok(Date.now() - startedAt < 20_000, `answers without scanning ${dir}`);
+      for (const id of [1, 2]) {
+        const { error } = byId(messages, id);
+        assert.equal(error?.code, -32602, `id ${id} from ${dir} is refused`);
+        assert.match(error.message, /path is required/);
+        assert.ok(error.message.includes(fs.realpathSync(dir)), "the message names the cwd");
+      }
+      assert.ok(byId(messages, 3).result, "an explicit path still works");
+      assert.ok(byId(messages, 4).result, "a tool with no path argument is unaffected");
+    } finally {
+      process.chdir(saved);
+    }
+  }
+});

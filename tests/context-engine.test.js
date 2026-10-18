@@ -486,6 +486,34 @@ test("generateContextPack infers a debug intent from bug-report language that na
   fs.rmSync(root, { recursive: true, force: true });
 });
 
+test("generateContextPack reads a question about the code as explain, not unknown or its action word", () => {
+  // 2026-10-18: three question-shaped requests in a row came back "unknown",
+  // and "where is ... implemented" came back "add".
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "solumbe-context-question-"));
+  fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "question-fixture", scripts: { test: "node --test" } }));
+  fs.mkdirSync(path.join(root, "lib"), { recursive: true });
+  fs.writeFileSync(path.join(root, "lib", "scanner.ts"), "export function scanTicket(code) { return code; }\n");
+  const action = (query) => generateContextPack(query, { path: root }).data.intent;
+
+  for (const query of [
+    "where is the ticket scanner implemented?",
+    "how does the ticket scanner work",
+    "why does the scanner trim codes",
+    "which file scans tickets",
+    "What's the scanner for?",
+    "is the scanner consistent with the ticket service?",
+  ]) {
+    const intent = action(query);
+    assert.equal(intent.action, "explain", `${query}: ${JSON.stringify(intent)}`);
+    assert.ok(!intent.topics.includes("why"), "a question word is not a topic");
+  }
+  assert.equal(action("why does the scanner crash on empty codes?").action, "debug", "a question about a symptom is debugging");
+  assert.equal(action("how do I add a scanner retry").action, "add", "a question addressed to I asks for the change");
+  assert.equal(action("is the scanner done").action, "unknown", "no question mark, no question");
+
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
 test("generateContextPack still reports an unknown intent when the request names neither a verb nor a bug word", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "solumbe-context-noaction-"));
   fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "noaction-fixture", scripts: { test: "node --test" } }));
