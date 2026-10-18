@@ -320,11 +320,12 @@ export function formatContextPackMarkdown(data) {
  */
 function formatModelRead(read) {
   if (!read) return [];
-  if (read.source !== "jev") {
+  if (read.source !== "jev" && read.source !== "claude") {
     return ["## Model Read", "", `- Not applied: ${read.fallbackReason ?? "no model call was made"}. The ranking below is solumbe's alone.`, ""];
   }
   const cost = typeof read.costUsd === "number" ? `, $${read.costUsd.toFixed(6)}` : "";
-  const lines = ["## Model Read", "", `- Source: ${read.model} (TypeSafe System One), ${read.latencyMs} ms${cost}. Advisory; never read by a gate.`];
+  const vendor = read.source === "claude" ? "Anthropic Claude, forced tool use" : "TypeSafe System One";
+  const lines = ["## Model Read", "", `- Source: ${read.model} (${vendor}), ${read.latencyMs} ms${cost}. Advisory; never read by a gate.`];
   if (read.intent) {
     lines.push(
       read.intent.accepted

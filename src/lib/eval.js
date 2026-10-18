@@ -1506,7 +1506,7 @@ function evaluateThresholds(retrievalScore, riskScore, thresholds) {
  * @param {string} name
  * @returns {string}
  */
-function resolveFixture(root, fixtureRoots, name) {
+export function resolveFixture(root, fixtureRoots, name) {
   const rel = fixtureRoots[name] ?? name;
   const abs = path.isAbsolute(rel) ? rel : path.join(root, rel);
   if (!isDir(abs)) {
@@ -1519,7 +1519,7 @@ function resolveFixture(root, fixtureRoots, name) {
  * @param {string} source
  * @returns {{ dir: string }}
  */
-function copyFixtureToTemp(source) {
+export function copyFixtureToTemp(source) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "solumbe-eval-fix-"));
   for (const ent of readDirEnts(source)) {
     if (ent.name === ".solumbe" || ent.name === "node_modules") continue;

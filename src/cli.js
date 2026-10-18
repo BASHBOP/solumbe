@@ -1729,6 +1729,30 @@ async function handleEval(parsed) {
     return;
   }
 
+  // --reads grades a request-read provider (--provider heuristic|jev|claude,
+  // default chosen like `context --online`) on the corpus `reads` suite. It
+  // calls a model, so it is a measurement and not part of CI.
+  if (parsed.flags.reads) {
+    const { runReadEval } = await import("./lib/read-eval.js");
+    const provider = typeof parsed.flags.provider === "string" ? parsed.flags.provider : undefined;
+    const result = await runReadEval({ corpusPath: parsed.flags.corpus, provider });
+    noteResult(result.data);
+    if (parsed.flags.json) {
+      printJson(result.data);
+    } else if (parsed.flags.out) {
+      const artifact = writeArtifact(parsed.flags.out, result.markdown);
+      printText(`Read eval written: ${artifact.path}`);
+    } else {
+      await printDocument(parsed, result.markdown, {
+        title: "READ EVAL",
+        glyph: "\u{1F9EA}",
+        close: { status: result.data.exitCode ? "not-verified" : "runs" },
+      });
+    }
+    if (result.data.exitCode) process.exitCode = 1;
+    return;
+  }
+
   // --harness runs only the committed, fixture-backed command corpus. It
   // proves that the inferred install/test/typecheck/build commands execute in
   // an isolated temp copy rather than executing an inspected user repository.
@@ -2061,6 +2085,7 @@ function handleHelp(_parsed) {
         "  solumbe eval --accuracy [--corpus path] [--json] [--out file]   # labeled retrieval + risk corpus; non-zero exit below thresholds",
         "  solumbe eval --harness [--corpus path] [--json] [--out file]    # run inferred install/test/typecheck/build commands in isolated fixtures",
         "  solumbe eval --gate-effectiveness [--corpus path] [--json] [--out file] # assert gate verdicts and deterministic reasons in isolated Git fixtures",
+        "  solumbe eval --reads [--provider heuristic|jev|claude] [--json] [--out file] # grade a request-read provider on the corpus reads suite (calls a model)",
         "",
       ]
     : [];

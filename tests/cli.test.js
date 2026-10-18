@@ -267,11 +267,14 @@ test("context command emits json, text, and writes an artifact", async () => {
 test("context --online adds a model read, and falls back to solumbe's pack without a key", async (t) => {
   const fixture = makeRepoFixture();
   const savedKey = process.env.TYPESAFE_API_KEY;
+  const savedOther = { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY, SOLUMBE_READ_PROVIDER: process.env.SOLUMBE_READ_PROVIDER };
+  for (const name of Object.keys(savedOther)) delete process.env[name];
   const savedFetch = globalThis.fetch;
   t.after(() => {
     globalThis.fetch = savedFetch;
     if (savedKey === undefined) delete process.env.TYPESAFE_API_KEY;
     else process.env.TYPESAFE_API_KEY = savedKey;
+    for (const [name, value] of Object.entries(savedOther)) if (value !== undefined) process.env[name] = value;
   });
 
   let calls = 0;
