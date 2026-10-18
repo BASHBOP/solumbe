@@ -84,6 +84,29 @@ test("CI validates PRs once and reserves push validation for main", () => {
   assert.doesNotMatch(workflow, /attest-main:/);
 });
 
+test("the Claude Code gate summary runs headless on PRs, skips without the key and validates before posting", () => {
+  const workflow = read(".github/workflows/claude-gate.yml");
+  assert.match(workflow, /^on:\n {2}pull_request:\n/m);
+  assert.doesNotMatch(workflow, /pull_request_target/, "a fork's PR never reaches the secret");
+  assert.match(workflow, /CLAUDE_CODE_VERSION: \d+\.\d+\.\d+\n/, "the CLI is pinned to an exact version");
+  // Every step after the key check is skipped when the secret is absent.
+  const steps = workflow.split(/\n {6}- name: /).slice(2);
+  assert.ok(steps.length >= 7);
+  for (const step of steps) assert.match(step, /if: (always\(\) && )?steps\.key\.outputs\.present == 'true'/, step.split("\n")[0]);
+  assert.match(workflow, /ANTHROPIC_API_KEY: \$\{\{ secrets\.ANTHROPIC_API_KEY \}\}/);
+  // Headless, held to the gate command, with a validated JSON answer.
+  assert.match(workflow, /claude -p "\$PROMPT"/);
+  assert.match(workflow, /--permission-mode dontAsk/);
+  assert.match(workflow, /--allowedTools "Bash\(node src\/cli\.js gate \*\)"/);
+  assert.match(workflow, /--output-format json/);
+  assert.match(workflow, /--json-schema "\$\(node scripts\/claude-gate-summary\.mjs --schema\)"/);
+  const validate = workflow.indexOf("node scripts/claude-gate-summary.mjs \\");
+  const post = workflow.indexOf("gh pr comment");
+  assert.ok(validate > 0 && validate < post, "the summary is validated before it is posted");
+  // Advisory until the user decides: nothing else depends on it.
+  for (const name of fs.readdirSync(workflowsDir)) assert.doesNotMatch(read(`.github/workflows/${name}`), /needs: \[?[^\n]*claude-gate/);
+});
+
 test("post-merge workflow reconciles successful CI into a durable audit branch", () => {
   // The repo's own workflow only resolves which commit merged; the attestation
   // is the reusable workflow, which any repository can call the same way.

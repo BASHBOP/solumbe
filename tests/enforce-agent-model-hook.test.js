@@ -225,8 +225,8 @@ test("run as a hook: bad stdin, no log and no decision all exit 0 and leave the 
 
 test("the project settings register both repo hooks by repo-relative path only", () => {
   const settings = JSON.parse(fs.readFileSync(path.join(REPO, ".claude", "settings.json"), "utf8"));
-  // Personal settings stay in ~/.claude: nothing here but the hooks.
-  assert.deepEqual(Object.keys(settings).sort(), ["$schema", "hooks"]);
+  // Personal settings stay in ~/.claude: nothing here but the repo's permissions and hooks.
+  assert.deepEqual(Object.keys(settings).sort(), ["$schema", "hooks", "permissions"]);
   const commands = Object.values(settings.hooks).flatMap((groups) => groups.flatMap((group) => group.hooks.map((hook) => hook.command)));
   for (const command of commands) {
     assert.match(command, /^node "\$CLAUDE_PROJECT_DIR\/scripts\/hooks\/[a-z-]+\.mjs"$/, command);
@@ -239,5 +239,16 @@ test("the project settings register both repo hooks by repo-relative path only",
   assert.equal(pre.length, 1);
   assert.equal(pre[0].matcher, "Agent|Task");
   assert.match(pre[0].hooks[0].command, /enforce-agent-model\.mjs/);
-  assert.doesNotMatch(JSON.stringify(settings), /\/Users\/|permissions|~\//);
+  assert.doesNotMatch(JSON.stringify(settings), /\/Users\/|~\//);
+});
+
+test("the project permissions allow the repo's own commands and keep secrets and publishing out", () => {
+  const { permissions } = JSON.parse(fs.readFileSync(path.join(REPO, ".claude", "settings.json"), "utf8"));
+  assert.deepEqual(Object.keys(permissions).sort(), ["allow", "ask", "deny"]);
+  for (const rule of ["Bash(npm run *)", "Bash(node src/cli.js *)", "mcp__solumbe"]) assert.ok(permissions.allow.includes(rule), rule);
+  for (const rule of ["Read(./.env)", "Read(./.env.*)", "Bash(npm publish)", "Bash(npm publish *)"]) assert.ok(permissions.deny.includes(rule), rule);
+  // Shipping is the user's call: a push, merge or tag is asked for, never pre-approved.
+  for (const rule of ["Bash(git push *)", "Bash(gh pr merge *)", "Bash(git tag *)"]) assert.ok(permissions.ask.includes(rule), rule);
+  const all = [...permissions.allow, ...permissions.ask];
+  assert.ok(!all.some((rule) => /publish|^Bash\(\*?\)$|^Bash$/.test(rule)), "nothing broad or publishing is allowed");
 });

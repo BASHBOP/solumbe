@@ -339,10 +339,13 @@ anything.
 
 The repository commits both hooks in `.claude/settings.json`, by
 repo-relative path only (`"$CLAUDE_PROJECT_DIR/scripts/hooks/…"`), so a
-session in this repository gets them from the checkout it is working in. That
-file holds nothing else: permissions, personal hooks and absolute paths stay in
+session in this repository gets them from the checkout it is working in. Beside
+them it holds only the repository's own permission rules (see
+[project settings](../02-mcp-agent-workflows/README.md#project-settings)):
+personal hooks, MCP servers and absolute paths stay in
 `~/.claude/settings.json`, and `.claude/settings.local.json` and the rest of
-`.claude/` stay ignored.
+`.claude/` stay ignored. The headless CI job runs with `--bare`, so these hooks
+never run there.
 
 To route every repository, register the prompt hook in
 `~/.claude/settings.json` as well, and the Agent hook beside it:
