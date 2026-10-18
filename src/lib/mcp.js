@@ -161,7 +161,7 @@ export const tools = [
       "Task-aware packet: primary and related files, hotspots, tests, validation commands and token estimates, with git state read live. online lets a model read demote files it judges irrelevant; it is off unless asked. Run before planning or editing.",
     title: "Context Pack",
     description:
-      "Generate a task-aware local context packet with primary files, related files, tests, and validation commands. Uses a per-user external cache and leaves the target repository unchanged. Deterministic by default; pass online:true to also ask a System One model (needs TYPESAFE_API_KEY) what kind of work the request is and which candidate files it needs, which relabels a confidently read intent and demotes files it judges irrelevant, reported under modelRead.",
+      "Generate a task-aware local context packet with primary files, related files, tests, and validation commands. Uses a per-user external cache and leaves the target repository unchanged. Deterministic by default; pass online:true to also ask a read model (TypeSafe's Jev with TYPESAFE_API_KEY, or Claude with ANTHROPIC_API_KEY or SOLUMBE_READ_PROVIDER=claude) what kind of work the request is and which candidate files it needs, which relabels a confidently read intent and demotes files it judges irrelevant, reported under modelRead.",
     annotations: { readOnlyHint: true, openWorldHint: true },
     inputSchema: {
       type: "object",
@@ -185,7 +185,7 @@ export const tools = [
         online: {
           type: "boolean",
           description:
-            "Ask TypeSafe's Jev to read the request (intent, and relevance of each candidate file) in one call, and apply answers that clear their confidence gate. Needs TYPESAFE_API_KEY; without one the pack is returned unchanged with modelRead.source offline. Defaults to false.",
+            "Ask a read model (TypeSafe's Jev, or Claude through forced tool use) to read the request (intent, and relevance of each candidate file) in one call, and apply answers that clear their confidence gate. Needs TYPESAFE_API_KEY or ANTHROPIC_API_KEY (SOLUMBE_READ_PROVIDER picks one when both are set); without either the pack is returned unchanged with modelRead.source offline. Defaults to false.",
         },
       },
       required: ["query"],

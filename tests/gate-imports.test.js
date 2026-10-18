@@ -21,7 +21,7 @@ const libDir = path.join(repoRoot, "src", "lib");
 const GATE_MODULES = ["pass-local.js", "pass-pr.js", "pr-review.js", "converge.js", "review.js", "impact.js"];
 
 /** Modules that call, wrap or read a model. */
-const MODEL_MODULES = ["jev.js", "model-route.js", "context-read.js"];
+const MODEL_MODULES = ["jev.js", "claude-read.js", "model-route.js", "context-read.js", "read-eval.js"];
 
 /**
  * Static, transitive, relative imports of a module: `import … from "./x.js"`

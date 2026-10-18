@@ -135,6 +135,28 @@ This is product evidence for the encoded local-gate behaviours. Hosted CI,
 GitHub approvals, CODEOWNERS approval state, unresolved conversations, and the
 human merge decision remain separate authorities.
 
+### Read cases
+
+The `reads` corpus labels what a request asks for: its intent (one of the
+eight in `src/lib/jev.js`, or several where a careful reader could defend more
+than one), the solumbe tool that answers it, and the files the work needs. It
+grades the request read, not solumbe's ranking, so it runs one read provider at
+a time over the same offline context pack the retrieval eval builds:
+
+```bash
+solumbe eval --reads --provider heuristic   # solumbe's own action word, no call
+solumbe eval --reads --provider jev         # TYPESAFE_API_KEY
+solumbe eval --reads --provider claude      # ANTHROPIC_API_KEY
+```
+
+It reports intent accuracy, the share of reads that clear `CHOICE_FLOOR`, the
+accuracy of the intent a pack would actually carry, a Brier score and
+confidence bands for the stated confidence, capability accuracy, how many
+expected files a read would demote, and the cost. It calls a model, so it has
+no thresholds and is not part of `npm run quality`; results are recorded in
+[the calibration thesis](17-calibration-thesis/README.md#grading-the-request-read-2026-10-18).
+`tests/claude-read.test.js` runs it against a mocked fetch.
+
 ## How thresholds work
 
 The corpus header carries a `thresholds` block so the pass/fail bar is tunable

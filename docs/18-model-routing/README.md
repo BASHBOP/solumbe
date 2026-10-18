@@ -260,8 +260,11 @@ offline pack ranked an RSVP eval fixture as related to MCP integration: intent
 `unknown` → `add` at 0.60, the fixture demoted at 0.17, `src/lib/mcp.js`
 re-ranked first; 2,827 input tokens, $0.000119, 361 ms.
 
-None of this is graded yet. Like the tier, the read is a number that has to be
-compared to outcomes before anything is promoted past advisory.
+The read is now graded on a labelled corpus, and can come from Claude instead
+of Jev (`SOLUMBE_READ_PROVIDER=claude`, or an Anthropic key with no TypeSafe
+key): see [Grading the request read](../17-calibration-thesis/README.md#grading-the-request-read-2026-10-18).
+`solumbe route` still asks Jev only, because the route questions are System One
+questions. Like the tier, the read stays advisory.
 
 ### Routing every request, without pretending to switch the model
 

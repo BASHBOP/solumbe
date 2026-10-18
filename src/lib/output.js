@@ -168,7 +168,7 @@ Usage:
   solumbe workspace-gate <repo...> [--base ref] [--run-validation] [--policy standard|company|high-risk] [--governance team|solo] [--request text] [--json]
   solumbe harness <path> [--out file] [--json]
   solumbe eval <path> [--query text] [--naive-cap n] [--out file] [--json]
-  solumbe eval --accuracy|--harness|--gate-effectiveness [--corpus file] [--out file] [--json]
+  solumbe eval --accuracy|--harness|--gate-effectiveness|--reads [--corpus file] [--out file] [--json]
   solumbe data-access <path> [--out file] [--json] [--mermaid]
   solumbe agent-tools [--json|--markdown]
   solumbe dashboard [<repo>] [--out file] [--json] [--clear] [--no-artifacts] [--no-git]   # local usage & performance UI (HTML)
