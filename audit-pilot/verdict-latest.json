@@ -1,12 +1,12 @@
 {
   "ok": true,
-  "generatedAt": "2026-10-11T05:51:50.743Z",
+  "generatedAt": "2026-10-18T07:47:52.773Z",
   "schemaVersion": 3,
   "reviewEngineVersion": 1,
   "request": "review this change",
   "requestStated": false,
-  "verdict": "WARN",
-  "confidence": 55,
+  "verdict": "PASS",
+  "confidence": 85,
   "repo": {
     "root": "/home/runner/work/solumbe/solumbe",
     "name": "solumbe"
@@ -20,54 +20,49 @@
         "riskFlags": []
       },
       {
+        "path": "src/lib/pr-review.js",
+        "score": 36,
+        "riskFlags": []
+      },
+      {
+        "path": "codex/skills/solumbe-review/SKILL.md",
+        "score": 32.2,
+        "riskFlags": []
+      },
+      {
+        "path": "src/lib/agent-tools.js",
+        "score": 23.6,
+        "riskFlags": []
+      },
+      {
         "path": "src/lib/agent-workflow.js",
         "score": 23.6,
-        "riskFlags": []
-      },
-      {
-        "path": "src/lib/attest.js",
-        "score": 23.6,
-        "riskFlags": []
-      },
-      {
-        "path": "src/cli.js",
-        "score": 15,
-        "riskFlags": []
-      },
-      {
-        "path": "src/lib/mcp.js",
-        "score": 15,
         "riskFlags": []
       }
     ],
     "risks": [
-      "Configuration change: verify environment variables, secrets, build output, and production defaults."
+      "No obvious high-risk domain detected. Main risk is missing a caller or test outside the matched files."
     ]
   },
   "prReviewSummary": {
-    "changedFiles": 78,
-    "additions": 4154,
-    "deletions": 238,
-    "riskLevel": "high",
+    "changedFiles": 1,
+    "additions": 6,
+    "deletions": 6,
+    "riskLevel": "low",
     "riskFlags": [
-      "configuration",
-      "data model",
-      "dependency",
-      "large PR",
-      "large file diff",
-      "money flow"
+      "dependency"
     ],
     "reviewTargetsCount": 0
   },
   "pass": {
-    "verdict": "WARN",
+    "verdict": "PASS",
     "policy": "standard",
     "governance": "solo",
     "checks": [
       {
         "name": "Changed files",
         "status": "PASS",
-        "summary": "78 changed files found."
+        "summary": "1 changed file found."
       },
       {
         "name": "Commit snapshot",
@@ -81,13 +76,13 @@
       },
       {
         "name": "Risk review",
-        "status": "WARN",
-        "summary": "Risk-sensitive files changed; maintainer review should be explicit."
+        "status": "PASS",
+        "summary": "No obvious risk-sensitive file paths changed."
       },
       {
         "name": "Release discipline",
         "status": "PASS",
-        "summary": "Version metadata is SemVer and changelog was updated."
+        "summary": "Version metadata changed but the project version is unchanged (dependency or lockfile update)."
       },
       {
         "name": "Validation commands",
@@ -111,93 +106,16 @@
       }
     ],
     "changedFiles": [
-      ".github/workflows/attest.yml",
-      ".github/workflows/post-merge-attest.yml",
-      "CHANGELOG.md",
-      "README.md",
-      "RELEASE.md",
-      "audit-pilot/README.md",
-      "docs/02-mcp-agent-workflows/README.md",
-      "docs/05-trust-layer-demo/README.md",
-      "docs/07-deterministic-verification/convergence-score-spec.md",
-      "docs/19-local-core-optional-hosted/README.md",
-      "docs/EVALS.md",
-      "docs/assets/solumbe-how-it-works.html",
-      "docs/index.md",
-      "docs/schemas/attestation-record.v2.json",
-      "evals/corpus.json",
-      "evals/fixtures/go-inventory-api/cmd/server/main.go",
-      "evals/fixtures/go-inventory-api/go.mod",
-      "evals/fixtures/go-inventory-api/internal/httpapi/handler.go",
-      "evals/fixtures/go-inventory-api/internal/platform/retry.go",
-      "evals/fixtures/go-inventory-api/internal/pricing/discount.go",
-      "evals/fixtures/go-inventory-api/internal/stock/reservation.go",
-      "evals/fixtures/go-inventory-api/internal/stock/reservation_test.go",
-      "evals/fixtures/go-inventory-api/internal/stock/store.go",
-      "evals/fixtures/python-orders-api/app/__init__.py",
-      "evals/fixtures/python-orders-api/app/billing/__init__.py",
-      "evals/fixtures/python-orders-api/app/billing/invoices.py",
-      "evals/fixtures/python-orders-api/app/billing/tax.py",
-      "evals/fixtures/python-orders-api/app/main.py",
-      "evals/fixtures/python-orders-api/app/orders/__init__.py",
-      "evals/fixtures/python-orders-api/app/orders/repository.py",
-      "evals/fixtures/python-orders-api/app/orders/routes.py",
-      "evals/fixtures/python-orders-api/app/orders/service.py",
-      "evals/fixtures/python-orders-api/app/shared/__init__.py",
-      "evals/fixtures/python-orders-api/app/shared/clock.py",
-      "evals/fixtures/python-orders-api/pyproject.toml",
-      "evals/fixtures/python-orders-api/tests/test_order_service.py",
-      "evals/fixtures/python-orders-api/tests/test_tax.py",
-      "package-lock.json",
-      "package.json",
-      "scripts/how-it-works/content.js",
-      "server.json",
-      "src/cli.js",
-      "src/lib/agent-workflow.js",
-      "src/lib/attest.js",
-      "src/lib/code-map/ast-languages.js",
-      "src/lib/code-map/generate.js",
-      "src/lib/context-engine.js",
-      "src/lib/converge.js",
-      "src/lib/dashboard.js",
-      "src/lib/external-scanners.js",
-      "src/lib/gate-calibrate.js",
-      "src/lib/impact.js",
-      "src/lib/index-cache.js",
-      "src/lib/intent.js",
-      "src/lib/mcp.js",
-      "src/lib/output.js",
-      "src/lib/pass-local.js",
-      "src/lib/pass-pr.js",
-      "src/lib/ranking-rules.js",
-      "src/lib/review.js",
-      "tests/attest.test.js",
-      "tests/check-trial.test.js",
-      "tests/cli.test.js",
-      "tests/code-map.test.js",
-      "tests/context-engine.test.js",
-      "tests/converge.test.js",
-      "tests/external-scanners.test.js",
-      "tests/follow-through.test.js",
-      "tests/gate-calibrate.test.js",
-      "tests/how-it-works.test.js",
-      "tests/impact.test.js",
-      "tests/index-cache.test.js",
-      "tests/intent.test.js",
-      "tests/mcp-dispatch.test.js",
-      "tests/pass-local.test.js",
-      "tests/pr-review.test.js",
-      "tests/regret.test.js",
-      "tests/workflow-policy.test.js"
+      "package-lock.json"
     ],
     "subject": {
       "kind": "git-commit",
-      "baseSha": "8ef0f329c00c9d44714dd5f04e5105830b5419a9",
-      "headSha": "02eaad046cd8adaa6c317940b299748bcf64f829",
-      "treeSha": "d7fd0083b7d81c149e8619590d1833727adae5ae"
+      "baseSha": "02eaad046cd8adaa6c317940b299748bcf64f829",
+      "headSha": "001869f944e9f9de1f3402af645d3a8b65992dfb",
+      "treeSha": "2306320318b8e13879f264a402381d078a7a396f"
     }
   },
   "tokenEstimate": {
-    "fullJson": 1237
+    "fullJson": 554
   }
 }
