@@ -10,22 +10,29 @@
 //     is read-only, and no hook output carries a model. A session cannot even
 //     re-price itself through the app's own tooling.
 //   - It CAN make the tier arrive as context, every time, before any work.
-//   - It CAN name the model id a SUBAGENT should be launched on, and that is
-//     real actuation: the Task/Agent tool takes a model, so delegated work
-//     genuinely runs on the routed tier.
+//   - It CAN name the model a SUBAGENT should be launched on. That is advice
+//     and nothing more: the text lands in the parent session's context, and
+//     the parent decides whether to pass `model` to the Agent tool at all.
+//     Nothing in this file can see, let alone change, that call.
 //
-// So the hook advises the session and binds the subagent. With
-// `SOLUMBE_ROUTE_MODE=delegate` it goes one step further on a share of requests
-// (the delegate arm): the work itself is handed to a subagent on the routed
-// tier, which is the only model switch a session is allowed to make. The
-// rest stay advisory as the control, and every decision records its arm so
-// `route-outcomes` can grade following the router against not following it.
+// The binding lives in the sibling `PreToolUse` hook, enforce-agent-model.mjs.
+// It reads the decision this hook logged for the prompt and, in the delegate
+// arm, rewrites an Agent call whose `model` is missing or differs. Without that
+// hook registered, the routed subagent model is a recommendation the parent may
+// ignore.
 //
-// So by default the hook advises the session and binds the subagent. It never claims the
-// session was switched, which is the anti-pattern the model-router skill calls
-// out by name. It also keeps what it decided, one line per routed prompt in a
-// local log, because a tier printed as context is gone when the turn ends and
-// a router can only ever be graded against decisions that were kept.
+// With `SOLUMBE_ROUTE_MODE=delegate` a share of requests (the delegate arm) are
+// told to hand the work itself to a subagent on the routed tier, which is the
+// only model switch a session is allowed to make, and the PreToolUse hook
+// enforces the model on that arm only. The rest stay advisory as the control,
+// and every decision records its arm so `route-outcomes` can grade following
+// the router against not following it.
+//
+// It never claims the session was switched, which is the anti-pattern the
+// model-router skill calls out by name. It also keeps what it decided, one line
+// per routed prompt in a local log, because a tier printed as context is gone
+// when the turn ends, a router can only ever be graded against decisions that
+// were kept, and the PreToolUse hook has nothing else to read the tier from.
 //
 // It must never break a prompt. Every failure path is silent and exits 0: a
 // router that can swallow a user's request is worse than no router.
@@ -47,6 +54,18 @@ const CLI = path.resolve(HERE, "..", "..", "src", "cli.js");
 
 /** Hard ceiling on the routing call. A slow repo must not stall a prompt. */
 export const ROUTE_TIMEOUT_MS = 6000;
+
+/**
+ * The ceiling for this run. `SOLUMBE_ROUTE_TIMEOUT_MS` raises or lowers it,
+ * which the tests use on a loaded machine where spawning node alone has taken
+ * longer than the default; anything that is not a positive number is ignored.
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {number}
+ */
+export function routeTimeoutMs(env = process.env) {
+  const raw = Number(env.SOLUMBE_ROUTE_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : ROUTE_TIMEOUT_MS;
+}
 
 /** A `git rev-parse` that takes longer than this is not worth the head. */
 const GIT_TIMEOUT_MS = 1500;
@@ -91,7 +110,7 @@ export function gitStateAt(cwd) {
  * re-tier a request (signals and the answers exactly as scored), the tier each
  * half gave, the session it belongs to, and where the repository was. Pure,
  * so it can be tested without a hook run.
- * @param {{ session_id?: string, cwd?: string, prompt?: string }} input
+ * @param {{ session_id?: string, prompt_id?: string, cwd?: string, prompt?: string }} input
  * @param {any} route the `solumbe route --json` payload
  * @param {{ head?: string|null, branch?: string|null }} [git]
  */
@@ -106,6 +125,7 @@ export function decisionRecord(input, route, git = {}, arm = { mode: "advisory",
     ts: new Date().toISOString(),
     host: "claude-code",
     sessionId: input.session_id ?? null,
+    promptId: input.prompt_id ?? null,
     repo: route?.repo?.name ?? null,
     root: route?.repo?.root ?? input.cwd ?? null,
     branch: git.branch ?? null,
@@ -113,6 +133,9 @@ export function decisionRecord(input, route, git = {}, arm = { mode: "advisory",
     promptHash: crypto.createHash("sha256").update(prompt).digest("hex").slice(0, 16),
     promptChars: prompt.length,
     tier: route?.tier ?? null,
+    // A route with no evidence names only a fail-safe tier, which the
+    // PreToolUse hook must never enforce.
+    evidenceSufficient: route?.scoring?.evidence?.sufficient !== false,
     mode: arm.mode,
     arm: arm.arm,
     delegateShare: arm.share,
@@ -147,6 +170,60 @@ export function appendDecision(record, logPath) {
   } catch {
     return false;
   }
+}
+
+/**
+ * Whether this run is the first to handle `key` inside `ttlMs`. The same hook
+ * can be registered twice, in `~/.claude/settings.json` and in a repository's
+ * `.claude/settings.json`, under commands that differ only in how they name
+ * the script, so the host runs both. The first run to create the claim file
+ * does the work and any other exits quietly, so a prompt is routed and logged
+ * once. A guard that cannot run never costs the prompt: it lets the run go.
+ * `SOLUMBE_HOOK_CLAIMS_DIR` moves the claims.
+ * @param {string} key
+ * @param {{ env?: NodeJS.ProcessEnv, ttlMs?: number, now?: number }} [options]
+ * @returns {boolean}
+ */
+export function claimOnce(key, { env = process.env, ttlMs = 60000, now = Date.now() } = {}) {
+  const dir = env.SOLUMBE_HOOK_CLAIMS_DIR?.trim() || path.join(os.tmpdir(), "solumbe-hook-claims");
+  const file = path.join(dir, crypto.createHash("sha256").update(key).digest("hex").slice(0, 32));
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(file, String(now), { flag: "wx" });
+      return true;
+    } catch (error) {
+      if (/** @type {any} */ (error)?.code !== "EEXIST") return true;
+      // An empty claim is one another run created and has not written yet.
+      const raw = fs.readFileSync(file, "utf8").trim();
+      if (!raw) return false;
+      const claimedAt = Number(raw);
+      if (Number.isFinite(claimedAt) && now - claimedAt < ttlMs) return false;
+      // A claim older than the window is the same prompt typed again.
+      fs.writeFileSync(file, String(now));
+      return true;
+    }
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * The claim key for one prompt, or null when the input cannot tell two runs of
+ * the same prompt from two prompts (no session), in which case nothing dedupes.
+ * @param {{ session_id?: string, prompt_id?: string, prompt?: string }} input
+ * @returns {string|null}
+ */
+export function promptClaimKey(input) {
+  if (!input?.session_id) return null;
+  const id =
+    input.prompt_id ??
+    crypto
+      .createHash("sha256")
+      .update(String(input.prompt ?? ""))
+      .digest("hex")
+      .slice(0, 16);
+  return `route:${input.session_id}:${id}`;
 }
 
 /**
@@ -299,7 +376,7 @@ export function formatContext(route, arm = { arm: "advisory" }) {
   if (route.hostModel) {
     lines.push(
       "",
-      `If you delegate any part of this request to a subagent, launch it on \`${route.hostModel}\`. Do not spawn a subagent you would not otherwise have used just to reach that tier.`,
+      `If you delegate any part of this request to a subagent, launch it on \`${route.hostModel}\`${agentModel ? ` (Agent tool \`model: "${agentModel}"\`)` : ""}. Do not spawn a subagent you would not otherwise have used just to reach that tier.`,
     );
   }
 
@@ -334,7 +411,7 @@ export function routeRequest(cwd, prompt) {
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
       done(null);
-    }, ROUTE_TIMEOUT_MS);
+    }, routeTimeoutMs());
 
     let out = "";
     child.stdout.on("data", (chunk) => {
@@ -382,6 +459,10 @@ async function main() {
   }
 
   if (!shouldRoute(input)) return;
+
+  // Registered twice (user and project settings), the second run stands down.
+  const claimKey = promptClaimKey(input);
+  if (claimKey && !claimOnce(claimKey)) return;
 
   const route = await routeRequest(input.cwd, input.prompt);
   if (!route) return;

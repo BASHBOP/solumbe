@@ -276,19 +276,76 @@ It is careful about what it claims, because the honest ceiling is low:
 | | possible? |
 | --- | --- |
 | Route every request deterministically | **yes**, this hook |
-| Name the model a subagent should run on | **yes**, the Task/Agent tool takes a model |
+| Name the model a subagent should run on | **yes**, as context the parent session may ignore |
+| Hold a subagent to that model | **yes**, but only from a `PreToolUse` hook on the Agent tool, `scripts/hooks/enforce-agent-model.mjs` |
 | Change the model this session runs on | **no** |
 
-The third row is not a missing feature. No hook output carries a model:
+The last row is not a missing feature. No hook output carries a model:
 `PreModelSwitch` may block a switch and `PostModelSwitch` is read-only, and the
-app refuses to let a session re-price its own turns. So the hook advises the
-session and **binds the subagent**, and says so in as many words — claiming the
-host switched models when it only recommended a tier is an anti-pattern the
-skill names.
+app refuses to let a session re-price its own turns. Claiming the host switched
+models when it only recommended a tier is an anti-pattern the skill names.
 
-Wire it up once for every repository in `~/.claude/settings.json`, or for one
-repository in its `.claude/settings.local.json`. Not both: a prompt would route
-twice and be logged twice.
+The second and third rows are different things, and an earlier version of this
+section ran them together. The `UserPromptSubmit` hook's output is text in the
+parent session's context. The Agent tool does take a `model`, but the parent
+decides whether to pass it and which, and nothing the prompt hook prints sees
+that call. So on its own the prompt hook **advises** the session and the
+subagent alike. The binding is the second hook.
+
+#### Holding the subagent to the routed tier
+
+`scripts/hooks/enforce-agent-model.mjs` is a `PreToolUse` hook with the matcher
+`Agent|Task`. Before an Agent call runs, it reads the decision the prompt hook
+logged for the same session and prompt (by the host's `prompt_id`, else the
+session's latest decision, so `go ahead` continues the request routed before
+it) and compares the routed tier's alias (`haiku`, `sonnet`, `opus`) with the
+call's `model`. A full id counts as its family: `claude-sonnet-5` is `sonnet`.
+
+When the call's `model` is missing or names another tier, the hook **rewrites**
+it: it returns `updatedInput` with the routed alias and every other field of
+the call unchanged, because `updatedInput` replaces the whole input. It does
+not deny. A deny costs a full turn for the parent to read the reason and send
+the same call with one field changed, and a parent that ignored the advice can
+ignore the reason too. The parent is told what happened through
+`additionalContext`, so it does not report the subagent's model wrongly. The
+rewrite goes out with `permissionDecision: "allow"`, because the host applies
+`updatedInput` with `allow` or `ask` and `ask` would put a prompt in front of
+every delegated call. A hook's `allow` does not override the user's own deny
+or ask rules, which the host evaluates against the rewritten input.
+
+It enforces in the **delegate arm only**, the arm the prompt hook recorded in
+the decision (`SOLUMBE_ROUTE_MODE=delegate`, with
+`SOLUMBE_ROUTE_DELEGATE_SHARE` of requests in the arm). The control arm and
+plain advisory mode are observed and never changed. That keeps the trial a
+trial: the delegate arm is "the router binds the subagent", the control arm is
+"the parent was told", and the difference between them is the thing being
+measured. Set the share to `1` to bind every routed request.
+
+It does nothing when the route had no evidence (a fail-safe premium is never
+enforced), when there is no decision for the session, when the call comes from
+inside a subagent, or for any other tool. Like the prompt hook it never breaks
+a call: every failure exits 0 with no output, which leaves the call as made.
+
+Every Agent call that joins a decision leaves one line in
+`~/.solumbe/agent-model-decisions.jsonl` (`SOLUMBE_AGENT_MODEL_LOG` moves it,
+`off` keeps nothing): the session, the prompt id and hash it joins on, the
+tool-use id, the arm, the routed and the requested model, and the action
+(`matched`, `diverged` or `rewrote`). It never holds the prompt or the
+subagent's brief. `route-outcomes` counts these per arm beside its grade (see
+below), and a delegate arm whose calls all matched anyway was not bound by
+anything.
+
+#### Wiring
+
+The repository commits both hooks in `.claude/settings.json`, by
+repo-relative path only (`"$CLAUDE_PROJECT_DIR/scripts/hooks/…"`), so a
+session in this repository gets them from the checkout it is working in. That
+file holds nothing else: permissions, personal hooks and absolute paths stay in
+`~/.claude/settings.json`, and `.claude/settings.local.json` and the rest of
+`.claude/` stay ignored.
+
+To route every repository, register the prompt hook in
+`~/.claude/settings.json` as well, and the Agent hook beside it:
 
 ```json
 {
@@ -298,10 +355,22 @@ twice and be logged twice.
         "matcher": "",
         "hooks": [{ "type": "command", "command": "node \"/path/to/solumbe/scripts/hooks/route-prompt.mjs\"", "timeout": 10 }]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Agent|Task",
+        "hooks": [{ "type": "command", "command": "node \"/path/to/solumbe/scripts/hooks/enforce-agent-model.mjs\"", "timeout": 5 }]
+      }
     ]
   }
 }
 ```
+
+In this repository that registers each hook twice under two command strings,
+and the host runs both. Each hook claims its prompt (or its tool call) before
+doing anything, in a file under the temp directory keyed by session and prompt
+id, and the second run to arrive stands down, so a prompt is still routed and
+logged once (`SOLUMBE_HOOK_CLAIMS_DIR` moves the claims).
 
 Three properties it has to have, and the reason for each:
 
@@ -309,8 +378,9 @@ Three properties it has to have, and the reason for each:
 CLI, a crash, a repository it cannot score — exits 0 and writes nothing. A
 router that can swallow a request is worse than no router.
 
-**It has a deadline.** The routing call is killed at 6 seconds. A slow or huge
-repository costs the hint, not the turn.
+**It has a deadline.** The routing call is killed at 6 seconds
+(`SOLUMBE_ROUTE_TIMEOUT_MS` sets another). A slow or huge repository costs the
+hint, not the turn.
 
 **It skips what is not work.** Turn-taking prompts (`ok`, `thanks`, `ship it`)
 and slash commands route nothing, because spending seconds of latency to score
@@ -346,7 +416,8 @@ never holds the prompt, only its hash, and never leaves the machine.
 | `repo`, `root`, `branch`, `head` | the head at prompt time names the change: the next commit on that branch whose first parent is `head`, for the `repaired` join later |
 | `tiers`, `routes` per variant (`deterministic`, and `offline` or `jev`) | what each half of the router said; `solumbe route --json` now reports `deterministic` beside the scored tier |
 | `signals`, `answers`, `modelRouteEngineVersion` | exactly what `solumbe regret --rescore` reads, so a live corpus re-tiers under a new arithmetic the way a frozen run does |
-| `hostModel` | the only tier the hook actuates, through a subagent launch |
+| `hostModel` | the model the session is told to launch a subagent on; the Agent hook binds it in the delegate arm |
+| `promptId`, `evidenceSufficient` | what the Agent hook joins on, and whether it may enforce the tier at all |
 
 The caveat the log does not remove: the tier the session ran on stays
 unknown, and no hook can learn it.
@@ -357,7 +428,11 @@ minimum-sample rule and intervals: `corrected` (the next prompt inside the hour
 is an interruption or opens by pushing back) and `reworked` (the assistant's
 next turn edits a file this turn edited). Both were audited before they were
 written, on twenty days of this machine's transcripts, and the audit is the
-reason they carry the caveats they print; it is in the next section.
+reason they carry the caveats they print; it is in the next section. Beside
+the grade it counts the Agent hook's log per arm (`--agent-log` names another
+file): calls, requests, calls that asked for the routed model, calls that
+asked for another and were left alone, and calls that were rewritten. Only
+calls that join a logged decision count, and `--arm` filters them too.
 
 The log is one line per routed request, and for its first day it was not.
 Claude Code delivers a finished background task through `UserPromptSubmit`,
