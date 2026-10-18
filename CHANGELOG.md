@@ -25,7 +25,6 @@ This project follows SemVer.
   - `impact` boosts a `gitHook` file (×1.4) when the request names a hook (`hook`, `husky`, `commit`, `push`, …). When a hook is the strongest match, `context` keeps other files as primary only when they score within 80% of it.
   - The index cache moves to version 14, so existing indexes rebuild once.
   - New eval fixture `git-hooks` and case `git-hook-pre-commit-gate-step`. Retrieval baseline is now p@5=0.838, r@5=1.0, mrr=0.986 (36/36).
-
 - **`solumbe install --host codex` connects a Codex CLI that has no `codex mcp add`.**
   - On codex-cli 0.31.0, `codex mcp` runs Codex as an MCP server and takes no subcommand. The install ended "codex mcp add failed: error: unexpected argument 'add' found" and left the host unconnected.
   - The install now asks first, with `codex mcp add --help`. Where that fails, it writes the `[mcp_servers.solumbe]` table in `~/.codex/config.toml` itself.
