@@ -1,12 +1,12 @@
 {
   "ok": true,
-  "generatedAt": "2026-10-18T07:47:52.773Z",
+  "generatedAt": "2026-10-18T11:56:25.760Z",
   "schemaVersion": 3,
   "reviewEngineVersion": 1,
   "request": "review this change",
   "requestStated": false,
   "verdict": "PASS",
-  "confidence": 85,
+  "confidence": 80,
   "repo": {
     "root": "/home/runner/work/solumbe/solumbe",
     "name": "solumbe"
@@ -15,28 +15,28 @@
     "concepts": [],
     "topFiles": [
       {
-        "path": "src/lib/review.js",
-        "score": 41,
+        "path": "CHANGELOG.md",
+        "score": 0,
         "riskFlags": []
       },
       {
-        "path": "src/lib/pr-review.js",
-        "score": 36,
+        "path": "docs/02-mcp-agent-workflows/README.md",
+        "score": 0,
         "riskFlags": []
       },
       {
-        "path": "codex/skills/solumbe-review/SKILL.md",
-        "score": 32.2,
+        "path": "docs/18-model-routing/README.md",
+        "score": 0,
         "riskFlags": []
       },
       {
-        "path": "src/lib/agent-tools.js",
-        "score": 23.6,
+        "path": "docs/EVALS.md",
+        "score": 0,
         "riskFlags": []
       },
       {
-        "path": "src/lib/agent-workflow.js",
-        "score": 23.6,
+        "path": "docs/index.md",
+        "score": 0,
         "riskFlags": []
       }
     ],
@@ -45,12 +45,15 @@
     ]
   },
   "prReviewSummary": {
-    "changedFiles": 1,
-    "additions": 6,
-    "deletions": 6,
-    "riskLevel": "low",
+    "changedFiles": 36,
+    "additions": 2139,
+    "deletions": 122,
+    "riskLevel": "medium",
     "riskFlags": [
-      "dependency"
+      "dependency",
+      "large PR",
+      "large file diff",
+      "money flow"
     ],
     "reviewTargetsCount": 0
   },
@@ -62,7 +65,7 @@
       {
         "name": "Changed files",
         "status": "PASS",
-        "summary": "1 changed file found."
+        "summary": "36 changed files found."
       },
       {
         "name": "Commit snapshot",
@@ -82,7 +85,7 @@
       {
         "name": "Release discipline",
         "status": "PASS",
-        "summary": "Version metadata changed but the project version is unchanged (dependency or lockfile update)."
+        "summary": "Version metadata is SemVer and changelog was updated."
       },
       {
         "name": "Validation commands",
@@ -106,16 +109,51 @@
       }
     ],
     "changedFiles": [
-      "package-lock.json"
+      ".claude/settings.json",
+      ".gitignore",
+      "CHANGELOG.md",
+      "RELEASE.md",
+      "docs/02-mcp-agent-workflows/README.md",
+      "docs/18-model-routing/README.md",
+      "docs/EVALS.md",
+      "docs/assets/solumbe-how-it-works.html",
+      "docs/index.md",
+      "evals/corpus.json",
+      "evals/fixtures/git-hooks/.githooks/pre-commit",
+      "evals/fixtures/git-hooks/components/subscription/SubscriptionGate.tsx",
+      "evals/fixtures/git-hooks/components/ui/stepper/horizontal-step.tsx",
+      "evals/fixtures/git-hooks/package.json",
+      "package-lock.json",
+      "package.json",
+      "scripts/hooks/enforce-agent-model.mjs",
+      "scripts/hooks/route-outcomes.mjs",
+      "scripts/hooks/route-prompt.mjs",
+      "server.json",
+      "src/lib/code-map/classify.js",
+      "src/lib/code-map/generate.js",
+      "src/lib/context-engine.js",
+      "src/lib/hosts.js",
+      "src/lib/impact.js",
+      "src/lib/index-cache.js",
+      "src/lib/repo.js",
+      "tests/canvas-tap.test.js",
+      "tests/cli-install.test.js",
+      "tests/code-map.test.js",
+      "tests/enforce-agent-model-hook.test.js",
+      "tests/hosts.test.js",
+      "tests/impact.test.js",
+      "tests/index-cache.test.js",
+      "tests/route-outcomes.test.js",
+      "tests/route-prompt-hook.test.js"
     ],
     "subject": {
       "kind": "git-commit",
-      "baseSha": "02eaad046cd8adaa6c317940b299748bcf64f829",
-      "headSha": "001869f944e9f9de1f3402af645d3a8b65992dfb",
-      "treeSha": "2306320318b8e13879f264a402381d078a7a396f"
+      "baseSha": "001869f944e9f9de1f3402af645d3a8b65992dfb",
+      "headSha": "caf9684562b115b00d57c7cf6a15e50f8a1148ce",
+      "treeSha": "a6d0668c7c0cdaa6398a16d8e1ab1b7f65dd627d"
     }
   },
   "tokenEstimate": {
-    "fullJson": 554
+    "fullJson": 807
   }
 }
