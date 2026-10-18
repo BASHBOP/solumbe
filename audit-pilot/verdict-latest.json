@@ -1,12 +1,12 @@
 {
   "ok": true,
-  "generatedAt": "2026-10-18T20:26:35.454Z",
+  "generatedAt": "2026-10-18T22:41:13.294Z",
   "schemaVersion": 3,
   "reviewEngineVersion": 1,
   "request": "review this change",
   "requestStated": false,
-  "verdict": "WARN",
-  "confidence": 65,
+  "verdict": "PASS",
+  "confidence": 85,
   "repo": {
     "root": "/home/runner/work/solumbe/solumbe",
     "name": "solumbe"
@@ -15,21 +15,14 @@
     "concepts": [],
     "topFiles": [
       {
-        "path": "src/cli.js",
-        "score": 15,
-        "riskFlags": []
-      },
-      {
         "path": "src/lib/mcp.js",
         "score": 15,
         "riskFlags": []
       },
       {
-        "path": ".github/workflows/claude-gate.yml",
-        "score": 0,
-        "riskFlags": [
-          "configuration"
-        ]
+        "path": "tests/mcp-dispatch.test.js",
+        "score": 4.5,
+        "riskFlags": []
       },
       {
         "path": "CHANGELOG.md",
@@ -37,37 +30,39 @@
         "riskFlags": []
       },
       {
-        "path": "docs/02-mcp-agent-workflows/README.md",
+        "path": "docs/index.md",
+        "score": 0,
+        "riskFlags": []
+      },
+      {
+        "path": "evals/corpus.json",
         "score": 0,
         "riskFlags": []
       }
     ],
     "risks": [
-      "Configuration change: verify environment variables, secrets, build output, and production defaults."
+      "No obvious high-risk domain detected. Main risk is missing a caller or test outside the matched files."
     ]
   },
   "prReviewSummary": {
-    "changedFiles": 37,
-    "additions": 2828,
-    "deletions": 52,
-    "riskLevel": "medium",
+    "changedFiles": 13,
+    "additions": 190,
+    "deletions": 17,
+    "riskLevel": "low",
     "riskFlags": [
-      "configuration",
-      "dependency",
-      "large PR",
-      "large file diff"
+      "dependency"
     ],
     "reviewTargetsCount": 0
   },
   "pass": {
-    "verdict": "WARN",
+    "verdict": "PASS",
     "policy": "standard",
     "governance": "solo",
     "checks": [
       {
         "name": "Changed files",
         "status": "PASS",
-        "summary": "37 changed files found."
+        "summary": "13 changed files found."
       },
       {
         "name": "Commit snapshot",
@@ -81,8 +76,8 @@
       },
       {
         "name": "Risk review",
-        "status": "WARN",
-        "summary": "Risk-sensitive files changed; maintainer review should be explicit."
+        "status": "PASS",
+        "summary": "No obvious risk-sensitive file paths changed."
       },
       {
         "name": "Release discipline",
@@ -111,52 +106,28 @@
       }
     ],
     "changedFiles": [
-      ".claude/settings.json",
-      ".github/workflows/claude-gate.yml",
       "CHANGELOG.md",
       "RELEASE.md",
-      "docs/02-mcp-agent-workflows/README.md",
-      "docs/17-calibration-thesis/README.md",
-      "docs/18-model-routing/README.md",
-      "docs/EVALS.md",
       "docs/assets/solumbe-how-it-works.html",
       "docs/index.md",
       "evals/corpus.json",
-      "integrations/agent-sdk/README.md",
-      "integrations/agent-sdk/guardrails.mjs",
-      "integrations/agent-sdk/orchestrator.mjs",
-      "integrations/agent-sdk/package.json",
-      "integrations/agent-sdk/run.mjs",
-      "integrations/agent-sdk/solumbe-client.mjs",
       "package-lock.json",
       "package.json",
-      "scripts/claude-gate-summary.mjs",
       "server.json",
-      "src/cli.js",
-      "src/lib/claude-read.js",
       "src/lib/context-engine.js",
-      "src/lib/context-read.js",
-      "src/lib/eval.js",
       "src/lib/mcp.js",
-      "src/lib/output.js",
-      "src/lib/read-eval.js",
-      "tests/agent-sdk-example.test.js",
-      "tests/claude-gate-summary.test.js",
       "tests/claude-read.test.js",
-      "tests/cli.test.js",
-      "tests/context-read.test.js",
-      "tests/enforce-agent-model-hook.test.js",
-      "tests/gate-imports.test.js",
-      "tests/workflow-policy.test.js"
+      "tests/context-engine.test.js",
+      "tests/mcp-dispatch.test.js"
     ],
     "subject": {
       "kind": "git-commit",
-      "baseSha": "caf9684562b115b00d57c7cf6a15e50f8a1148ce",
-      "headSha": "b8ca06a076a63cb49b0e7d94d3596eecd854fc7a",
-      "treeSha": "beeb6f5b5d9ea23cf7ab1f4ab5c5ba3d51c8ac5b"
+      "baseSha": "b8ca06a076a63cb49b0e7d94d3596eecd854fc7a",
+      "headSha": "e2829d33d416d4a2699e5890d3e00cb9c9060ee6",
+      "treeSha": "2623fe0aea55be80badec5c1d0f553bfed679ce7"
     }
   },
   "tokenEstimate": {
-    "fullJson": 812
+    "fullJson": 600
   }
 }
