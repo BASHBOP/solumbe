@@ -4,7 +4,7 @@
 
 > For teams that want any coding agent to produce evidence a human can trust before merge.
 
-**v4.6.0** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
+**v4.7.0** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
 
 Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep -->
 
@@ -20,6 +20,15 @@ Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep
 ---
 
 ## What's New
+
+!!! tip "v4.7.0 published (2026-10-18)"
+    The request read can be answered by Claude, and the repository shows solumbe guarding a Claude agent. No command or field was removed.
+
+    - `context --online` can read a request through Claude: one forced tool call whose schema is the answer, one retry on a validation failure, and the same `interpretRead` backstop as Jev. `SOLUMBE_READ_PROVIDER` picks the provider, and `solumbe eval --reads` grades either on a new 24-case suite.
+    - `.claude/settings.json` gains project permission rules, and pull requests get a headless `claude -p` gate summary that skips without `ANTHROPIC_API_KEY`.
+    - `integrations/agent-sdk/` is a Claude Agent SDK example that plans with `context_pack`, delegates to subagents and must pass `review_gate` before it proposes a merge.
+
+    [npm v4.7.0](https://www.npmjs.com/package/@bashbop/solumbe/v/4.7.0) · [GitHub Release](https://github.com/BASHBOP/solumbe/releases/tag/v4.7.0) · [MCP Registry](https://registry.modelcontextprotocol.io/?q=io.github.BASHBOP%2Fsolumbe)
 
 !!! tip "v4.6.0 published (2026-10-18)"
     A subagent can be held to the tier the router chose, and hook scripts are found like any other file. No command or field was removed.
@@ -268,7 +277,7 @@ flowchart LR
 === "Install"
 
     ```bash
-    npm install -g @bashbop/solumbe@4.6.0
+    npm install -g @bashbop/solumbe@4.7.0
     solumbe doctor
     solumbe context "review this change" --path .
     ```
@@ -276,7 +285,7 @@ flowchart LR
 === "No Global Install"
 
     ```bash
-    npx -y @bashbop/solumbe@4.6.0 doctor
+    npx -y @bashbop/solumbe@4.7.0 doctor
     ```
 
 === "Source Checkout"
