@@ -6,6 +6,10 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+## [4.6.0] - 2026-10-18
+
+A `PreToolUse` hook now holds a subagent to the tier the router chose, in the delegate arm of the routing trial, and the repository commits the Claude Code settings that register it. `impact` and `context` find git hook scripts, and `solumbe install --host` keeps a host entry's env and connects a Codex CLI without `codex mcp add`. No command or field was removed. The decision log gains `promptId` and `evidenceSufficient`, and the index cache moves to version 14, so existing indexes rebuild once.
+
 ### Added
 
 - **A `PreToolUse` hook holds a subagent to the routed tier.**

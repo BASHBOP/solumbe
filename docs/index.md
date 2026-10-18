@@ -4,7 +4,7 @@
 
 > For teams that want any coding agent to produce evidence a human can trust before merge.
 
-**v4.5.0** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
+**v4.6.0** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
 
 Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep -->
 
@@ -20,6 +20,16 @@ Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep
 ---
 
 ## What's New
+
+!!! tip "v4.6.0 published (2026-10-18)"
+    A subagent can be held to the tier the router chose, and hook scripts are found like any other file. No command or field was removed.
+
+    - `scripts/hooks/enforce-agent-model.mjs` is a Claude Code `PreToolUse` hook on the Agent tool. In the delegate arm of the routing trial it rewrites a call whose `model` is missing or names another tier to the routed one; the control arm is only observed, and `route-outcomes` counts both. The prompt hook's header and the model-routing docs no longer claim the injected text binds the subagent on its own.
+    - The repository commits `.claude/settings.json`, registering both hooks by `$CLAUDE_PROJECT_DIR` path and nothing else. A hook registered there and in `~/.claude/settings.json` still routes and logs a prompt once.
+    - `impact` and `context` index git hook scripts under `.githooks/` and `.husky/` and rank them for hook requests; the index cache rebuilds once.
+    - `solumbe install --host` keeps the env of an entry it re-registers, and connects a Codex CLI that has no `codex mcp add` by writing its config table directly.
+
+    [npm v4.6.0](https://www.npmjs.com/package/@bashbop/solumbe/v/4.6.0) · [GitHub Release](https://github.com/BASHBOP/solumbe/releases/tag/v4.6.0) · [MCP Registry](https://registry.modelcontextprotocol.io/?q=io.github.BASHBOP%2Fsolumbe)
 
 !!! tip "v4.5.0 published (2026-10-11)"
     A request can declare what it will touch before the edit, and the gate can delegate to the scanners you already run. No command or field was removed.
@@ -258,7 +268,7 @@ flowchart LR
 === "Install"
 
     ```bash
-    npm install -g @bashbop/solumbe@4.5.0
+    npm install -g @bashbop/solumbe@4.6.0
     solumbe doctor
     solumbe context "review this change" --path .
     ```
@@ -266,7 +276,7 @@ flowchart LR
 === "No Global Install"
 
     ```bash
-    npx -y @bashbop/solumbe@4.5.0 doctor
+    npx -y @bashbop/solumbe@4.6.0 doctor
     ```
 
 === "Source Checkout"
