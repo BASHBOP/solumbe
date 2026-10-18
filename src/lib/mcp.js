@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 import { performance } from "node:perf_hooks";
@@ -750,6 +751,7 @@ async function dispatchTool(name, args) {
   if (alias) {
     return dispatchTool(alias.tool, alias.mapArgs(args) ?? {});
   }
+  requireScannableDefaultPath(name, args);
 
   switch (name) {
     case "repo_inspect":
@@ -1025,6 +1027,35 @@ function summarizeFile(file) {
  */
 function isNotableFile(file) {
   return ["route", "apiRoute", "controller", "service", "module", "apiClient"].includes(file.kind);
+}
+
+/**
+ * A tool that takes a repository path falls back to the server's cwd when the
+ * call names none. A host that starts the server with no cwd (Claude Desktop's
+ * config has none, so it runs from /) would then scan the whole filesystem: the
+ * call never answers and the host times out. Refuse that at once and say how
+ * to fix it.
+ * @param {string} name canonical tool name
+ * @param {ToolArgs} args
+ */
+function requireScannableDefaultPath(name, args) {
+  const schema = tools.find((tool) => tool.name === name)?.inputSchema;
+  if (!schema?.properties?.path) return;
+  if (typeof args.path === "string" && args.path.trim()) return;
+  if (Array.isArray(args.paths) && args.paths.length) return;
+  const real = (/** @type {string} */ dir) => {
+    try {
+      return fs.realpathSync(dir);
+    } catch {
+      return path.resolve(dir);
+    }
+  };
+  const cwd = real(process.cwd());
+  if (cwd !== path.parse(cwd).root && cwd !== real(os.homedir())) return;
+  throw new McpProtocolError(
+    -32602,
+    `path is required: this solumbe server runs from ${cwd}, which is too broad to scan. Pass path (the repository's absolute path), or start the server from inside a repository.`,
+  );
 }
 
 /**
