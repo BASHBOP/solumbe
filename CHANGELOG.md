@@ -6,6 +6,11 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+### Added
+
+- **The committed `.claude/settings.json` gains project permission rules.** It allows the repo's own commands (`npm run *`, `node src/cli.js *`, `node --test *`, read-only git) and the solumbe MCP tools, asks before `git push`, `gh pr merge` and `git tag`, and denies reading `.env*`, `*.pem` and `*.key` and running `npm publish`. Personal settings and absolute paths stay in `~/.claude`.
+- **A headless Claude Code gate summary on pull requests.** `.github/workflows/claude-gate.yml` runs `claude -p` with `--output-format json` and a `--json-schema`, held to the one command `node src/cli.js gate`, and posts its summary as a PR comment only after `scripts/claude-gate-summary.mjs` checks it against the same gate run by the workflow. It skips cleanly without the `ANTHROPIC_API_KEY` secret (and so on forks) and is not a required check.
+
 ## [4.6.0] - 2026-10-18
 
 A `PreToolUse` hook now holds a subagent to the tier the router chose, in the delegate arm of the routing trial, and the repository commits the Claude Code settings that register it. `impact` and `context` find git hook scripts, and `solumbe install --host` keeps a host entry's env and connects a Codex CLI without `codex mcp add`. No command or field was removed. The decision log gains `promptId` and `evidenceSufficient`, and the index cache moves to version 14, so existing indexes rebuild once.
