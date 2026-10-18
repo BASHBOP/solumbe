@@ -98,7 +98,9 @@ test("an MCP tool call reaches a live canvas without waiting on it", async (t) =
   });
   // A canvas that records the event and holds its reply until release(): the
   // JSON-RPC response must not wait for it.
-  const canvas = http.createServer((req, res) => {
+  // No request timeout: Node's default (300 s) answers 408 to a request held
+  // that long, and a loaded machine has held this one for 916 s.
+  const canvas = http.createServer({ requestTimeout: 0 }, (req, res) => {
     let body = "";
     req.on("data", (chunk) => {
       body += chunk;
