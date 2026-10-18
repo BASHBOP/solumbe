@@ -6,6 +6,10 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+## [4.7.1] - 2026-10-18
+
+Two fixes found by dogfooding solumbe in Claude Code. No command or field was removed.
+
 ### Fixed
 
 - **A path-less MCP call no longer hangs a server that runs from `/` or the home directory.** Claude Desktop starts its configured MCP servers with no working directory, so they run from `/`, and Claude Code sessions in the desktop app can be routed to that instance. A `context_pack` (or any tool that takes a repository path) called without `path` then scanned the whole filesystem: the host reported "Request timed out" and the call failed with a `RangeError` minutes later. Such a call now answers at once with `-32602` and says to pass `path`. An explicit `path`, and tools that take none, are unchanged.
