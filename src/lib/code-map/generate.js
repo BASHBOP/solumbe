@@ -4,7 +4,7 @@ import { inspectRepo, listRepoFiles } from "../repo.js";
 import { estimateTokens, estimateTokenSections } from "../tokens.js";
 import { extractAstFacts } from "./ast.js";
 import { goImportDir, goModulePath } from "./ast-languages.js";
-import { classifyFile, extractHttpMethods, inferControllerBasePath, inferDomainInfo, inferNextRoute, isMarkdownFilePath } from "./classify.js";
+import { classifyFile, extractHttpMethods, isGitHookPath, inferControllerBasePath, inferDomainInfo, inferNextRoute, isMarkdownFilePath } from "./classify.js";
 import { extractDataAccess } from "./data-access.js";
 import { isVendorFile } from "./vendor.js";
 
@@ -49,6 +49,7 @@ function isMigrationPath(file) {
 
 /** @param {string} file @returns {boolean} */
 export function isSourceFilePath(file) {
+  if (isGitHookPath(file)) return true;
   const basename = path.posix.basename(file);
   // Manifest and compiler metadata are ubiquitous but are not useful change
   // owners. Keep application JSON (translations and flag config) indexable.
@@ -342,7 +343,8 @@ function analyzeSource(relativePath, text, maxSymbols) {
   const markdown = isMarkdownFilePath(relativePath);
   // Prisma and SQL are not JavaScript; their models, tables and columns come
   // from `extractArtifactFacts`, not from the TypeScript parser.
-  const schemaArtifact = /\.(prisma|sql)$/i.test(relativePath);
+  // Git hook scripts are shell, not JavaScript: index their path, skip the parser.
+  const schemaArtifact = /\.(prisma|sql)$/i.test(relativePath) || isGitHookPath(relativePath);
   const ast = markdown || schemaArtifact ? emptyAstFacts() : extractAstFacts(relativePath, text);
   const artifactFacts = extractArtifactFacts(relativePath, text);
   const vendor = isVendorFile(relativePath, text);

@@ -10,6 +10,10 @@ import { fileURLToPath } from "node:url";
 import {
   AGENT_MODEL,
   appendDecision,
+  claimOnce,
+  promptClaimKey,
+  ROUTE_TIMEOUT_MS,
+  routeTimeoutMs,
   decisionRecord,
   formatContext,
   routeArm,
@@ -42,13 +46,26 @@ const REMINDER = "<system-reminder>\nYou are operating in a git worktree.\nWorkt
  * stdout. Returns the exit code and the raw stdout.
  * @param {unknown} input
  */
-function runHook(input, { timeout = 30000, env: extra = {} } = {}) {
+function runHook(input, { timeout = 90000, env: extra = {} } = {}) {
   return new Promise((resolve) => {
     // No vendor key reaches the hook: a test must not make a billed call
     // because of what the developer's shell exports. And no test writes the
     // developer's real decision log.
     const { TYPESAFE_API_KEY: _key, ...env } = process.env;
-    const child = spawn(process.execPath, [HOOK], { stdio: ["pipe", "pipe", "pipe"], env: { ...env, SOLUMBE_ROUTE_LOG: "off", ...extra } });
+    const child = spawn(process.execPath, [HOOK], {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: {
+        ...env,
+        SOLUMBE_ROUTE_LOG: "off",
+        // Each run claims its prompt in a directory of its own, so two tests
+        // that send the same prompt never stand each other down.
+        SOLUMBE_HOOK_CLAIMS_DIR: fs.mkdtempSync(path.join(os.tmpdir(), "route-claims-")),
+        // The 6 s budget is for a prompt; a suite that spawns node in parallel
+        // has run past it, and these tests check the output, not the deadline.
+        SOLUMBE_ROUTE_TIMEOUT_MS: "60000",
+        ...extra,
+      },
+    });
     let out = "";
     let err = "";
     const timer = setTimeout(() => child.kill("SIGKILL"), timeout);
@@ -334,4 +351,48 @@ test("solumbe route reports the enforce arm in the terminal and in JSON", () => 
   assert.equal(on.enforce.arm, "delegate");
   assert.equal(on.enforce.agentModel, AGENT_MODEL[on.tier]);
   assert.match(run([], { SOLUMBE_ROUTE_MODE: "delegate", SOLUMBE_ROUTE_DELEGATE_SHARE: "1", NO_COLOR: "1" }).stdout, /ENFORCE/);
+});
+
+test("the header does not claim the injected text binds the subagent on its own", () => {
+  const source = fs.readFileSync(HOOK, "utf8");
+  const header = source.slice(0, source.indexOf("import "));
+  assert.doesNotMatch(header, /binds the subagent|real actuation/);
+  assert.match(header, /enforce-agent-model\.mjs/);
+  assert.match(header, /parent decides whether to pass `model`/);
+});
+
+test("the advisory line names the Agent tool's model alias beside the host model", () => {
+  const context = formatContext({ tier: "mid", hostModel: "claude-sonnet-5", scoring: { route: 61 } });
+  assert.match(context, /launch it on `claude-sonnet-5` \(Agent tool `model: "sonnet"`\)/);
+});
+
+test("a decision keeps the prompt id and whether the route had evidence, for the PreToolUse hook", () => {
+  const record = decisionRecord({ session_id: "s", prompt_id: "p-1", prompt: "x" }, { tier: "mid", scoring: { evidence: { sufficient: true } } });
+  assert.equal(record.promptId, "p-1");
+  assert.equal(record.evidenceSufficient, true);
+  assert.equal(decisionRecord({ prompt: "x" }, { tier: "premium", scoring: { evidence: { sufficient: false } } }).evidenceSufficient, false);
+  assert.equal(decisionRecord({ prompt: "x" }, { tier: "mid" }).promptId, null);
+});
+
+test("a prompt is claimed once, so a hook registered twice routes it once", () => {
+  const env = { SOLUMBE_HOOK_CLAIMS_DIR: fs.mkdtempSync(path.join(os.tmpdir(), "route-claims-")) };
+  const now = Date.parse("2026-10-18T08:00:00Z");
+  assert.equal(claimOnce("route:s:p", { env, now }), true);
+  assert.equal(claimOnce("route:s:p", { env, now: now + 1000 }), false);
+  assert.equal(claimOnce("route:s:other", { env, now }), true);
+  // Typed again after the window, it is a new prompt.
+  assert.equal(claimOnce("route:s:p", { env, now: now + 120000 }), true);
+  assert.equal(claimOnce("route:s:p", { env, now: now + 121000 }), false);
+  // A guard that cannot run lets the run go.
+  assert.equal(claimOnce("k", { env: { SOLUMBE_HOOK_CLAIMS_DIR: "/dev/null/nope" } }), true);
+  assert.equal(promptClaimKey({ session_id: "s", prompt_id: "p" }), "route:s:p");
+  assert.match(String(promptClaimKey({ session_id: "s", prompt: "fix it" })), /^route:s:[0-9a-f]{16}$/);
+  assert.equal(promptClaimKey({ prompt: "fix it" }), null);
+});
+
+test("the routing deadline is 6 s unless the environment sets a positive one", () => {
+  assert.equal(ROUTE_TIMEOUT_MS, 6000);
+  assert.equal(routeTimeoutMs({}), 6000);
+  assert.equal(routeTimeoutMs({ SOLUMBE_ROUTE_TIMEOUT_MS: "60000" }), 60000);
+  for (const bad of ["", "0", "-5", "soon"]) assert.equal(routeTimeoutMs({ SOLUMBE_ROUTE_TIMEOUT_MS: bad }), 6000);
 });

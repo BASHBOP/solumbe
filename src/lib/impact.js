@@ -253,6 +253,13 @@ const NEVER_OWNER_KINDS = new Set(["test", "changelog", "config", "translation"]
 // weak incidental match never becomes a coverage obligation.
 const FALLBACK_OWNER_MIN_SCORE = 20;
 
+// A git hook script (`.githooks/pre-commit`) shares only generic words with a
+// request ("pre", "commit", "step"), so components whose names happen to hold
+// the same words outranked it. When the request names a git hook, the hook
+// script is the likely owner.
+const GIT_HOOK_REQUEST_TERMS = ["hook", "hooks", "githook", "githooks", "husky", "precommit", "commit", "push", "prepush"];
+const GIT_HOOK_BOOST = 1.4;
+
 // Paths that are usually not the owner of a behavior change. Demoted but not
 // dropped — sometimes the right answer IS a script.
 const PENALTY_PATH_PREFIXES = [
@@ -283,12 +290,13 @@ export function generateImpact(query, options = {}) {
   const wantsTests = queryMentions(weightedQuery, ["test", "tests", "spec", "coverage", "qa"]);
   const wantsDocs = queryMentions(weightedQuery, ["doc", "docs", "documentation", "readme", "changelog"]);
   const wantsCopy = isCopyRequest(weightedQuery.keys());
+  const wantsGitHook = queryMentions(weightedQuery, GIT_HOOK_REQUEST_TERMS);
   const named = resolveNamedFiles(map.files, normalized, { limit: top });
   /** @type {Map<string, PinnedFile>} */
   const pinned = new Map(named.pinned.map((entry, order) => [entry.path, { ...entry, order }]));
 
   const docFrequency = computeTokenDocFrequency(map.files, weightedQuery);
-  const scored = scoreFiles(map.files, weightedQuery, concepts, { wantsTests, wantsDocs, wantsCopy }, docFrequency);
+  const scored = scoreFiles(map.files, weightedQuery, concepts, { wantsTests, wantsDocs, wantsCopy, wantsGitHook }, docFrequency);
   addNamedFiles(scored, map.files, pinned, named.definers);
   const withBoosts = applyDependencyBoosts(map.files, scored, pinned);
   liftPinnedFiles(withBoosts, pinned);
@@ -414,7 +422,7 @@ export function companionLeads(query, repoPath, options = {}) {
 }
 
 /**
- * @typedef {{ wantsTests: boolean, wantsDocs: boolean, wantsCopy: boolean }} ScoreFlags
+ * @typedef {{ wantsTests: boolean, wantsDocs: boolean, wantsCopy: boolean, wantsGitHook?: boolean }} ScoreFlags
  */
 
 /**
@@ -445,7 +453,7 @@ function scoreFiles(files, weightedQuery, concepts, flags, stats) {
  * @param {TokenDocFrequency} [stats]
  * @returns {ScoreResult}
  */
-function scoreFile(file, weightedQuery, concepts, { wantsTests, wantsDocs, wantsCopy }, stats) {
+function scoreFile(file, weightedQuery, concepts, { wantsTests, wantsDocs, wantsCopy, wantsGitHook = false }, stats) {
   // The extension names the language, not the change: "port it to Go" must
   // not path-match every `.go` file.
   const pathTokens = tokenize(file.path.replace(/\.[A-Za-z0-9]+$/, ""));
@@ -565,6 +573,11 @@ function scoreFile(file, weightedQuery, concepts, { wantsTests, wantsDocs, wants
   if (OWNER_KINDS.has(file.kind)) {
     score *= 1.15;
     reasons.push(`owner kind ${file.kind}, slight boost`);
+  }
+
+  if (file.kind === "gitHook" && wantsGitHook) {
+    score *= GIT_HOOK_BOOST;
+    reasons.push(`git hook script, request names a git hook (×${GIT_HOOK_BOOST})`);
   }
 
   return { score, reasons };

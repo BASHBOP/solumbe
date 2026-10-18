@@ -6,7 +6,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { formatOutcomes, gradeDecisions, outcomesFor, promptHash, readSessions, readsAsPushback } from "../scripts/hooks/route-outcomes.mjs";
+import { formatOutcomes, gradeAgentCalls, gradeDecisions, outcomesFor, promptHash, readSessions, readsAsPushback } from "../scripts/hooks/route-outcomes.mjs";
 
 const SCRIPT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "scripts", "hooks", "route-outcomes.mjs");
 const T0 = Date.parse("2026-09-26T10:00:00Z");
@@ -269,4 +269,32 @@ test("decisions join to their prompt by session and hash, and grade per tier wit
   assert.equal(missing.status, 1);
   assert.match(missing.stderr, /no decision log/);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("Agent calls are counted per arm, joined to the decisions they belong to", () => {
+  const records = [
+    { v: 1, sessionId: "s", promptHash: "h1", arm: "delegate" },
+    { v: 1, sessionId: "s", promptHash: "h2", arm: "control" },
+    { v: 1, sessionId: "s", promptHash: "h3" },
+  ];
+  const calls = [
+    { v: 1, sessionId: "s", promptHash: "h1", arm: "delegate", action: "rewrote" },
+    { v: 1, sessionId: "s", promptHash: "h1", arm: "delegate", action: "matched" },
+    { v: 1, sessionId: "s", promptHash: "h2", arm: "control", action: "diverged" },
+    { v: 1, sessionId: "s", promptHash: "h3", action: "matched" },
+    { v: 1, sessionId: "other", promptHash: "h1", arm: "delegate", action: "rewrote" },
+  ];
+  const all = gradeAgentCalls(calls, records);
+  assert.deepEqual(all.arms.delegate, { calls: 2, requests: 1, matched: 1, diverged: 0, rewrote: 1 });
+  assert.deepEqual(all.arms.control, { calls: 1, requests: 1, matched: 0, diverged: 1, rewrote: 0 });
+  assert.deepEqual(all.arms.advisory, { calls: 1, requests: 1, matched: 1, diverged: 0, rewrote: 0 });
+  assert.equal(all.unjoined, 1);
+  const control = gradeAgentCalls(calls, records, { arm: "control" });
+  assert.deepEqual(Object.keys(control.arms), ["control"]);
+
+  const text = formatOutcomes({ ...gradeDecisions([], new Map()), agentCalls: all });
+  assert.match(text, /## Subagent model, per arm/);
+  assert.match(text, /\| delegate \| 2 \| 1 \| 1 \| 0 \| 1 \|/);
+  assert.match(text, /1 Agent call\(s\) joined no logged decision/);
+  assert.doesNotMatch(formatOutcomes(gradeDecisions([], new Map())), /Subagent model/);
 });

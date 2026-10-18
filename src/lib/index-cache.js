@@ -135,7 +135,7 @@ import { listRepoFiles } from "./repo.js";
 // `case "context_pack":`) are indexed as `registered` symbols.
 // 13: a Go file records the repository directories its imports name
 // (`importDirs`), read against the repository's go.mod files.
-const cacheVersion = 13;
+const cacheVersion = 14;
 const externalCacheDirectory = "solumbe-index-cache";
 
 // Bound on the in-process memo. MCP hosts call repo-map tools repeatedly for the

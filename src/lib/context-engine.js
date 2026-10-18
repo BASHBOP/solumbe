@@ -1246,10 +1246,27 @@ function formatHotspots(hotspots) {
 function selectPrimaryFiles(scoredFiles, limit, rules = noRequestRules) {
   const named = uniqueFiles(scoredFiles.filter((file) => rules.pinned.has(fileKey(file)) && !isRunnableTestPath(file.path))).slice(0, limit);
   const files = uniqueFiles(scoredFiles.filter((file) => file.kind !== "test" && !rules.pinned.has(fileKey(file))));
-  const strong = files.filter((file) => file.score >= 25);
+  const strong = gitHookOwnedPool(files.filter((file) => file.score >= 25));
   const pool = strong.length ? strong : files.slice(0, Math.min(limit, 3));
   const remaining = limit - named.length;
   return remaining > 0 ? [...named, ...keepEachRepo(diversifyByDomain(pool, remaining, 2), pool)] : named;
+}
+
+// When a git hook script is the strongest match, the change lives in the hook.
+// Application files reach the pool only by sharing generic words with the
+// request ("step", "gate", "commit"), so they keep a primary slot only when
+// they score close to the hook. Scoped to hooks: a global relative cutoff
+// dropped real second owners elsewhere in the corpus.
+const GIT_HOOK_PRIMARY_RATIO = 0.8;
+
+/**
+ * @param {ScoredFile[]} strong
+ * @returns {ScoredFile[]}
+ */
+function gitHookOwnedPool(strong) {
+  const top = strong.reduce((best, file) => (!best || file.score > best.score ? file : best), /** @type {ScoredFile | undefined} */ (undefined));
+  if (!top || top.kind !== "gitHook") return strong;
+  return strong.filter((file) => file.kind === "gitHook" || file.score >= top.score * GIT_HOOK_PRIMARY_RATIO);
 }
 
 /**

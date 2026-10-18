@@ -6,6 +6,43 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+## [4.6.0] - 2026-10-18
+
+A `PreToolUse` hook now holds a subagent to the tier the router chose, in the delegate arm of the routing trial, and the repository commits the Claude Code settings that register it. `impact` and `context` find git hook scripts, and `solumbe install --host` keeps a host entry's env and connects a Codex CLI without `codex mcp add`. No command or field was removed. The decision log gains `promptId` and `evidenceSufficient`, and the index cache moves to version 14, so existing indexes rebuild once.
+
+### Added
+
+- **A `PreToolUse` hook holds a subagent to the routed tier.**
+  - `scripts/hooks/enforce-agent-model.mjs` runs on the Agent tool (matcher `Agent|Task`). It reads the decision `route-prompt.mjs` logged for the session and prompt and, in the delegate arm of `SOLUMBE_ROUTE_MODE=delegate`, rewrites a call whose `model` is missing or names another tier to the routed alias through `updatedInput`, keeping every other field. It rewrites rather than denies, so the call lands on the first try, and tells the parent through `additionalContext`.
+  - The control arm and advisory mode are observed, never changed. Every Agent call that joins a decision leaves one line in `~/.solumbe/agent-model-decisions.jsonl` (`SOLUMBE_AGENT_MODEL_LOG`), and `route-outcomes` counts them per arm beside its grade (`--agent-log`).
+  - Nothing is enforced for a route with no evidence, inside a subagent, or without a decision. Every failure exits 0 and leaves the call as made.
+  - The decision log gains `promptId` and `evidenceSufficient`, which the Agent hook joins on and checks.
+- **The repository commits `.claude/settings.json`**, registering both hooks by `$CLAUDE_PROJECT_DIR`-relative path and nothing else. The rest of `.claude/` stays ignored. A hook registered both there and in `~/.claude/settings.json` claims each prompt or tool call once, so a prompt is still routed and logged once.
+
+### Fixed
+
+- **`route-prompt.mjs` no longer claims to bind the subagent.** Its header and docs/18 said naming the subagent model was "real actuation". The hook only adds context; the parent session decides whether to pass `model` to the Agent tool, and only the new `PreToolUse` hook enforces it. The advisory line now also names the Agent tool's alias (`model: "sonnet"`) beside the host model id.
+- **Three tests no longer fail on a loaded machine.** `tests/canvas-tap.test.js` let the tap's 8 s send timeout abort the held send when the dispatch ran long (13.6 s), and two route-prompt hook tests ran past the hook's 6 s routing deadline. The canvas test now records the timeout signal and sends without it, and its server no longer answers a long-held request with Node's 300 s `408`, and the hook's deadline can be set with `SOLUMBE_ROUTE_TIMEOUT_MS`, which the hook tests raise.
+- **`impact` and `context` find git hook scripts.**
+  - Hook scripts such as `.githooks/pre-commit` have no file extension, so the indexer never admitted them, and `.husky/` was skipped as a whole. A request to "add a gate step to the pre-commit hook" ranked `components/ui/stepper/*` and `SubscriptionGate.tsx` and left the hook out entirely.
+  - Files named after a git hook (`pre-commit`, `commit-msg`, `pre-push` and the rest, with or without `.sh`) under `.githooks/` or `.husky/` are now indexed with the new kind `gitHook`. Husky's generated `.husky/_/` shims are still skipped, and their content is not parsed as JavaScript.
+  - `impact` boosts a `gitHook` file (×1.4) when the request names a hook (`hook`, `husky`, `commit`, `push`, …). When a hook is the strongest match, `context` keeps other files as primary only when they score within 80% of it.
+  - The index cache moves to version 14, so existing indexes rebuild once.
+  - New eval fixture `git-hooks` and case `git-hook-pre-commit-gate-step`. Retrieval baseline is now p@5=0.838, r@5=1.0, mrr=0.986 (36/36).
+- **`solumbe install --host codex` connects a Codex CLI that has no `codex mcp add`.**
+  - On codex-cli 0.31.0, `codex mcp` runs Codex as an MCP server and takes no subcommand. The install ended "codex mcp add failed: error: unexpected argument 'add' found" and left the host unconnected.
+  - The install now asks first, with `codex mcp add --help`. Where that fails, it writes the `[mcp_servers.solumbe]` table in `~/.codex/config.toml` itself.
+  - An existing table is replaced where it stands, together with any `[mcp_servers.solumbe.*]` sub-table, and a missing one is added at the end. Every other line of the file is left as it was, and the previous file is kept as `config.toml.solumbe.bak`.
+  - A config that sets the server another way (`solumbe = { … }` under `[mcp_servers]`, dotted keys, or an inline `mcp_servers`) is left unchanged and reported, because a second definition would stop Codex reading the file.
+  - `--dry-run` names the path: `would run: codex mcp add solumbe …`, or `would add the [mcp_servers.solumbe] table directly: this Codex CLI has no codex mcp add`.
+  - A Codex CLI that has `codex mcp add` is connected through it as before, after the one `--help` call.
+  - The fallback writes to `~/.codex/config.toml` and does not read `CODEX_HOME`.
+- **`solumbe install --host` keeps the env of an entry it re-registers.**
+  - Re-running the install replaced a host's `solumbe` entry with a new command and args and no env. On Claude Code that dropped `SOLUMBE_CHECK_MODE`, so the check trial stopped applying to new sessions, and `SOLUMBE_CANVAS_URL`, so tool calls stopped reaching the Canvas. Nothing reported it.
+  - The existing entry's env is now read first and carried onto the new entry unchanged. It is read from the config file for Claude Desktop, Cursor, VS Code, Gemini CLI and Kimi Code CLI, from `~/.claude.json` for Claude Code (or `claude mcp get solumbe` when that file is missing or cannot be parsed), and from `codex mcp list --json` for Codex CLI, or from the `[mcp_servers.solumbe]` table (an inline `env`, `env.KEY` keys or an `env` sub-table) where the install writes `~/.codex/config.toml` directly. A variable the run sets itself, such as the two `--canvas` adds, wins. A fresh install still writes no env.
+  - The summary and `--dry-run` name the variables kept (`keeps env SOLUMBE_CANVAS_URL, SOLUMBE_HOST`) and never print a value, because an env block can hold a key. `--json` carries the names as `keptEnv` on each host result. A command a dry run shows has `<hidden>` in place of each value, and the message for a host CLI that is not on the `PATH` says to run the install again instead of printing a command to run by hand.
+  - When an env cannot be read (a Codex listing that does not parse, a `config.toml` env that is not one-line strings, a Claude Code entry that `claude mcp get` shows at another scope, an `env` that is not an object), that host gets a line under Check saying it was not carried over. When the add fails after the old entry was removed, the line names the variables that entry carried.
+
 ## [4.5.0] - 2026-10-11
 
 A request can declare what it will touch before the edit, and the gate fails a file that was never declared. The gate can also delegate to gitleaks, Semgrep and osv-scanner where they are installed, and the attestation record is version 2 and can be signed. No command or field was removed. `convergence_score` can now return `band: "inconclusive"` with `convergence: null`, so a client that reads `convergence` as a number, or `band` as one of three values, must accept them. The convergence engine moves to `0.6.0`, the impact engine to 5 and the index cache to version 13, so `0.5.0` receipts do not recompute and existing indexes rebuild once.
