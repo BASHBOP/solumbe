@@ -6,7 +6,19 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+### Added
+
+- **A `PreToolUse` hook holds a subagent to the routed tier.**
+  - `scripts/hooks/enforce-agent-model.mjs` runs on the Agent tool (matcher `Agent|Task`). It reads the decision `route-prompt.mjs` logged for the session and prompt and, in the delegate arm of `SOLUMBE_ROUTE_MODE=delegate`, rewrites a call whose `model` is missing or names another tier to the routed alias through `updatedInput`, keeping every other field. It rewrites rather than denies, so the call lands on the first try, and tells the parent through `additionalContext`.
+  - The control arm and advisory mode are observed, never changed. Every Agent call that joins a decision leaves one line in `~/.solumbe/agent-model-decisions.jsonl` (`SOLUMBE_AGENT_MODEL_LOG`), and `route-outcomes` counts them per arm beside its grade (`--agent-log`).
+  - Nothing is enforced for a route with no evidence, inside a subagent, or without a decision. Every failure exits 0 and leaves the call as made.
+  - The decision log gains `promptId` and `evidenceSufficient`, which the Agent hook joins on and checks.
+- **The repository commits `.claude/settings.json`**, registering both hooks by `$CLAUDE_PROJECT_DIR`-relative path and nothing else. The rest of `.claude/` stays ignored. A hook registered both there and in `~/.claude/settings.json` claims each prompt or tool call once, so a prompt is still routed and logged once.
+
 ### Fixed
+
+- **`route-prompt.mjs` no longer claims to bind the subagent.** Its header and docs/18 said naming the subagent model was "real actuation". The hook only adds context; the parent session decides whether to pass `model` to the Agent tool, and only the new `PreToolUse` hook enforces it. The advisory line now also names the Agent tool's alias (`model: "sonnet"`) beside the host model id.
+- **Three tests no longer fail on a loaded machine.** `tests/canvas-tap.test.js` let the tap's 8 s send timeout abort the held send when the dispatch ran long (13.6 s), and two route-prompt hook tests ran past the hook's 6 s routing deadline. The canvas test now records the timeout signal and sends without it, and the hook's deadline can be set with `SOLUMBE_ROUTE_TIMEOUT_MS`, which the hook tests raise.
 
 - **`solumbe install --host codex` connects a Codex CLI that has no `codex mcp add`.**
   - On codex-cli 0.31.0, `codex mcp` runs Codex as an MCP server and takes no subcommand. The install ended "codex mcp add failed: error: unexpected argument 'add' found" and left the host unconnected.

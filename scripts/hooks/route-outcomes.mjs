@@ -26,11 +26,18 @@
 // neither a prompt nor anybody's follow-up.
 //
 //   node scripts/hooks/route-outcomes.mjs [--log <file>] [--transcripts <dir>]
-//        [--window-min 60] [--min-sample 30] [--arm delegate|control|advisory] [--json]
+//        [--window-min 60] [--min-sample 30] [--arm delegate|control|advisory]
+//        [--agent-log <file>] [--json]
 //
 // `--arm` grades one arm of the enforce-mode trial (route-prompt's
 // SOLUMBE_ROUTE_MODE=delegate). Rows logged before the trial have no arm and
 // count as `advisory`.
+//
+// The Agent calls enforce-agent-model.mjs saw (`agent-model-decisions.jsonl`,
+// `--agent-log` names another file) are counted per arm beside the grade: how
+// many asked for the routed model, how many asked for another and were left
+// alone, and how many were rewritten. That is what tells the arms apart. A
+// delegate arm whose calls all matched anyway was not bound by anything.
 
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -39,6 +46,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { wilson } from "../../src/lib/regret.js";
+import { agentModelLogPath } from "./enforce-agent-model.mjs";
 import { isHarnessPrompt, routeLogPath } from "./route-prompt.mjs";
 
 export const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit", "str_replace_based_edit_tool"]);
@@ -279,6 +287,42 @@ export function gradeDecisions(records, sessions, options = {}) {
 }
 
 /**
+ * The Agent calls the PreToolUse hook recorded, per arm. A call counts only
+ * when it joins a routing decision in the log (session and prompt hash), so
+ * the counts cover the same requests the grade does, and `--arm` filters them
+ * the same way.
+ * @param {Record<string, any>[]} calls agent-model log lines
+ * @param {Record<string, any>[]} records decision-log lines
+ * @param {{ arm?: string }} [options]
+ */
+export function gradeAgentCalls(calls, records, options = {}) {
+  const known = new Set(records.map((record) => `${record?.sessionId}:${record?.promptHash}`));
+  /** @type {Record<string, { calls: number, requests: number, matched: number, diverged: number, rewrote: number }>} */
+  const arms = {};
+  /** @type {Map<string, Set<string>>} */
+  const requests = new Map();
+  let unjoined = 0;
+  for (const call of calls) {
+    const arm = String(call?.arm ?? "advisory");
+    if (options.arm && arm !== options.arm) continue;
+    const key = `${call?.sessionId}:${call?.promptHash}`;
+    if (!known.has(key)) {
+      unjoined += 1;
+      continue;
+    }
+    const row = (arms[arm] ??= { calls: 0, requests: 0, matched: 0, diverged: 0, rewrote: 0 });
+    row.calls += 1;
+    if (call.action === "matched" || call.action === "diverged" || call.action === "rewrote")
+      row[/** @type {"matched"|"diverged"|"rewrote"} */ (call.action)] += 1;
+    const seen = requests.get(arm) ?? new Set();
+    seen.add(key);
+    requests.set(arm, seen);
+    row.requests = seen.size;
+  }
+  return { arms, unjoined };
+}
+
+/**
  * @param {string} name
  * @param {any[]} rows
  * @param {number} minSample
@@ -299,7 +343,7 @@ function round(value) {
   return Math.round(value * 1000) / 1000;
 }
 
-/** @param {ReturnType<typeof gradeDecisions>} data */
+/** @param {ReturnType<typeof gradeDecisions> & { agentCalls?: ReturnType<typeof gradeAgentCalls> }} data */
 export function formatOutcomes(data) {
   const pct = (/** @type {number|null} */ v) => (v === null ? "—" : `${(v * 100).toFixed(1)}%`);
   const cell = (/** @type {any} */ s) =>
@@ -320,6 +364,18 @@ export function formatOutcomes(data) {
     );
   }
   if (!Object.keys(data.variants).length) lines.push("Nothing to grade yet: no logged decision joined to a prompt with a follow-up.", "");
+  if (data.agentCalls && Object.keys(data.agentCalls.arms).length) {
+    lines.push(
+      "## Subagent model, per arm",
+      "",
+      "| Arm | Agent calls | requests | asked for the routed model | asked for another, left | rewritten |",
+      "| --- | --: | --: | --: | --: | --: |",
+    );
+    for (const [arm, row] of Object.entries(data.agentCalls.arms)) {
+      lines.push(`| ${arm} | ${row.calls} | ${row.requests} | ${row.matched} | ${row.diverged} | ${row.rewrote} |`);
+    }
+    lines.push("", `${data.agentCalls.unjoined} Agent call(s) joined no logged decision.`, "");
+  }
   lines.push("## Caveats", "", ...data.caveats.map((c) => `- ${c}`));
   return lines.join("\n");
 }
@@ -339,6 +395,32 @@ function parseArgs(argv) {
     } else flags[key] = true;
   }
   return flags;
+}
+
+/**
+ * The v1 lines of a JSONL file, or none when it is missing or off.
+ * @param {string|null} file
+ * @returns {Record<string, any>[]}
+ */
+function readJsonl(file) {
+  if (!file) return [];
+  let raw = "";
+  try {
+    raw = fs.readFileSync(file, "utf8");
+  } catch {
+    return [];
+  }
+  return raw
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    })
+    .filter((record) => record && record.v === 1);
 }
 
 function main() {
@@ -363,11 +445,15 @@ function main() {
       }
     })
     .filter((record) => record && record.v === 1);
-  const data = gradeDecisions(records, readSessions(transcripts), {
-    windowMin: flags["window-min"] === undefined ? undefined : Number(flags["window-min"]),
-    minSample: flags["min-sample"] === undefined ? undefined : Number(flags["min-sample"]),
-    arm: typeof flags.arm === "string" ? flags.arm : undefined,
-  });
+  const arm = typeof flags.arm === "string" ? flags.arm : undefined;
+  const data = {
+    ...gradeDecisions(records, readSessions(transcripts), {
+      windowMin: flags["window-min"] === undefined ? undefined : Number(flags["window-min"]),
+      minSample: flags["min-sample"] === undefined ? undefined : Number(flags["min-sample"]),
+      arm,
+    }),
+    agentCalls: gradeAgentCalls(readJsonl(typeof flags["agent-log"] === "string" ? flags["agent-log"] : agentModelLogPath()), records, { arm }),
+  };
   process.stdout.write(flags.json ? `${JSON.stringify({ ok: true, log: logPath, transcripts, ...data }, null, 2)}\n` : `${formatOutcomes(data)}\n`);
 }
 

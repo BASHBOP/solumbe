@@ -113,17 +113,26 @@ test("an MCP tool call reaches a live canvas without waiting on it", async (t) =
   const canvasUrl = `http://127.0.0.1:${port}`;
 
   // Watch the tap's send from the client side. With the reply held, the send
-  // settles only after release() or when the tap's own timeout aborts it, and
-  // these handlers are attached before the tap's, so a response that waited on
-  // the send is always written after sendState changes. That checks the order
-  // of the two, not how fast the dispatch ran.
+  // settles only after release(), and these handlers are attached before the
+  // tap's, so a response that waited on the send is always written after
+  // sendState changes. That checks the order of the two, not how fast the
+  // dispatch ran.
+  //
+  // The tap bounds its send with an 8 s timeout signal. The wrapper records
+  // that signal and sends without it: on a loaded machine the dispatch alone
+  // has run past 8 s (13.6 s on 2026-10-18), the timeout aborted the held send
+  // before release(), and the test failed on a race it does not test.
   const savedFetch = globalThis.fetch;
   /** @type {Promise<Response>[]} */
   const sends = [];
   let sendState = "pending";
+  /** @type {unknown[]} */
+  const signals = [];
   globalThis.fetch = (url, init) => {
-    const send = savedFetch(url, init);
-    if (String(url).startsWith(canvasUrl)) {
+    const toCanvas = String(url).startsWith(canvasUrl);
+    if (toCanvas) signals.push(init?.signal);
+    const send = savedFetch(url, toCanvas ? { ...init, signal: undefined } : init);
+    if (toCanvas) {
       sends.push(send);
       send.then(
         () => {
@@ -175,6 +184,7 @@ test("an MCP tool call reaches a live canvas without waiting on it", async (t) =
   const response = JSON.parse(text.trim());
   assert.equal(response.result.isError, false, "the tool answered normally");
   assert.equal(sends.length, 1, "the tap sent one event");
+  assert.ok(signals[0] instanceof globalThis.AbortSignal, "the tap bounds its send with a timeout signal");
   assert.equal(sendState, "pending", `the response waited on the canvas (send ${sendState})`);
 
   // Only now may the canvas reply. It records the event before replying, so
