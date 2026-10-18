@@ -4,7 +4,7 @@
 
 > For teams that want any coding agent to produce evidence a human can trust before merge.
 
-**v4.7.0** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
+**v4.7.1** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
 
 Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep -->
 
@@ -20,6 +20,14 @@ Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep
 ---
 
 ## What's New
+
+!!! tip "v4.7.1 published (2026-10-18)"
+    Two fixes found by dogfooding solumbe in Claude Code. No command or field was removed.
+
+    - A tool that takes a repository path, called without one, no longer hangs a server that runs from `/` or the home directory (Claude Desktop starts its MCP servers from `/`). It answers at once with `-32602` and says to pass `path`.
+    - A question about the code (_where is_, _how does_, _why does_, _which file_, _is A consistent with B?_) reads as `explain` instead of `unknown`; the heuristic's intent accuracy on the `reads` suite goes from 0.517 to 0.793.
+
+    [npm v4.7.1](https://www.npmjs.com/package/@bashbop/solumbe/v/4.7.1) · [GitHub Release](https://github.com/BASHBOP/solumbe/releases/tag/v4.7.1) · [MCP Registry](https://registry.modelcontextprotocol.io/?q=io.github.BASHBOP%2Fsolumbe)
 
 !!! tip "v4.7.0 published (2026-10-18)"
     The request read can be answered by Claude, and the repository shows solumbe guarding a Claude agent. No command or field was removed.
@@ -277,7 +285,7 @@ flowchart LR
 === "Install"
 
     ```bash
-    npm install -g @bashbop/solumbe@4.7.0
+    npm install -g @bashbop/solumbe@4.7.1
     solumbe doctor
     solumbe context "review this change" --path .
     ```
@@ -285,7 +293,7 @@ flowchart LR
 === "No Global Install"
 
     ```bash
-    npx -y @bashbop/solumbe@4.7.0 doctor
+    npx -y @bashbop/solumbe@4.7.1 doctor
     ```
 
 === "Source Checkout"

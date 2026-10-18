@@ -128,6 +128,7 @@ const stopWords = new Set([
   "where",
   "which",
   "who",
+  "why",
   "with",
   "app",
   "mobile",
@@ -160,6 +161,16 @@ const actionWords = new Set([
 // back with intent "unknown" and the ambiguous-action open question even
 // though "bugs" is as clear a signal as "debug".
 const debugSynonyms = new Set(["bug", "bugs", "bugfix", "broken", "crash", "crashes", "crashing", "regression", "regressions"]);
+// A question asks to be shown how the code works, not to change it: "where is
+// X handled", "how does Y work", "which file registers Z", "is A consistent
+// with B?". Its words are stop words, so the tokens alone read as no action at
+// all. Recorded gap (2026-10-18): three question-shaped requests in a row came
+// back "unknown", and "where is email verification implemented" came back
+// "add" because "implemented" is an action word. "How do I add X" asks for the
+// change itself, so a question addressed to "I", "we" or "you" is left to the
+// action words.
+const QUESTION_SHAPE =
+  /^(?:(?:where|how|why|what|which|who|when)(?:'s)?\b(?!\s+(?:do|does|should|can|could|would|might)\s+(?:i|we|you)\b)|(?:is|are|was|were|does|do|did|can|should)\s+(?!i\b|we\b|you\b)[^?]*\?\s*$)/i;
 const importExtensions = ["", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts", "/index.ts", "/index.tsx", "/index.js", "/index.jsx"];
 
 /**
@@ -187,7 +198,7 @@ export function generateContextPack(query, options = {}) {
   const termsQuery = stripFileExtensions(normalizedQuery);
   const tokens = uniqueConcepts([...tokenize(termsQuery), ...joinedCamelCaseWords(termsQuery)]);
   const phrases = extractPhrases(termsQuery);
-  const intent = inferIntent(tokens);
+  const intent = inferIntent(tokens, normalizedQuery);
   const tokenStats = { ...computeTokenDocFrequency(maps, tokens), partners: compoundPartners(termsQuery) };
   const rules = requestRules(maps, normalizedQuery, tokens, limit);
   const scoredFiles = scoreMaps(maps, tokens, intent, phrases, tokenStats, rules);
@@ -1583,11 +1594,15 @@ function inferSources(maps, commands) {
 
 /**
  * @param {string[]} tokens
+ * @param {string} query the request as written, for its question shape
  * @returns {Intent}
  */
-function inferIntent(tokens) {
+function inferIntent(tokens, query) {
+  const symptom = tokens.some((token) => debugSynonyms.has(token));
+  // A question about a symptom ("why does checkout crash?") is still debugging.
+  const asked = QUESTION_SHAPE.test(query) ? (symptom ? "debug" : "explain") : undefined;
   const named = tokens.map(actionWordOf).find(Boolean);
-  const action = named ?? (tokens.some((token) => debugSynonyms.has(token)) ? "debug" : "unknown");
+  const action = asked ?? named ?? (symptom ? "debug" : "unknown");
   return {
     action,
     topics: tokens.filter((token) => !actionWordOf(token)).slice(0, 8),

@@ -804,6 +804,46 @@
       "expectedFiles": ["cmd/server/main.go"]
     },
     {
+      "name": "read-how-does-tax-work",
+      "query": "how does the order tax get calculated?",
+      "repoFixture": "python-orders-api",
+      "expectedIntent": "explain",
+      "expectedCapability": ["repo_search", "context_pack", "repo_map"],
+      "expectedFiles": ["app/billing/tax.py"]
+    },
+    {
+      "name": "read-why-does-service-use-clock",
+      "query": "why does the order service use a shared clock",
+      "repoFixture": "python-orders-api",
+      "expectedIntent": "explain",
+      "expectedCapability": ["repo_search", "context_pack", "repo_map"],
+      "expectedFiles": ["app/orders/service.py", "app/shared/clock.py"]
+    },
+    {
+      "name": "read-which-file-handles-checkin",
+      "query": "which file handles ticket check-in?",
+      "repoFixture": "checkin-api",
+      "expectedIntent": "explain",
+      "expectedCapability": ["repo_search", "context_pack", "repo_map"],
+      "expectedFiles": ["src/booking/ticket.controller.ts"]
+    },
+    {
+      "name": "read-how-do-i-add-refund-route",
+      "query": "how do I add a refund endpoint to the order routes",
+      "repoFixture": "python-orders-api",
+      "expectedIntent": "add",
+      "expectedCapability": ["context_pack", "change_impact"],
+      "expectedFiles": ["app/orders/routes.py"]
+    },
+    {
+      "name": "read-why-does-checkout-crash",
+      "query": "why does checkout crash when the cart is empty?",
+      "repoFixture": "shop-api",
+      "expectedIntent": ["debug", "fix"],
+      "expectedCapability": ["context_pack", "change_impact"],
+      "expectedFiles": ["src/payment/checkout.service.ts"]
+    },
+    {
       "name": "read-check-routes-against-repository",
       "query": "check the order routes against the order repository",
       "repoFixture": "python-orders-api",
