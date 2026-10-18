@@ -1,6 +1,6 @@
 {
   "$schema": "./corpus.schema.note",
-  "description": "Labeled evaluation corpus for solumbe retrieval, risk classification, fixture-backed harness command execution, and gate effectiveness. Gate cases initialize an isolated Git repository from a committed base, apply one committed change-set, and assert both the verdict and deterministic check reason. See docs/EVALS.md for how to add a case and how thresholds work.",
+  "description": "Labeled evaluation corpus for solumbe retrieval, risk classification, fixture-backed harness command execution, and gate effectiveness. Gate cases initialize an isolated Git repository from a committed base, apply one committed change-set, and assert both the verdict and deterministic check reason. See docs/EVALS.md for how to add a case and how thresholds work. Reads cases label the intent (and, where it is unambiguous, the solumbe tool and the files) a request asks for; `solumbe eval --reads` grades a read provider against them and is not part of CI because it calls a model.",
   "k": 5,
   "thresholds": {
     "comment": "Floors set to current-baseline-minus-slack so the suite is green today but a regression trips it. Baseline (2026-10-13): retrieval p@5=0.838 r@5=1.0 mrr=0.986 (36/36); risk accuracy=1.0 (22/22). The precision floor moved from 0.85 to 0.82 when the Python and Go fixtures were added: their ten cases average p@5=0.767 because the Python queries return unlabeled sibling primaries, and the 25 earlier cases are unchanged at 0.861. tests/cli.test.js asserts the same floor. Aggregate metrics must be >= these floors for exit code 0. The risk floor is 0.96 so that a single failing case (21/22 = 0.955) still trips the gate. Re-record both baseline and floors in docs/EVALS.md after any intentional behavior change.",
@@ -642,6 +642,198 @@
           "summaryIncludes": "below the required minimum"
         }
       ]
+    }
+  ],
+  "reads": [
+    {
+      "name": "read-add-gate-step",
+      "query": "add a gate step to the pre-commit hook",
+      "repoFixture": "git-hooks",
+      "expectedIntent": "add",
+      "expectedCapability": ["context_pack", "change_impact"],
+      "expectedFiles": [".githooks/pre-commit"]
+    },
+    {
+      "name": "read-add-rsvp-endpoint",
+      "query": "add rsvp endpoint to events",
+      "repoFixture": "sample-api",
+      "expectedIntent": "add",
+      "expectedCapability": ["context_pack", "change_impact"],
+      "expectedFiles": ["src/events/events.controller.ts"]
+    },
+    {
+      "name": "read-create-order-endpoint",
+      "query": "create an order endpoint",
+      "repoFixture": "shop-api",
+      "expectedIntent": "add",
+      "expectedCapability": ["context_pack", "change_impact"],
+      "expectedFiles": ["src/orders/orders.controller.ts"]
+    },
+    {
+      "name": "read-add-session-replay",
+      "query": "add session replay to the OpenPanel analytics provider",
+      "repoFixture": "telemetry-web",
+      "expectedIntent": "add",
+      "expectedCapability": ["context_pack", "change_impact"],
+      "expectedFiles": ["components/providers/openpanel-provider.tsx"]
+    },
+    {
+      "name": "read-fix-rsvp-button",
+      "query": "fix the rsvp button",
+      "repoFixture": "sample-web",
+      "expectedIntent": "fix",
+      "expectedCapability": ["context_pack", "change_impact"],
+      "expectedFiles": ["src/components/EventRsvpButton.tsx"]
+    },
+    {
+      "name": "read-fix-overnight-event",
+      "query": "fix overnight event bug: combineDateAndTime does not roll over to the next day; event-service.ts only compares getHours; EditableDate.tsx blocks overnight ranges",
+      "repoFixture": "multi-locale-web",
+      "expectedIntent": "fix",
+      "expectedCapability": ["context_pack", "change_impact"],
+      "expectedFiles": ["services/event-service.ts", "components/inline-edit/EditableDate.tsx", "utils/combineDateAndTime.ts"]
+    },
+    {
+      "name": "read-fix-convergence-rename",
+      "query": "fix convergence_score so a renamed test still counts",
+      "repoFixture": "tool-registry",
+      "expectedIntent": "fix",
+      "expectedCapability": ["context_pack", "change_impact"],
+      "expectedFiles": ["src/lib/converge.js"]
+    },
+    {
+      "name": "read-update-users-service",
+      "query": "update the users service",
+      "repoFixture": "polyglot-svc",
+      "expectedIntent": ["change", "refactor"],
+      "expectedCapability": ["context_pack", "change_impact"],
+      "expectedFiles": ["src/users_service.py"]
+    },
+    {
+      "name": "read-change-tax-rate",
+      "query": "change the sales tax rate",
+      "repoFixture": "python-orders-api",
+      "expectedIntent": "change",
+      "expectedCapability": ["context_pack", "change_impact"],
+      "expectedFiles": ["app/billing/tax.py"]
+    },
+    {
+      "name": "read-change-retry-backoff",
+      "query": "change the retry backoff",
+      "repoFixture": "go-inventory-api",
+      "expectedIntent": "change",
+      "expectedCapability": ["context_pack", "change_impact"],
+      "expectedFiles": ["internal/platform/retry.go"]
+    },
+    {
+      "name": "read-replace-utc-clock",
+      "query": "replace the utc clock",
+      "repoFixture": "python-orders-api",
+      "expectedIntent": ["refactor", "change"],
+      "expectedCapability": ["context_pack", "change_impact"],
+      "expectedFiles": ["app/shared/clock.py"]
+    },
+    {
+      "name": "read-rename-order-repository",
+      "query": "rename OrderRepository to OrdersRepository",
+      "repoFixture": "python-orders-api",
+      "expectedIntent": "refactor",
+      "expectedCapability": ["context_pack", "change_impact"],
+      "expectedFiles": ["app/orders/repository.py"]
+    },
+    {
+      "name": "read-test-roles-guard",
+      "query": "add tests for the roles guard",
+      "repoFixture": "shop-api",
+      "expectedIntent": "test",
+      "expectedCapability": ["context_pack", "change_impact"],
+      "expectedFiles": ["src/auth/roles.guard.ts"]
+    },
+    {
+      "name": "read-debug-enoent",
+      "query": "ENOENT no such file or directory at readFileSync",
+      "repoFixture": "shop-api",
+      "expectedIntent": "debug",
+      "expectedCapability": ["context_pack", "repo_search"]
+    },
+    {
+      "name": "read-debug-checkout-crash",
+      "query": "the checkout button crashes on click",
+      "repoFixture": "web-client",
+      "expectedIntent": ["debug", "fix"],
+      "expectedCapability": ["context_pack", "change_impact"],
+      "expectedFiles": ["src/components/CheckoutButton.tsx"]
+    },
+    {
+      "name": "read-review-checkout-change",
+      "query": "review the changes to the checkout service before merge",
+      "repoFixture": "shop-api",
+      "expectedIntent": "review",
+      "expectedCapability": ["review_gate", "review_verdict", "review_context"]
+    },
+    {
+      "name": "read-where-routes",
+      "query": "where are the routes defined",
+      "repoFixture": "sample-node-api",
+      "expectedIntent": "explain",
+      "expectedCapability": ["repo_search", "context_pack", "repo_map"],
+      "expectedFiles": ["src/server.js"]
+    },
+    {
+      "name": "read-where-email-verification",
+      "query": "where is email verification implemented during signup?",
+      "repoFixture": "auth-signup-api",
+      "expectedIntent": "explain",
+      "expectedCapability": ["repo_search", "context_pack", "repo_map"],
+      "expectedFiles": ["src/authentication/auth.service.ts"]
+    },
+    {
+      "name": "read-where-qr-checkin",
+      "query": "where is QR booking check-in handled for event staff?",
+      "repoFixture": "checkin-api",
+      "expectedIntent": "explain",
+      "expectedCapability": ["repo_search", "context_pack", "repo_map"],
+      "expectedFiles": ["src/booking/ticket.controller.ts"]
+    },
+    {
+      "name": "read-where-server-starts",
+      "query": "where does the server start",
+      "repoFixture": "go-inventory-api",
+      "expectedIntent": "explain",
+      "expectedCapability": ["repo_search", "context_pack", "repo_map"],
+      "expectedFiles": ["cmd/server/main.go"]
+    },
+    {
+      "name": "read-check-routes-against-repository",
+      "query": "check the order routes against the order repository",
+      "repoFixture": "python-orders-api",
+      "expectedIntent": ["review", "explain"],
+      "expectedCapability": ["repo_search", "context_pack", "repo_map", "review_context"],
+      "expectedFiles": ["app/orders/routes.py", "app/orders/repository.py"]
+    },
+    {
+      "name": "read-check-webhook-against-checkout",
+      "query": "check the stripe webhook against the checkout service",
+      "repoFixture": "shop-api",
+      "expectedIntent": ["review", "explain"],
+      "expectedCapability": ["repo_search", "context_pack", "repo_map", "review_context"],
+      "expectedFiles": ["src/payment/stripe.webhook.ts", "src/payment/checkout.service.ts"]
+    },
+    {
+      "name": "read-compare-handler-with-reservation",
+      "query": "compare the reservation http handler with the stock reservation code",
+      "repoFixture": "go-inventory-api",
+      "expectedIntent": ["review", "explain"],
+      "expectedCapability": ["repo_search", "context_pack", "repo_map", "review_context"],
+      "expectedFiles": ["internal/httpapi/handler.go", "internal/stock/reservation.go"]
+    },
+    {
+      "name": "read-is-refund-consistent",
+      "query": "is the refund flow consistent with the stripe webhook?",
+      "repoFixture": "shop-api",
+      "expectedIntent": ["review", "explain"],
+      "expectedCapability": ["repo_search", "context_pack", "repo_map", "review_context"],
+      "expectedFiles": ["src/payment/stripe.webhook.ts"]
     }
   ]
 }

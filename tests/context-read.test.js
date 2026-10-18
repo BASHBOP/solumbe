@@ -206,11 +206,18 @@ test("a failed or unkeyed call returns solumbe's pack unchanged and says why", a
   assert.deepEqual(failed.data.primaryFiles, pack.data.primaryFiles);
   assert.match(failed.markdown, /Not applied: TypeSafe API 529/);
 
-  const saved = process.env.TYPESAFE_API_KEY;
-  delete process.env.TYPESAFE_API_KEY;
+  // Unkeyed means no provider at all: an Anthropic key would select Claude.
+  const saved = {
+    TYPESAFE_API_KEY: process.env.TYPESAFE_API_KEY,
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    SOLUMBE_READ_PROVIDER: process.env.SOLUMBE_READ_PROVIDER,
+  };
+  for (const name of Object.keys(saved)) delete process.env[name];
   t.after(() => {
-    if (saved === undefined) delete process.env.TYPESAFE_API_KEY;
-    else process.env.TYPESAFE_API_KEY = saved;
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
   });
   const unkeyed = await readContextPack(pack, { fetchImpl: async () => assert.fail("no call without a key") });
   assert.match(unkeyed.data.modelRead.fallbackReason, /TYPESAFE_API_KEY is not set/);
