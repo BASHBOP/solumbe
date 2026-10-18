@@ -286,12 +286,14 @@ test("context --online with the Claude provider applies the read and says where 
 test("the read eval grades a provider on the corpus reads suite without a network", async () => {
   const heuristic = await runReadEval({ provider: "heuristic" });
   assert.equal(heuristic.data.scoreboard.errors, 0);
-  const questions = heuristic.data.cases.filter((testCase) => /^read-(check|compare|is)-/.test(testCase.name));
-  assert.ok(questions.length >= 3, "the corpus carries question-shaped requests");
+  const comparisons = heuristic.data.cases.filter((testCase) => /^read-(check|compare)-/.test(testCase.name));
+  assert.ok(comparisons.length >= 3, "the corpus carries comparison requests");
   assert.ok(
-    questions.every((testCase) => testCase.heuristic === "unknown"),
+    comparisons.every((testCase) => testCase.heuristic === "unknown"),
     "solumbe alone reads 'check X against Y' as unknown",
   );
+  const questions = heuristic.data.cases.filter((testCase) => /^read-(where|how|why|which|is)-/.test(testCase.name) && testCase.heuristicCorrect);
+  assert.ok(questions.length >= 8, "solumbe alone reads a question about the code as explain");
 
   let calls = 0;
   const fetchImpl = async (_url, init) => {

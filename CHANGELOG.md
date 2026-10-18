@@ -6,6 +6,11 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A path-less MCP call no longer hangs a server that runs from `/` or the home directory.** Claude Desktop starts its configured MCP servers with no working directory, so they run from `/`, and Claude Code sessions in the desktop app can be routed to that instance. A `context_pack` (or any tool that takes a repository path) called without `path` then scanned the whole filesystem: the host reported "Request timed out" and the call failed with a `RangeError` minutes later. Such a call now answers at once with `-32602` and says to pass `path`. An explicit `path`, and tools that take none, are unchanged.
+- **A question about the code reads as `explain`, not `unknown`.** _Where is X handled_, _how does Y work_, _why does Z_, _which file registers W_ and _is A consistent with B?_ named no action word, so the heuristic intent came back `unknown` with the ambiguous-action open question, and _where is X implemented_ came back `add`. A question-shaped request is now `explain`, or `debug` when it asks about a symptom (_why does checkout crash?_). A question addressed to _I_, _we_ or _you_ (_how do I add a route_) is still read from its action word, and `why` is a stop word. The `reads` suite gains five cases; the heuristic's intent accuracy on it goes from 0.517 to 0.793 (23 of 29). _Check X against Y_ and _compare X with Y_ still read as `unknown`.
+
 ## [4.7.0] - 2026-10-18
 
 The request read behind `context --online` can be answered by Claude as well as Jev, and both are graded on a new `reads` eval suite. The repository adds Claude Code project permission rules, a headless `claude -p` gate summary on pull requests, and a Claude Agent SDK example that uses solumbe as its guardrail. No command or field was removed. Without `ANTHROPIC_API_KEY` nothing changes: the read stays on Jev or offline, and the gate summary job skips.
