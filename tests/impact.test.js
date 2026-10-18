@@ -867,3 +867,19 @@ test("generateImpact keeps a controller's most relevant imports as supporting fa
   const controller = result.data.topFiles.find((file) => file.path === "src/paystack/paystack.controller.ts");
   assert.equal(controller?.relatedFiles[0], "src/paystack/paystack.service.ts", JSON.stringify(controller?.relatedFiles));
 });
+
+test("generateImpact ranks a git hook script above components that share generic words for a pre-commit hook request", () => {
+  const root = writeFixture("githook", {
+    "package.json": JSON.stringify({ name: "githook-fixture", scripts: { lint: "eslint ." } }),
+    ".githooks/pre-commit": "#!/bin/sh\nset -e\nyarn lint\n",
+    ".husky/_/pre-commit": '#!/usr/bin/env sh\n. "$(dirname "$0")/h"\n',
+    "components/ui/stepper/horizontal-step.tsx": "export function HorizontalStep() { return null; }\n",
+    "components/subscription/SubscriptionGate.tsx": "export function SubscriptionGate() { return null; }\n",
+  });
+
+  const result = generateImpact("add a gate step to the pre-commit hook", { path: root });
+  const top = result.data.topFiles.map((f) => f.path);
+  assert.equal(top[0], ".githooks/pre-commit", `expected the hook first, got: ${top.join(", ")}`);
+  assert.equal(result.data.topFiles[0].kind, "gitHook");
+  assert.ok(!top.includes(".husky/_/pre-commit"), `husky shims must not be indexed: ${top.join(", ")}`);
+});

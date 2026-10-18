@@ -4,7 +4,6 @@ import { runCommand } from "./tools.js";
 
 const ignoredDirs = new Set([
   ".git",
-  ".husky",
   ".vscode",
   ".solumbe",
   ".augment",
@@ -162,7 +161,7 @@ export function walk(root) {
   function visit(current) {
     const entries = safeReadDir(current);
     for (const entry of entries) {
-      if (entry.isDirectory() && ignoredDirs.has(entry.name)) {
+      if (entry.isDirectory() && (ignoredDirs.has(entry.name) || isHuskyShimDir(path.relative(root, path.join(current, entry.name))))) {
         continue;
       }
 
@@ -247,7 +246,18 @@ function isIgnoredFile(fileName, relativePath = fileName) {
  */
 function isIgnoredRepoPath(filePath) {
   const segments = filePath.split(path.sep);
+  if (segments.some((_, index) => isHuskyShimDir(segments.slice(0, index + 1).join("/")))) return true;
   return segments.some((segment, index) => ignoredDirs.has(segment) || isIgnoredFile(segment, index === segments.length - 1 ? filePath : segment));
+}
+
+/**
+ * Husky's `_/` directory holds generated shims, not the repository's hooks.
+ * The hooks themselves (`.husky/pre-commit`) are source a request can change.
+ * @param {string} relativeDir
+ * @returns {boolean}
+ */
+function isHuskyShimDir(relativeDir) {
+  return /(^|[\\/])\.husky[\\/]_$/.test(relativeDir);
 }
 
 /**

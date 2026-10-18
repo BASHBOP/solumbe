@@ -158,21 +158,31 @@ the older floor.)
 
 ## Current baseline
 
-Recorded **2026-10-10** by running `runRetrievalEval()` against the committed
-corpus (35 retrieval + 22 risk cases):
+Recorded **2026-10-13** by running `runRetrievalEval()` against the committed
+corpus (36 retrieval + 22 risk cases):
 
 ```
 | Group     | Metric       | Value | Threshold | Pass |
 |-----------|--------------|------:|----------:|:----:|
-| retrieval | precisionAtK | 0.833 |      0.82 | yes  |
+| retrieval | precisionAtK | 0.838 |      0.82 | yes  |
 | retrieval | recallAtK    | 1.0   |      0.9  | yes  |
-| retrieval | mrr          | 0.985 |      0.9  | yes  |
+| retrieval | mrr          | 0.986 |      0.9  | yes  |
 | risk      | accuracy     | 1.0   |      0.96 | yes  |
 
-Retrieval: p@5=0.833, r@5=1.0, mrr=0.985 (35/35 cases pass)
+Retrieval: p@5=0.838, r@5=1.0, mrr=0.986 (36/36 cases pass)
 Risk:      accuracy=1.0 (22/22 cases pass)
 Overall:   PASS (exit 0)
 ```
+
+The 2026-10-13 change added the `git-hooks` fixture and the
+`git-hook-pre-commit-gate-step` case. Git hook scripts have no extension, so
+they were never indexed, and a request to change the pre-commit hook ranked
+components that shared the words "step" and "gate". The case returns the hook
+alone at rank 1 (p@5=1.0). Before the primary pool was scoped for hooks it
+returned the hook plus both decoys (p@5=0.333), which took the aggregate to
+0.819, below the floor. The floor was not changed. A global relative score
+cutoff was tried at 0.5 to 0.7 of the top score and rejected: every ratio
+dropped at least one labeled second owner elsewhere in the corpus.
 
 The 2026-10-10 change added the `python-orders-api` and `go-inventory-api`
 fixtures and ten cases, to measure ranking in a repository with no JavaScript,
