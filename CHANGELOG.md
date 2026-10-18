@@ -19,6 +19,12 @@ This project follows SemVer.
 
 - **`route-prompt.mjs` no longer claims to bind the subagent.** Its header and docs/18 said naming the subagent model was "real actuation". The hook only adds context; the parent session decides whether to pass `model` to the Agent tool, and only the new `PreToolUse` hook enforces it. The advisory line now also names the Agent tool's alias (`model: "sonnet"`) beside the host model id.
 - **Three tests no longer fail on a loaded machine.** `tests/canvas-tap.test.js` let the tap's 8 s send timeout abort the held send when the dispatch ran long (13.6 s), and two route-prompt hook tests ran past the hook's 6 s routing deadline. The canvas test now records the timeout signal and sends without it, and the hook's deadline can be set with `SOLUMBE_ROUTE_TIMEOUT_MS`, which the hook tests raise.
+- **`impact` and `context` find git hook scripts.**
+  - Hook scripts such as `.githooks/pre-commit` have no file extension, so the indexer never admitted them, and `.husky/` was skipped as a whole. A request to "add a gate step to the pre-commit hook" ranked `components/ui/stepper/*` and `SubscriptionGate.tsx` and left the hook out entirely.
+  - Files named after a git hook (`pre-commit`, `commit-msg`, `pre-push` and the rest, with or without `.sh`) under `.githooks/` or `.husky/` are now indexed with the new kind `gitHook`. Husky's generated `.husky/_/` shims are still skipped, and their content is not parsed as JavaScript.
+  - `impact` boosts a `gitHook` file (×1.4) when the request names a hook (`hook`, `husky`, `commit`, `push`, …). When a hook is the strongest match, `context` keeps other files as primary only when they score within 80% of it.
+  - The index cache moves to version 14, so existing indexes rebuild once.
+  - New eval fixture `git-hooks` and case `git-hook-pre-commit-gate-step`. Retrieval baseline is now p@5=0.838, r@5=1.0, mrr=0.986 (36/36).
 
 - **`solumbe install --host codex` connects a Codex CLI that has no `codex mcp add`.**
   - On codex-cli 0.31.0, `codex mcp` runs Codex as an MCP server and takes no subcommand. The install ended "codex mcp add failed: error: unexpected argument 'add' found" and left the host unconnected.
