@@ -3,8 +3,9 @@
 // solumbe ranks files from repository evidence: paths, symbols, imports. It has
 // never read a request as language, so it cannot tell what kind of work a
 // request asks for, and it ranks a file that merely shares vocabulary with the
-// request next to the file that owns it. This asks TypeSafe's Jev both
-// questions in one call and applies the answers only where they clear a gate:
+// request next to the file that owns it. This asks a read provider (TypeSafe's
+// Jev, or Claude; see claude-read.js) both questions in one call and applies
+// the answers only where they clear a gate:
 //
 //   - intent: an answer at or above CHOICE_FLOOR replaces solumbe's action word;
 //   - relevance: a file under DEMOTE_BELOW leaves the ranked lists and is kept,
@@ -16,31 +17,21 @@
 // here is read by a gate.
 
 import { AMBIGUOUS_ACTION_QUESTION, rebuildContextPack } from "./context-engine.js";
-import { askSystemOne, DEMOTE_BELOW, interpretRead, MAX_RELEVANCE_FILES, priceJevCall, readQuestions } from "./jev.js";
+import { askRequestRead } from "./claude-read.js";
+import { DEMOTE_BELOW, interpretRead, MAX_RELEVANCE_FILES } from "./jev.js";
 
 /**
  * @param {{ data: Record<string, any>, markdown: string }} pack from generateContextPack
- * @param {{ apiKey?: string, fetchImpl?: typeof fetch, timeoutMs?: number }} [options]
+ * @param {{ provider?: string, apiKey?: string, anthropicApiKey?: string, fetchImpl?: typeof fetch, timeoutMs?: number }} [options]
  * @returns {Promise<{ data: Record<string, any>, markdown: string }>}
  */
 export async function readContextPack(pack, options = {}) {
   const data = globalThis.structuredClone(pack.data);
-  const files = candidateFiles(data);
-  // In a multi-repo pack two repos can share a path (both `src/events.js`), so
-  // label each file with its repo — otherwise the model is asked two identical
-  // questions. The label rides copies, never the file objects that flow back
-  // into the pack, so the output is byte-for-byte solumbe's plus modelRead.
-  const multiRepo = (data.repos ?? []).length > 1;
-  const labeled = files.map((file) => ({ ...file, label: multiRepo ? `${file.repo?.name ?? "?"}:${file.path}` : file.path }));
-  const state = {
-    request: data.query,
-    repositories: (data.repos ?? []).map((/** @type {{ name: string }} */ repo) => repo.name),
-    candidate_files: labeled.map((file) => ({ path: file.label, kind: file.kind, why: (file.reasons ?? []).slice(0, 3) })),
-  };
+  const { files, labeled, state } = readState(data);
 
   let reply;
   try {
-    reply = await askSystemOne(state, readQuestions({ files: labeled, capability: false }), options);
+    reply = await askRequestRead(state, { files: labeled, capability: false }, options);
   } catch (error) {
     data.modelRead = { source: "offline", applied: false, fallbackReason: String(/** @type {any} */ (error)?.message ?? error) };
     return rebuildContextPack(data);
@@ -49,12 +40,12 @@ export async function readContextPack(pack, options = {}) {
   const read = interpretRead(reply.answers, files);
   /** @type {Record<string, any>} */
   const modelRead = {
-    source: "jev",
+    source: reply.source,
     model: reply.model,
     latencyMs: reply.latencyMs,
     tokens: reply.tokens,
     tokenKind: reply.tokenKind,
-    costUsd: priceJevCall(reply.billableTokens),
+    costUsd: reply.costUsd,
     intent: null,
     demoted: [],
     notApplied: null,
@@ -64,7 +55,7 @@ export async function readContextPack(pack, options = {}) {
     const heuristic = data.intent.action;
     modelRead.intent = { ...read.intent, heuristic };
     if (read.intent.accepted) {
-      data.intent = { ...data.intent, action: read.intent.choice, source: "jev", heuristicAction: heuristic };
+      data.intent = { ...data.intent, action: read.intent.choice, source: reply.source, heuristicAction: heuristic };
       data.openQuestions = (data.openQuestions ?? []).filter((/** @type {string} */ question) => question !== AMBIGUOUS_ACTION_QUESTION);
     }
   }
@@ -92,6 +83,26 @@ export async function readContextPack(pack, options = {}) {
 
   data.modelRead = modelRead;
   return rebuildContextPack(data);
+}
+
+/**
+ * The state a read is asked against, and the files it scores. In a multi-repo
+ * pack two repos can share a path (both `src/events.js`), so each file is
+ * labelled with its repo; otherwise the model is asked two identical
+ * questions. The label rides copies, never the file objects that flow back
+ * into the pack, so the output is byte-for-byte solumbe's plus modelRead.
+ * @param {Record<string, any>} data a context pack's data
+ */
+export function readState(data) {
+  const files = candidateFiles(data);
+  const multiRepo = (data.repos ?? []).length > 1;
+  const labeled = files.map((file) => ({ ...file, label: multiRepo ? `${file.repo?.name ?? "?"}:${file.path}` : file.path }));
+  const state = {
+    request: data.query,
+    repositories: (data.repos ?? []).map((/** @type {{ name: string }} */ repo) => repo.name),
+    candidate_files: labeled.map((file) => ({ path: file.label, kind: file.kind, why: (file.reasons ?? []).slice(0, 3) })),
+  };
+  return { files, labeled, state };
 }
 
 /**

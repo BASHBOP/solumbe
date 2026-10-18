@@ -109,6 +109,32 @@ claude mcp add-json solumbe '{"type":"stdio","command":"solumbe","args":["mcp"]}
 
 Use `--scope project` to write a shared `.mcp.json` into one repository instead. Run `claude mcp list` to confirm it shows `solumbe ... Connected`, then start a new session; the tools appear as `mcp__solumbe__*`.
 
+#### Project settings
+
+This repository commits `.claude/settings.json` with what a session working in it needs and nothing personal. MCP servers, personal hooks, absolute paths and anything else that belongs to one machine stay in `~/.claude/settings.json` or the ignored `.claude/settings.local.json`.
+
+| Key | Holds |
+| --- | --- |
+| `permissions.allow` | The repo's own commands: `npm ci`, `npm test`, `npm run *`, `node src/cli.js *`, `node --test *`, `node scripts/*`, read-only `git status` / `git diff` / `git log`, and the solumbe MCP tools (`mcp__solumbe`). |
+| `permissions.ask` | `git push`, `gh pr merge` and `git tag`: shipping is the maintainer's call, so a session asks every time. |
+| `permissions.deny` | Reading `.env` / `.env.*` and any `*.pem` or `*.key`, and `npm publish`, which only the tag-triggered Release workflow does, over OIDC. |
+| `hooks` | The routing hooks, by `$CLAUDE_PROJECT_DIR` path (see [model routing](../18-model-routing/README.md#wiring)). |
+
+Deny wins over allow and ask in every scope, and a rule in `~/.claude/settings.json` or `.claude/settings.local.json` adds to these rather than replacing them.
+
+#### Headless gate summary in CI
+
+`.github/workflows/claude-gate.yml` runs Claude Code headless on every pull request:
+
+1. The workflow runs `solumbe gate . --base origin/<base> --head HEAD --json` itself and keeps the result.
+2. `claude -p` runs the same gate and answers with a JSON summary (`verdict`, `headline`, `checks`, `risks`, `nextSteps`), using `--output-format json` and the `--json-schema` that `node scripts/claude-gate-summary.mjs --schema` prints.
+3. `scripts/claude-gate-summary.mjs` refuses a run that did not succeed, a summary off the schema, a verdict that differs from the workflow's gate, a check the gate never ran or reported with another status, and a WARN or FAIL check left out. A refused summary turns the job red and is never posted.
+4. A valid summary is posted as one PR comment, edited in place on later pushes, and added to the job summary. The gate output, Claude's envelope and the comment are uploaded as the `claude-gate-summary` artifact.
+
+The run is held to the gate: `--permission-mode dontAsk` with `--allowedTools "Bash(node src/cli.js gate *)"` denies every other tool, and `--bare --setting-sources user` keeps this repository's hooks and wider allow rules out of CI. `--max-budget-usd 1` caps one run, and the CLI version is pinned in `CLAUDE_CODE_VERSION`.
+
+It reads the `ANTHROPIC_API_KEY` repository secret. When the secret is unset, or the PR comes from a fork (which GitHub never hands a secret on `pull_request`), every step after the key check is skipped and the job passes with a notice. It is advisory: it is not a required check, and `Solumbe readiness` in `solumbe CI` stays the blocking gate. Making it required is a branch-protection change for the maintainer.
+
 ### Claude Desktop
 
 Claude Desktop uses `claude_desktop_config.json` with a top-level `mcpServers` object.

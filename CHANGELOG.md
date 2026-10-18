@@ -6,6 +6,20 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+## [4.7.0] - 2026-10-18
+
+The request read behind `context --online` can be answered by Claude as well as Jev, and both are graded on a new `reads` eval suite. The repository adds Claude Code project permission rules, a headless `claude -p` gate summary on pull requests, and a Claude Agent SDK example that uses solumbe as its guardrail. No command or field was removed. Without `ANTHROPIC_API_KEY` nothing changes: the read stays on Jev or offline, and the gate summary job skips.
+
+### Added
+
+- **Claude can answer the request read.**
+  - `src/lib/claude-read.js` asks one strict tool, forced with `tool_choice`, whose input schema is the read: `intent` and `capability` are enums over the same labels Jev answers, each with a stated confidence, and `relevance` scores each candidate file. A reply that fails validation is sent back once as an `is_error` tool result. What survives is mapped into Jev's answer shape, so `interpretRead` (its `Object.hasOwn` check, null on anything malformed, `CHOICE_FLOOR` and `DEMOTE_BELOW`) judges both providers the same way.
+  - `SOLUMBE_READ_PROVIDER` (`jev` or `claude`) picks the provider. Otherwise a TypeSafe key keeps Jev and an Anthropic key alone selects Claude. The model defaults to `claude-haiku-5-5` and can be set with `SOLUMBE_CLAUDE_READ_MODEL`.
+  - `solumbe eval --reads [--provider heuristic|jev|claude]` grades a provider on the new 24-case `reads` suite in `evals/corpus.json`, including question-shaped _check X against Y_ requests. It calls a model, so it is a measurement and not part of `npm run quality`. Heuristic and Jev results are recorded in docs/17; the live Claude run is pending.
+- **A Claude Agent SDK example with solumbe as its guardrail**, under `integrations/agent-sdk/` and not in the npm package. The orchestrator plans with `context_pack`, routes each subagent with `model_route`, declares the scope with `change_impact` before any edit, delegates to an implementer and a test writer, and gates with `review_gate`: a `FAIL` escalates to a person with the gate's reasons, and a withheld result does not block. Guardrails are per-role tools, a `canUseTool` callback, a `PreToolUse` hook that denies push, merge, publish and out-of-scope writes, `maxTurns` and `maxBudgetUsd`. Its tests run a scripted `query()` against solumbe's real MCP server, with no network.
+- **The committed `.claude/settings.json` gains project permission rules.** It allows the repo's own commands (`npm run *`, `node src/cli.js *`, `node --test *`, read-only git) and the solumbe MCP tools, asks before `git push`, `gh pr merge` and `git tag`, and denies reading `.env*`, `*.pem` and `*.key` and running `npm publish`. Personal settings and absolute paths stay in `~/.claude`.
+- **A headless Claude Code gate summary on pull requests.** `.github/workflows/claude-gate.yml` runs `claude -p` with `--output-format json` and a `--json-schema`, held to the one command `node src/cli.js gate`, and posts its summary as a PR comment only after `scripts/claude-gate-summary.mjs` checks it against the same gate run by the workflow. It skips cleanly without the `ANTHROPIC_API_KEY` secret (and so on forks) and is not a required check.
+
 ## [4.6.0] - 2026-10-18
 
 A `PreToolUse` hook now holds a subagent to the tier the router chose, in the delegate arm of the routing trial, and the repository commits the Claude Code settings that register it. `impact` and `context` find git hook scripts, and `solumbe install --host` keeps a host entry's env and connects a Codex CLI without `codex mcp add`. No command or field was removed. The decision log gains `promptId` and `evidenceSufficient`, and the index cache moves to version 14, so existing indexes rebuild once.

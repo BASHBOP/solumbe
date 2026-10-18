@@ -474,6 +474,81 @@ each head, joined to `repaired`. `node scripts/hooks/check-outcomes.mjs` grades
 them sooner, on the same-session proxies the route outcomes use: whether the
 next prompt pushed back, and whether the next turn edited the same files.
 
+## Grading the request read (2026-10-18)
+
+Everything above grades solumbe's own signals. The request read is not
+solumbe's: `context --online` asks a model what kind of work a request is and
+which candidate files it needs, and relabels the intent when the answer clears
+`CHOICE_FLOOR` (0.5). Until now it had a provider, Jev, and no measurement.
+
+It now has two providers. Jev answers typed System One questions with
+probabilities trained against outcomes. Claude answers through one forced tool
+call (`src/lib/claude-read.js`) whose input schema is the answer: `intent` and
+`capability` are enums over the same labels, each with a stated confidence,
+and `relevance` scores every candidate file by name. A reply that fails
+validation goes back as an `is_error` tool result, once; whatever survives is
+mapped into Jev's answer shape, so `interpretRead` judges both the same way.
+`SOLUMBE_READ_PROVIDER` picks one; otherwise a TypeSafe key keeps Jev and an
+Anthropic key alone selects Claude.
+
+Both are graded by `solumbe eval --reads` on the `reads` suite of
+`evals/corpus.json`: 24 requests over 12 committed fixtures, each labelled with
+its intent, the tool that answers it and the files it needs. Four of them are
+question-shaped, *check X against Y*, labelled `review` or `explain`, because
+solumbe's action words cannot read them at all.
+
+| | solumbe alone | Jev (`jev-latest`) | Claude (`claude-haiku-5-5`) |
+| --- | ---: | ---: | ---: |
+| Intent accuracy, the read's own choice | 13 / 24 | **23 / 24** | not run |
+| Cleared `CHOICE_FLOOR` | n/a | 20 / 24 | not run |
+| Accuracy when it cleared | n/a | 20 / 20 | not run |
+| Intent a pack would carry | 13 / 24 | **21 / 24** | not run |
+| Read as `unknown` | 9 | 3 | not run |
+| Brier score of the stated confidence | n/a | 0.05 | not run |
+| Capability accuracy | n/a | 11 / 24 | not run |
+| Expected files demoted (under 0.2) | n/a | 0 of 27 | not run |
+| Other candidates demoted | n/a | 10 of 46 | not run |
+| Cost for 24 reads, mean latency | 0 | $0.0014, 214 ms | not run |
+
+solumbe's own action words are mapped onto the read's labels first (`create` is
+`add`, `update` is `change`, `rename` is `refactor`), so the baseline is not
+marked wrong for vocabulary.
+
+**The read is worth having, and the floor is where it loses.** Jev chose the
+right intent 23 times in 24, and every answer at or above 0.9 (19 of them) was
+right. The four under the floor were right three times. Two of those were
+question-shaped: *check the order routes against the order repository* read as
+`review` at 0.43, *is the refund flow consistent with the stripe webhook?* as
+`explain` at 0.39; the floor discarded both and the pack kept `unknown`. (The
+third, *the checkout button crashes on click* as `debug` at 0.44, already
+matched solumbe's own word.) The one wrong answer, *check the stripe webhook
+against the checkout service* as `debug`, came at 0.23. Under the floor Jev was
+right 75% of the time at a mean confidence of 0.37: underconfident, if
+anything, and exactly where question-shaped requests land.
+
+**Capability is the weak question.** Jev named the tool the label expected 11
+times in 24, at a median confidence under 0.4, and it is not applied anywhere.
+For edit requests it prefers `repo_search` and `repo_map` where the labels say
+`context_pack`; that is as much a question about the labels as about the read.
+
+**Relevance does no harm here.** No file a case needs was scored under 0.2, and
+10 of 46 other candidates were, which is the demotion the read exists for.
+
+**The Claude column is not run yet.** The provider, its schema, retry and
+mapping are tested against a mocked API; the live run needs a working
+Anthropic key, and the one on the measuring machine was rejected (401). It is
+one command, recorded here when it has been run:
+
+```bash
+ANTHROPIC_API_KEY=... solumbe eval --reads --provider claude --out claude-reads.md
+```
+
+Two cautions belong to the method. Jev's answers move by up to 0.05 between
+runs (docs/18), so a case near the floor can cross it; this is one run. And
+Claude's confidence is the model's own statement, not a trained probability,
+so its Brier score and bands are the number to read first: an accurate read
+whose confidences are not calibrated makes `CHOICE_FLOOR` a guess.
+
 ## What changes because of it
 
 1. **Weights stop being folklore.** Changing one becomes a reviewed code change
