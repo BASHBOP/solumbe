@@ -22,6 +22,7 @@ import { DIFF_RENAME_LIMIT, generateImpact, pathScopeTokens, scopeTokens } from 
 import { getCachedCodeMap } from "./index-cache.js";
 import { importDegrees, resolveImportSpecifier } from "./ranking-rules.js";
 import { classifyPath, isDocPath, isSecretPath, isTestDataPath, RISK_FLAGS } from "./risk-paths.js";
+import { diffOrigin } from "./change-diff.js";
 import { runCommand } from "./tools.js";
 import { estimateTokens } from "./tokens.js";
 
@@ -129,7 +130,7 @@ export function generateConvergence(query, options = {}) {
     if (!sameFiles(capturedFiles, diffFiles ?? [])) throw new Error("supplied diff files do not match the GitHub PR commit subject");
   }
 
-  // Working-tree mode scores tracked changes only, like `git diff <base>`.
+  // Working-tree mode scores tracked changes only, like `git diff <merge-base>`.
   // Untracked files are usually local by-products (`dump.rdb`, editor state)
   // rather than part of the change; they are listed, not scored, unless asked.
   const includeUntracked = Boolean(options.includeUntracked);
@@ -622,7 +623,7 @@ function addedLinesFor(root, base, subject, files, untracked) {
   const wanted = [...new Set(files)].filter((file) => !isSecretPath(file)).slice(0, MAX_ADDED_LINE_FILES);
   if (wanted.length === 0) return lines;
   const untrackedSet = new Set(untracked);
-  const range = subject ? subjectDiffRange(root, subject) : [resolveGitObject(root, `${base}^{commit}`, "base commit")];
+  const range = subject ? subjectDiffRange(root, subject) : [diffOrigin(root, resolveGitObject(root, `${base}^{commit}`, "base commit"))];
   for (const file of wanted) {
     if (untrackedSet.has(file)) {
       try {
@@ -851,12 +852,14 @@ function addedFilesForSubject(root, subject) {
 }
 
 /**
- * The two sides a change subject is diffed between.
+ * The two sides a change subject is diffed between. A staged or head subject
+ * is exactly the two trees named (no merge base), so its receipt re-verifies
+ * in a shallow clone; a pull request diffs from the merge base like GitHub.
  * @param {string} root
  * @param {Record<string, string | number>} subject
  * @returns {[string, string]}
  */
-function subjectDiffRange(root, subject) {
+export function subjectDiffRange(root, subject) {
   const baseSha = String(subject.baseSha);
   const from = subject.kind === "github-pr" ? gitValue(root, ["merge-base", baseSha, String(subject.headSha)], "GitHub PR merge base") : baseSha;
   const to = subject.kind === "github-pr" ? String(subject.headSha) : String(subject.treeSha);
@@ -870,8 +873,8 @@ function subjectDiffRange(root, subject) {
  * @returns {string[]}
  */
 function addedFilesInWorkingTree(root, base) {
-  const baseSha = resolveGitObject(root, `${base}^{commit}`, "base commit");
-  return gitNullLines(root, [...diffNameArgs("--diff-filter=A"), baseSha, "--"], "files added in the working tree");
+  const origin = diffOrigin(root, resolveGitObject(root, `${base}^{commit}`, "base commit"));
+  return gitNullLines(root, [...diffNameArgs("--diff-filter=A"), origin, "--"], "files added in the working tree");
 }
 
 /**

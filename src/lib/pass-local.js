@@ -16,7 +16,8 @@ import { MAX_SCAN_BYTES, scanSecretContent, summarizeSecretFindings } from "./se
 import { checkRelease } from "./release-check.js";
 import { aggregateVerdict, normalizeGovernance, normalizeProfile, policyCheck, STATUS } from "./policy.js";
 import { estimateTokens } from "./tokens.js";
-import { captureCommitSubject, captureStagedSubject, generateConvergence, INCONCLUSIVE_BAND } from "./converge.js";
+import { captureCommitSubject, captureStagedSubject, generateConvergence, INCONCLUSIVE_BAND, subjectDiffRange } from "./converge.js";
+import { addedLineNumbers, diffOrigin } from "./change-diff.js";
 import { declaredScope, readIntent, verifyIntent } from "./intent.js";
 import { executeValidationPlan } from "./validation-attestation.js";
 import { externalScannerChecks } from "./external-scanners.js";
@@ -99,6 +100,10 @@ export function evaluateLocal(repoPath, options = {}) {
   const subjectContent = subject?.treeSha
     ? treeContentReader(root, String(subject.treeSha), files)
     : (/** @type {string} */ file) => readWorkingTreeFile(root, file);
+  // ...and only the lines the change adds. A credential that was already on
+  // the base is not this change's to answer for, and flagging it trained
+  // reviewers to wave the check through.
+  const addedLines = subjectAddedLines(root, base, subject, scope);
   // Release discipline reads the version from the exact subject too. Reading it
   // from the working tree compared a historic base against whatever the
   // checkout contained and flagged every package.json edit as a version bump.
@@ -107,7 +112,7 @@ export function evaluateLocal(repoPath, options = {}) {
   const checks = [
     changedFilesCheck(files),
     ...(scope !== "working-tree" ? [changeSubjectCheck(scope, subject, subjectError)] : []),
-    secretCheck(files, subjectContent),
+    secretCheck(files, subjectContent, addedLines),
     riskCheck(files, scope),
     ...migrationCheck(files, subjectContent),
     checkRelease(root, files, {
@@ -520,7 +525,10 @@ export function changedFiles(root, base, options = {}) {
   if (options.staged) {
     return runGit(root, ["diff", "--cached", "--name-only", "--relative", base, "--"]);
   }
-  const tracked = runGit(root, ["diff", "--name-only", "--relative", base, "--"]);
+  // The working tree diffs from where the branch started, not from the base
+  // tip, so commits that landed on the base after the branch point are not
+  // read as this change. Staged and head subjects stay exact (see converge.js).
+  const tracked = runGit(root, ["diff", "--name-only", "--relative", diffOrigin(root, base), "--"]);
   const staged = runGit(root, ["diff", "--cached", "--name-only", "--relative", "--"]);
   const untracked = runGit(root, ["ls-files", "--others", "--exclude-standard"]);
   const seen = new Set();
@@ -611,13 +619,19 @@ function changedFilesCheck(files) {
  * credential-shaped *value*. The path half alone let a live key pasted into
  * ordinary source through, so the content half scans the exact changed blob.
  *
+ * `addedLines` narrows the content half to the lines the change adds. It
+ * returns a set of line numbers, "all" for a file that is new in full, or
+ * null when the added lines are unknown; null and an omitted reader both scan
+ * the whole file, and null says so in the details.
+ *
  * @param {string[]} files
  * @param {(file: string) => string | null} readContent
+ * @param {(file: string) => Set<number> | "all" | null} [addedLines]
  * @returns {Check}
  */
-export function secretCheck(files, readContent) {
+export function secretCheck(files, readContent, addedLines) {
   const matches = matchSecretPaths(files);
-  const { findings, skipped, scanned } = scanChangedFilesForSecrets(files, readContent);
+  const { findings, skipped, scanned, wholeFile } = scanChangedFilesForSecrets(files, readContent, addedLines);
   const content = summarizeSecretFindings(findings);
   // A PR gate without the head commit fetched locally, or a tree read that
   // failed outright, yields no content at all. Reporting that as a clean scan
@@ -630,6 +644,7 @@ export function secretCheck(files, readContent) {
   if (matches.length) details.push(...matches.slice(0, 20));
   if (content.details.length) details.push(...content.details.slice(0, 20));
   if (skipped.length) details.push(`Not scanned (too large): ${skipped.slice(0, 5).join(", ")}`);
+  if (wholeFile.length) details.push(`Scanned the whole file (added lines unknown): ${wholeFile.slice(0, 5).join(", ")}`);
 
   if (matches.length || content.severity === "fail") {
     const reasons = [];
@@ -664,15 +679,18 @@ export function secretCheck(files, readContent) {
 /**
  * @param {string[]} files
  * @param {(file: string) => string | null} readContent
- * @returns {{ findings: import("./secret-scan.js").SecretFinding[], skipped: string[], scanned: number }}
+ * @param {(file: string) => Set<number> | "all" | null} [addedLines]
+ * @returns {{ findings: import("./secret-scan.js").SecretFinding[], skipped: string[], scanned: number, wholeFile: string[] }}
  */
-function scanChangedFilesForSecrets(files, readContent) {
+function scanChangedFilesForSecrets(files, readContent, addedLines) {
   /** @type {import("./secret-scan.js").SecretFinding[]} */
   const findings = [];
   /** @type {string[]} */
   const skipped = [];
+  /** @type {string[]} */
+  const wholeFile = [];
   let scanned = 0;
-  if (typeof readContent !== "function") return { findings, skipped, scanned };
+  if (typeof readContent !== "function") return { findings, skipped, scanned, wholeFile };
   for (const file of files ?? []) {
     let text;
     try {
@@ -688,10 +706,47 @@ function scanChangedFilesForSecrets(files, readContent) {
       continue;
     }
     scanned += 1;
-    findings.push(...scanSecretContent(text, { file }));
+    const added = typeof addedLines === "function" ? addedLines(file) : "all";
+    if (added === null) wholeFile.push(file);
+    const onlyLines = added instanceof Set ? added : undefined;
+    findings.push(...scanSecretContent(text, { file, onlyLines }));
     if (findings.length >= MAX_FINDINGS) break;
   }
-  return { findings, skipped, scanned };
+  return { findings, skipped, scanned, wholeFile };
+}
+
+/**
+ * The added-line reader for the gate's subject. Working-tree mode diffs the
+ * working tree from the merge base and counts an untracked file as new in
+ * full; a staged or head subject diffs its exact tree. When git cannot produce
+ * the diff, every file reads as unknown and is scanned whole.
+ *
+ * @param {string} root
+ * @param {string} base
+ * @param {Record<string, string | number> | null} subject
+ * @param {"staged" | "commit" | "working-tree"} scope
+ * @returns {(file: string) => Set<number> | "all" | null}
+ */
+function subjectAddedLines(root, base, subject, scope) {
+  /** @type {Map<string, Set<number>> | null} */
+  let added = null;
+  /** @type {Set<string>} */
+  let untracked = new Set();
+  try {
+    if (subject?.treeSha) {
+      const [from, to] = subjectDiffRange(root, subject);
+      added = addedLineNumbers(root, from, to);
+    } else if (scope === "working-tree") {
+      added = addedLineNumbers(root, diffOrigin(root, base), null);
+      untracked = new Set(runGit(root, ["ls-files", "--others", "--exclude-standard"]));
+    }
+  } catch {
+    added = null;
+  }
+  return (file) => {
+    if (untracked.has(file)) return "all";
+    return added?.get(file) ?? null;
+  };
 }
 
 /**

@@ -21,6 +21,7 @@ import {
   TRANSLATION_DEMOTION,
 } from "./ranking-rules.js";
 import { estimateTokens, estimateTokenSections } from "./tokens.js";
+import { diffOrigin } from "./change-diff.js";
 import { runCommand } from "./tools.js";
 
 export const DIFF_RENAME_LIMIT = 1000;
@@ -1011,7 +1012,9 @@ function captureDiffSnapshot(root, base, suppliedFiles, includeUntracked) {
       `-l${DIFF_RENAME_LIMIT}`,
       "--name-only",
       "-z",
-      resolved.stdout.trim(),
+      // From the merge base, not the base tip: commits that landed on the base
+      // after the branch point are not this change.
+      diffOrigin(root, resolved.stdout.trim()),
       "--",
     ],
     { cwd: root },

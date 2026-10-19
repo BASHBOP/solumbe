@@ -74,7 +74,7 @@ This makes solumbe useful for maintainers who want AI-assisted development witho
 | MCP setup unclear             | MCP workflow docs include generic stdio, Claude Desktop, VS Code, and Cursor examples |
 | Contributor readiness         | CONTRIBUTING.md, Code of Conduct, CI, CODEOWNERS, templates, security, release docs, and branch protection guidance |
 | Review policy visibility      | Review-policy snapshot summarizes branch protection and owner/admin decision boundaries |
-| Gate behaviour needs proof    | `solumbe eval --gate-effectiveness` checks one valid control and six expected blocks against the real local gate |
+| Gate behaviour needs proof    | `solumbe eval --gate-effectiveness` checks four controls that must pass and eight expected blocks against the real local gate |
 | Trust-layer demo              | Public walkthrough for Solumbe context, PR review context, and human merge accountability |
 | Session continuity            | Builder-founder operating loop keeps proof, gates, and next actions outside chat memory |
 
