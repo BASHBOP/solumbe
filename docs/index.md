@@ -4,7 +4,7 @@
 
 > For teams that want any coding agent to produce evidence a human can trust before merge.
 
-**v4.7.1** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
+**v4.7.2** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
 
 Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep -->
 
@@ -20,6 +20,14 @@ Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep
 ---
 
 ## What's New
+
+!!! tip "v4.7.2 published (2026-10-19)"
+    Two gate fixes found by dogfooding solumbe on another repository. No command or field was removed.
+
+    - Working-tree mode (`converge`, `convergence_score`, `change_impact --diff-base`, the local gate) diffs from the merge base, so commits that land on the base after the branch point no longer count as part of the change.
+    - The secret check scans only the lines a change adds, so a credential already on the base no longer fails a change that never touched it.
+
+    [npm v4.7.2](https://www.npmjs.com/package/@bashbop/solumbe/v/4.7.2) · [GitHub Release](https://github.com/BASHBOP/solumbe/releases/tag/v4.7.2) · [MCP Registry](https://registry.modelcontextprotocol.io/?q=io.github.BASHBOP%2Fsolumbe)
 
 !!! tip "v4.7.1 published (2026-10-18)"
     Two fixes found by dogfooding solumbe in Claude Code. No command or field was removed.
@@ -285,7 +293,7 @@ flowchart LR
 === "Install"
 
     ```bash
-    npm install -g @bashbop/solumbe@4.7.1
+    npm install -g @bashbop/solumbe@4.7.2
     solumbe doctor
     solumbe context "review this change" --path .
     ```
@@ -293,7 +301,7 @@ flowchart LR
 === "No Global Install"
 
     ```bash
-    npx -y @bashbop/solumbe@4.7.1 doctor
+    npx -y @bashbop/solumbe@4.7.2 doctor
     ```
 
 === "Source Checkout"

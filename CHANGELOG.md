@@ -6,15 +6,19 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+## [4.7.2] - 2026-10-19
+
+Two gate fixes found by dogfooding solumbe on another repository, and a test that no longer fails on a loaded machine. No command or field was removed.
+
 ### Fixed
 
 - **Working-tree mode diffs from the merge base, not the base tip.** `converge`, `convergence_score`, `change_impact --diff-base`, and the local gate without `--staged` or `--head` ran `git diff <base>`. Once the base moved on after the branch point, every file it changed counted as a reversed change of this one. Dogfooding on bashbop-api, a five-file branch scored 49/100 with 16 changed files, three of them Paystack files flagged as money-flow drift, all from commits merged to `main` while the branch was open. The working tree now diffs from `git merge-base <base> HEAD`, falling back to the base when the two share no history. `--head` and `--staged` are unchanged: they stay the exact two trees named, so their receipts re-verify in a shallow clone. To score a staged or committed change on a moved base, pass the merge base as `--base`.
 - **The secret check answers for added lines only.** The content half of `Secret safety` scanned the whole of every changed file, so a credential-shaped line already on the base failed or warned on a change that never touched it, and the summary called it "a changed line". It now scans only the lines the change adds: the exact tree for `--staged` and `--head`, the working tree from the merge base otherwise, and an untracked file in full. When git cannot produce the added lines, the file is scanned whole and the details say so.
+- **The route-prompt decision log test no longer fails on a loaded machine.** The hook reads the head at prompt time with `git rev-parse` under a 1.5 s deadline; under load the read ran past it, the logged `head` was `null`, and the test's 12-hex check failed in 2 of 3 full runs. The deadline can now be set with `SOLUMBE_ROUTE_GIT_TIMEOUT_MS`, which the hook tests raise, and the head read is tested on its own. The hook's default stays 1.5 s.
 
 ### Added
 
 - **Three gate-effectiveness cases.** `base-moving-on-is-not-part-of-the-change` gates against a `main` that gained a commit after the branch point. `credential-already-on-base-is-not-blocked` edits a file that already holds a credential, and its control, `credential-added-beside-a-legacy-one-is-blocked`, adds a second one. Both regression cases fail on the previous release. A case can now name an `advanceBase` change-set that lands on `main` after the change branches off, and the harness strips allow markers before the baseline commit so an unchanged line reads as unchanged.
-- **The route-prompt decision log test no longer fails on a loaded machine.** The hook reads the head at prompt time with `git rev-parse` under a 1.5 s deadline; under load the read ran past it, the logged `head` was `null`, and the test's 12-hex check failed in 2 of 3 full runs. The deadline can now be set with `SOLUMBE_ROUTE_GIT_TIMEOUT_MS`, which the hook tests raise, and the head read is tested on its own. The hook's default stays 1.5 s.
 
 ## [4.7.1] - 2026-10-18
 
