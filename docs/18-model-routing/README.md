@@ -386,7 +386,9 @@ router that can swallow a request is worse than no router.
 
 **It has a deadline.** The routing call is killed at 6 seconds
 (`SOLUMBE_ROUTE_TIMEOUT_MS` sets another). A slow or huge repository costs the
-hint, not the turn.
+hint, not the turn. The git reads behind the logged `head` and `branch` stop at
+1.5 seconds (`SOLUMBE_ROUTE_GIT_TIMEOUT_MS`), and one that runs past it logs
+`null`.
 
 **It skips what is not work.** Turn-taking prompts (`ok`, `thanks`, `ship it`)
 and slash commands route nothing, because spending seconds of latency to score
