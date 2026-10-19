@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "generatedAt": "2026-10-18T22:41:13.294Z",
+  "generatedAt": "2026-10-19T21:18:04.562Z",
   "schemaVersion": 3,
   "reviewEngineVersion": 1,
   "request": "review this change",
@@ -15,13 +15,8 @@
     "concepts": [],
     "topFiles": [
       {
-        "path": "src/lib/mcp.js",
-        "score": 15,
-        "riskFlags": []
-      },
-      {
-        "path": "tests/mcp-dispatch.test.js",
-        "score": 4.5,
+        "path": "src/lib/pass-local.js",
+        "score": 10,
         "riskFlags": []
       },
       {
@@ -30,12 +25,17 @@
         "riskFlags": []
       },
       {
-        "path": "docs/index.md",
+        "path": "docs/07-deterministic-verification/convergence-score-spec.md",
         "score": 0,
         "riskFlags": []
       },
       {
-        "path": "evals/corpus.json",
+        "path": "docs/18-model-routing/README.md",
+        "score": 0,
+        "riskFlags": []
+      },
+      {
+        "path": "docs/EVALS.md",
         "score": 0,
         "riskFlags": []
       }
@@ -45,9 +45,9 @@
     ]
   },
   "prReviewSummary": {
-    "changedFiles": 13,
-    "additions": 190,
-    "deletions": 17,
+    "changedFiles": 31,
+    "additions": 596,
+    "deletions": 56,
     "riskLevel": "low",
     "riskFlags": [
       "dependency"
@@ -62,7 +62,7 @@
       {
         "name": "Changed files",
         "status": "PASS",
-        "summary": "13 changed files found."
+        "summary": "31 changed files found."
       },
       {
         "name": "Commit snapshot",
@@ -108,26 +108,44 @@
     "changedFiles": [
       "CHANGELOG.md",
       "RELEASE.md",
+      "docs/07-deterministic-verification/convergence-score-spec.md",
+      "docs/18-model-routing/README.md",
+      "docs/EVALS.md",
+      "docs/EXECUTIVE-SUMMARY.md",
       "docs/assets/solumbe-how-it-works.html",
       "docs/index.md",
       "evals/corpus.json",
+      "evals/fixtures/gate-legacy-secret/base/.github/CODEOWNERS",
+      "evals/fixtures/gate-legacy-secret/base/package-lock.json",
+      "evals/fixtures/gate-legacy-secret/base/package.json",
+      "evals/fixtures/gate-legacy-secret/base/src/greeting.js",
+      "evals/fixtures/gate-legacy-secret/base/src/settings.js",
+      "evals/fixtures/gate-legacy-secret/changes/new-secret/src/settings.js",
+      "evals/fixtures/gate-legacy-secret/changes/unrelated-edit/src/settings.js",
+      "evals/fixtures/gate-node/changes/main-advance/src/farewell.js",
       "package-lock.json",
       "package.json",
+      "scripts/hooks/route-prompt.mjs",
       "server.json",
-      "src/lib/context-engine.js",
-      "src/lib/mcp.js",
-      "tests/claude-read.test.js",
-      "tests/context-engine.test.js",
-      "tests/mcp-dispatch.test.js"
+      "src/lib/change-diff.js",
+      "src/lib/converge.js",
+      "src/lib/eval.js",
+      "src/lib/impact.js",
+      "src/lib/pass-local.js",
+      "src/lib/secret-scan.js",
+      "tests/change-diff.test.js",
+      "tests/cli.test.js",
+      "tests/eval.test.js",
+      "tests/route-prompt-hook.test.js"
     ],
     "subject": {
       "kind": "git-commit",
-      "baseSha": "b8ca06a076a63cb49b0e7d94d3596eecd854fc7a",
-      "headSha": "e2829d33d416d4a2699e5890d3e00cb9c9060ee6",
-      "treeSha": "2623fe0aea55be80badec5c1d0f553bfed679ce7"
+      "baseSha": "e2829d33d416d4a2699e5890d3e00cb9c9060ee6",
+      "headSha": "a90c257c616bd566cb6396a93d5fbd0e37326752",
+      "treeSha": "4bc32f242430198b600e91e7b1b573b7936f5aa1"
     }
   },
   "tokenEstimate": {
-    "fullJson": 600
+    "fullJson": 807
   }
 }
