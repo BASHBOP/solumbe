@@ -68,7 +68,21 @@ export function routeTimeoutMs(env = process.env) {
 }
 
 /** A `git rev-parse` that takes longer than this is not worth the head. */
-const GIT_TIMEOUT_MS = 1500;
+export const GIT_TIMEOUT_MS = 1500;
+
+/**
+ * The git ceiling for this run. `SOLUMBE_ROUTE_GIT_TIMEOUT_MS` raises or
+ * lowers it, for the same reason as `SOLUMBE_ROUTE_TIMEOUT_MS`: on a loaded
+ * machine `git rev-parse` has taken longer than the default, and a test that
+ * checks the head is kept must not lose it to the deadline. Anything that is
+ * not a positive number is ignored.
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {number}
+ */
+export function gitTimeoutMs(env = process.env) {
+  const raw = Number(env.SOLUMBE_ROUTE_GIT_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : GIT_TIMEOUT_MS;
+}
 
 /**
  * Where the hook keeps what it decided. The tier printed as context is gone
@@ -90,12 +104,14 @@ export function routeLogPath(env = process.env) {
  * commit join keys on: the request's change is the next commit on this branch
  * whose first parent is this head.
  * @param {string} cwd
+ * @param {NodeJS.ProcessEnv} [env]
  * @returns {{ head: string|null, branch: string|null }}
  */
-export function gitStateAt(cwd) {
+export function gitStateAt(cwd, env = process.env) {
+  const timeout = gitTimeoutMs(env);
   const read = (/** @type {string[]} */ args) => {
     try {
-      const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8", timeout: GIT_TIMEOUT_MS, stdio: ["ignore", "pipe", "ignore"] });
+      const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8", timeout, stdio: ["ignore", "pipe", "ignore"] });
       const out = result.status === 0 ? result.stdout.trim() : "";
       return out || null;
     } catch {

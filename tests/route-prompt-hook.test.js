@@ -14,6 +14,9 @@ import {
   promptClaimKey,
   ROUTE_TIMEOUT_MS,
   routeTimeoutMs,
+  GIT_TIMEOUT_MS,
+  gitTimeoutMs,
+  gitStateAt,
   decisionRecord,
   formatContext,
   routeArm,
@@ -63,6 +66,9 @@ function runHook(input, { timeout = 90000, env: extra = {} } = {}) {
         // The 6 s budget is for a prompt; a suite that spawns node in parallel
         // has run past it, and these tests check the output, not the deadline.
         SOLUMBE_ROUTE_TIMEOUT_MS: "60000",
+        // Likewise the 1.5 s git read: under load `git rev-parse` has run past
+        // it, and the decision log test checks the head was kept.
+        SOLUMBE_ROUTE_GIT_TIMEOUT_MS: "60000",
         ...extra,
       },
     });
@@ -395,4 +401,19 @@ test("the routing deadline is 6 s unless the environment sets a positive one", (
   assert.equal(routeTimeoutMs({}), 6000);
   assert.equal(routeTimeoutMs({ SOLUMBE_ROUTE_TIMEOUT_MS: "60000" }), 60000);
   for (const bad of ["", "0", "-5", "soon"]) assert.equal(routeTimeoutMs({ SOLUMBE_ROUTE_TIMEOUT_MS: bad }), 6000);
+});
+
+test("the git read deadline is 1.5 s unless the environment sets a positive one", () => {
+  assert.equal(GIT_TIMEOUT_MS, 1500);
+  assert.equal(gitTimeoutMs({}), 1500);
+  assert.equal(gitTimeoutMs({ SOLUMBE_ROUTE_GIT_TIMEOUT_MS: "60000" }), 60000);
+  for (const bad of ["", "0", "-5", "soon"]) assert.equal(gitTimeoutMs({ SOLUMBE_ROUTE_GIT_TIMEOUT_MS: bad }), 1500);
+});
+
+test("the head at prompt time is read from git, and a directory with none keeps none", () => {
+  const generous = { SOLUMBE_ROUTE_GIT_TIMEOUT_MS: "60000" };
+  assert.match(gitStateAt(REPO, generous).head ?? "", /^[0-9a-f]{12}$/);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "route-no-git-"));
+  assert.deepEqual(gitStateAt(dir, generous), { head: null, branch: null });
+  fs.rmSync(dir, { recursive: true, force: true });
 });
