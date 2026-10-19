@@ -6,6 +6,10 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The route-prompt decision log test no longer fails on a loaded machine.** The hook reads the head at prompt time with `git rev-parse` under a 1.5 s deadline; under load the read ran past it, the logged `head` was `null`, and the test's 12-hex check failed in 2 of 3 full runs. The deadline can now be set with `SOLUMBE_ROUTE_GIT_TIMEOUT_MS`, which the hook tests raise, and the head read is tested on its own. The hook's default stays 1.5 s.
+
 ## [4.7.1] - 2026-10-18
 
 Two fixes found by dogfooding solumbe in Claude Code. No command or field was removed.
