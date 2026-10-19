@@ -999,8 +999,8 @@ test("eval --gate-effectiveness runs committed staged changes through the real g
   const payload = parseJsonOutput(result.stdout);
   assert.equal(payload.evalKind, "gate-effectiveness");
   assert.equal(payload.passed, true);
-  assert.equal(payload.counts.cases, 9);
-  assert.equal(payload.counts.blockedAsExpected, 7);
+  assert.equal(payload.counts.cases, 12);
+  assert.equal(payload.counts.blockedAsExpected, 8);
 });
 
 test("the eval headers print the flask glyph, not its escaped source text", async () => {

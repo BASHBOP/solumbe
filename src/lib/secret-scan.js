@@ -182,13 +182,18 @@ export const SECRET_CONTENT_RULES = [
  * Scan one file's text. Findings never carry the matched value — a gate
  * receipt must not become a second copy of the credential.
  *
+ * `onlyLines` limits findings to those 1-indexed line numbers, so a gate can
+ * hold a change to what it adds. The whole text is still read, so an allow
+ * marker on an unchanged line above an added one is honoured.
+ *
  * @param {string} text
- * @param {{ file?: string, maxFindings?: number }} [options]
+ * @param {{ file?: string, maxFindings?: number, onlyLines?: Set<number> }} [options]
  * @returns {SecretFinding[]}
  */
 export function scanSecretContent(text, options = {}) {
   const file = options.file ?? "";
   const maxFindings = options.maxFindings ?? 20;
+  const onlyLines = options.onlyLines;
   /** @type {SecretFinding[]} */
   const findings = [];
   if (typeof text !== "string" || text.length === 0) return findings;
@@ -201,6 +206,7 @@ export function scanSecretContent(text, options = {}) {
   /** @type {Set<string>} */
   const seen = new Set();
   for (let index = 0; index < lines.length; index += 1) {
+    if (onlyLines && !onlyLines.has(index + 1)) continue;
     const line = lines[index];
     if (!line || line.length > MAX_LINE_LENGTH) continue;
     if (isAllowed(line) || isAllowed(lines[index - 1] ?? "")) continue;
