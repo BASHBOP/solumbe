@@ -106,10 +106,20 @@ fixture when extending coverage to another ecosystem or command form.
 ### Gate-effectiveness cases
 
 The `gateEffectiveness` corpus runs Solumbe's real local gate against reviewed,
-committed staged changes. The current fixture contains one valid control and
-six expected blocks:
+committed changes. The corpus holds four changes that must pass:
+
+- a valid change;
+- a change aligned with its source-kind owner, which must converge;
+- a valid change gated against a `main` that gained a commit after the branch
+  point, which must count only the change's own file; and
+- an edit to a file that already holds a credential, which the change did not
+  add.
+
+And eight that must be blocked:
 
 - a potential secret or environment file;
+- a credential value pasted into ordinary source;
+- a credential added beside one already on the base;
 - a high-risk schema change without independently verified PR controls;
 - version metadata changed without a changelog update;
 - requested validation without a base-committed validation policy;
@@ -124,7 +134,11 @@ expected reason is missing, or the gate returns an unexpected `FAIL` check.
 The runner copies `base/` into an isolated temporary directory, creates a
 deterministic Git baseline, applies one reviewed `changes/<changeSet>/`
 directory or `changes/<changeSet>.patch`, stages the result, and invokes
-`solumbe gate --staged --json`. The patch form lets a safety case create a
+`solumbe gate --staged --json`. A case with `advanceBase` branches the change
+off the baseline, commits that reviewed change-set to `main`, and gates the
+working tree against `main`, since staged and head subjects are exact two-tree
+diffs by design. Allow markers are stripped before the baseline commit as well
+as after the change, so an unchanged marked line reads as unchanged. The patch form lets a safety case create a
 secret-like path only inside the temporary repository, without placing that
 path in Solumbe's own working tree. Corpus entries cannot provide shell commands,
 redirect execution outside `evals/fixtures/`, or use path-like change-set

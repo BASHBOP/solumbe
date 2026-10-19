@@ -159,10 +159,10 @@ test("runGateEffectivenessEval proves the committed gate cases and their determi
   assert.equal(data.evalKind, "gate-effectiveness");
   assert.equal(data.passed, true, "committed gate-effectiveness corpus must pass");
   assert.equal(data.exitCode, 0);
-  assert.equal(data.counts.cases, 9);
-  assert.equal(data.counts.passedCases, 9);
-  assert.equal(data.counts.expectedBlocked, 7);
-  assert.equal(data.counts.blockedAsExpected, 7);
+  assert.equal(data.counts.cases, 12);
+  assert.equal(data.counts.passedCases, 12);
+  assert.equal(data.counts.expectedBlocked, 8);
+  assert.equal(data.counts.blockedAsExpected, 8);
 
   const byName = new Map(data.cases.map((testCase) => [testCase.name, testCase]));
   assert.equal(byName.get("valid-control-passes")?.actualVerdict, "PASS");
@@ -171,10 +171,13 @@ test("runGateEffectivenessEval proves the committed gate cases and their determi
   assert.equal(byName.get("aligned-change-to-source-kind-owner-converges")?.actualVerdict, "PASS");
   assert.equal(byName.get("incomplete-release-is-blocked")?.checks[0]?.name, "Release discipline");
   assert.equal(byName.get("scope-drift-fails-convergence")?.checks[0]?.name, "Convergence");
+  assert.equal(byName.get("base-moving-on-is-not-part-of-the-change")?.actualVerdict, "PASS");
+  assert.equal(byName.get("credential-already-on-base-is-not-blocked")?.actualVerdict, "PASS");
+  assert.equal(byName.get("credential-added-beside-a-legacy-one-is-blocked")?.checks[0]?.name, "Secret safety");
   assert.ok(data.cases.every((testCase) => testCase.pass && testCase.unexpectedFailures.length === 0));
 
   assert.match(markdown, /# solumbe Gate Effectiveness Eval/);
-  assert.match(markdown, /Expected blocks: 7\/7 blocked for the encoded reason/);
+  assert.match(markdown, /Expected blocks: 8\/8 blocked for the encoded reason/);
   assert.match(markdown, /Overall: PASS/);
 });
 

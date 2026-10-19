@@ -138,14 +138,16 @@ usual, so an inconclusive result can still be recomputed and verified.
 
 | Mode | Changed files | Receipt |
 | --- | --- | --- |
-| Working tree (default) | `git diff <base>`: tracked files, staged or not. Untracked files are listed under `untracked` and not scored unless `--include-untracked` is passed. | v1 |
+| Working tree (default) | `git diff $(git merge-base <base> HEAD)`: tracked files, staged or not, from where the branch started, so commits that landed on the base afterwards are not scored. Untracked files are listed under `untracked` and not scored unless `--include-untracked` is passed. | v1 |
 | `--head <ref>` | Exactly `base..head` as a direct tree diff (no merge base). Uncommitted and untracked files play no part. | v2, `git-commit` |
 | `--staged` | Exactly `base..index` via `git write-tree`. | v2, `git-index` |
 | GitHub PR (gate only) | `merge-base(base, head)..head`, checked against GitHub's file list. | v2, `github-pr` |
 
-`--head` and `--staged` cannot be combined. To score a branch whose base has moved on, pass
-the merge base as `--base` (`git merge-base origin/main HEAD`); `--head` deliberately does
-not compute one, so the subject is exactly the two trees named.
+`--head` and `--staged` cannot be combined. To score a staged or committed change whose base
+has moved on, pass the merge base as `--base` (`git merge-base origin/main HEAD`); `--head` and
+`--staged` deliberately do not compute one, so the subject is exactly the two trees named and
+its receipt re-verifies in a shallow clone. Working-tree mode has no tree-bound receipt and
+computes the merge base itself.
 
 ## 4. Recomputable receipt
 

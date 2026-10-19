@@ -129,6 +129,11 @@ import { runCommand } from "./tools.js";
  * @property {string} name
  * @property {string} repoFixture
  * @property {string} changeSet
+ * @property {string} [advanceBase] - a reviewed change-set committed on `main`
+ *   after the change branches off. The gate then runs in working-tree mode
+ *   against `main`, a base that has moved on since the branch point. (Staged
+ *   and head subjects are exact two-tree diffs by design, so the case is about
+ *   the working tree.)
  * @property {"PASS"|"WARN"|"FAIL"} expectedVerdict
  * @property {GateCheckExpectation[]} expectedChecks
  * @property {{ policy?: string, governance?: string, request?: string, minConvergence?: number, runValidation?: boolean }} [options]
@@ -794,7 +799,7 @@ function scoreGateEffectivenessCase(testCase, { root, fixtureRoots }) {
   validateGateEffectivenessCase(testCase);
   const source = resolveFixture(root, fixtureRoots, testCase.repoFixture);
   assertGateFixtureRoot(root, source, testCase.repoFixture);
-  const temp = prepareGateFixture(source, testCase.changeSet);
+  const temp = prepareGateFixture(source, testCase.changeSet, testCase.advanceBase);
   /** @type {string|undefined} */
   let actualVerdict;
   /** @type {string[]} */
@@ -807,7 +812,7 @@ function scoreGateEffectivenessCase(testCase, { root, fixtureRoots }) {
   let error;
 
   try {
-    const gate = runGateFixture(temp.dir, testCase.options ?? {});
+    const gate = runGateFixture(temp.dir, testCase.options ?? {}, testCase.advanceBase ? { base: "main", staged: false } : {});
     actualVerdict = gate.verdict;
     changedFiles = Array.isArray(gate.changedFiles) ? gate.changedFiles.map(String) : [];
     const actualChecks = Array.isArray(gate.checks) ? gate.checks : [];
@@ -853,6 +858,9 @@ function validateGateEffectivenessCase(testCase) {
   }
   if (!/^[a-z0-9][a-z0-9_-]*$/.test(testCase.changeSet)) {
     throw new Error(`gateEffectiveness changeSet must be a simple fixture name: ${testCase.changeSet}`);
+  }
+  if (testCase.advanceBase !== undefined && !/^[a-z0-9][a-z0-9_-]*$/.test(String(testCase.advanceBase))) {
+    throw new Error(`gateEffectiveness advanceBase must be a simple fixture name: ${testCase.advanceBase}`);
   }
   if (!Array.isArray(testCase.expectedChecks) || testCase.expectedChecks.length === 0) {
     throw new Error(`gateEffectiveness case "${testCase.name}" needs a non-empty expectedChecks[] array`);
@@ -981,9 +989,10 @@ function assertGateFixtureRoot(root, source, fixtureName) {
 /**
  * @param {string} source
  * @param {string} changeSet
+ * @param {string} [advanceBase]
  * @returns {{ dir: string }}
  */
-function prepareGateFixture(source, changeSet) {
+function prepareGateFixture(source, changeSet, advanceBase) {
   const baseDir = path.join(source, "base");
   const changeDir = path.join(source, "changes", changeSet);
   const changePatch = path.join(source, "changes", `${changeSet}.patch`);
@@ -993,11 +1002,27 @@ function prepareGateFixture(source, changeSet) {
   if (hasDirectory === hasPatch) {
     throw new Error(`gate effectiveness change-set "${changeSet}" must have exactly one reviewed directory or patch under ${source}`);
   }
+  const advanceDir = advanceBase ? path.join(source, "changes", advanceBase) : null;
+  if (advanceDir && !isDir(advanceDir)) {
+    throw new Error(`gate effectiveness advanceBase "${advanceBase}" must be a reviewed directory under ${source}`);
+  }
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "solumbe-gate-eval-"));
   try {
     copyDirectoryContents(baseDir, dir);
+    // Strip before the baseline commit too, so an unchanged base line is
+    // byte-identical in the baseline and the subject and reads as unchanged.
+    stripAllowMarkers(dir);
     initGateFixtureGit(dir);
+    if (advanceDir) {
+      // The change branches off the baseline; `main` then moves on without it.
+      runGateGit(dir, ["checkout", "--quiet", "-b", "change"]);
+      runGateGit(dir, ["checkout", "--quiet", "main"]);
+      copyDirectoryContents(advanceDir, dir);
+      stripAllowMarkers(dir);
+      commitGateFixture(dir, "main moves on");
+      runGateGit(dir, ["checkout", "--quiet", "change"]);
+    }
     if (hasDirectory) copyDirectoryContents(changeDir, dir);
     else runGateGit(dir, ["apply", "--whitespace=nowarn", changePatch]);
     stripAllowMarkers(dir);
@@ -1060,10 +1085,18 @@ function copyDirectoryContents(source, destination) {
 /** @param {string} dir */
 function initGateFixtureGit(dir) {
   runGateGit(dir, ["init", "--quiet"]);
+  // Name the branch so the gate's default base resolves to it whatever the
+  // machine's init.defaultBranch says.
+  runGateGit(dir, ["symbolic-ref", "HEAD", "refs/heads/main"]);
   runGateGit(dir, ["config", "user.email", "eval@solumbe.local"]);
   runGateGit(dir, ["config", "user.name", "solumbe gate eval"]);
+  commitGateFixture(dir, "baseline");
+}
+
+/** @param {string} dir @param {string} message */
+function commitGateFixture(dir, message) {
   runGateGit(dir, ["add", "--all"]);
-  runGateGit(dir, ["-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "commit", "--quiet", "-m", "baseline"]);
+  runGateGit(dir, ["-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "commit", "--quiet", "-m", message]);
 }
 
 /** @param {string} cwd @param {string[]} args */
@@ -1088,16 +1121,17 @@ function runGateGit(cwd, args) {
  *
  * @param {string} dir
  * @param {{ policy?: string, governance?: string, request?: string, minConvergence?: number, runValidation?: boolean }} options
+ * @param {{ base?: string, staged?: boolean }} [scope]
  * @returns {{ verdict: "PASS"|"WARN"|"FAIL", changedFiles?: string[], checks?: Array<{ name?: string, status?: string, summary?: string, details?: string[] }> }}
  */
-function runGateFixture(dir, options) {
+function runGateFixture(dir, options, { base = "HEAD", staged = true } = {}) {
   const args = [
     path.join(repoRoot, "src", "cli.js"),
     "gate",
     dir,
     "--base",
-    "HEAD",
-    "--staged",
+    base,
+    ...(staged ? ["--staged"] : []),
     "--policy",
     options.policy ?? "standard",
     "--governance",
