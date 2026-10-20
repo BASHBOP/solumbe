@@ -3,14 +3,14 @@
   "description": "Labeled evaluation corpus for solumbe retrieval, risk classification, fixture-backed harness command execution, and gate effectiveness. Gate cases initialize an isolated Git repository from a committed base, apply one committed change-set, and assert both the verdict and deterministic check reason. See docs/EVALS.md for how to add a case and how thresholds work. Reads cases label the intent (and, where it is unambiguous, the solumbe tool and the files) a request asks for; `solumbe eval --reads` grades a read provider against them and is not part of CI because it calls a model.",
   "k": 5,
   "thresholds": {
-    "comment": "Floors set to current-baseline-minus-slack so the suite is green today but a regression trips it. Baseline (2026-10-13): retrieval p@5=0.838 r@5=1.0 mrr=0.986 (36/36); risk accuracy=1.0 (22/22). The precision floor moved from 0.85 to 0.82 when the Python and Go fixtures were added: their ten cases average p@5=0.767 because the Python queries return unlabeled sibling primaries, and the 25 earlier cases are unchanged at 0.861. tests/cli.test.js asserts the same floor. Aggregate metrics must be >= these floors for exit code 0. The risk floor is 0.96 so that a single failing case (21/22 = 0.955) still trips the gate. Re-record both baseline and floors in docs/EVALS.md after any intentional behavior change.",
+    "comment": "Floors set to current-baseline-minus-slack so the suite is green today but a regression trips it. Baseline (2026-10-20): retrieval p@5=0.838 r@5=1.0 mrr=0.986 (36/36, plus 4 known gaps outside the aggregate); risk accuracy=1.0 (28/28). The precision floor moved from 0.85 to 0.82 when the Python and Go fixtures were added: their ten cases average p@5=0.767 because the Python queries return unlabeled sibling primaries, and the 25 earlier cases are unchanged at 0.861. tests/cli.test.js asserts the same floor. Aggregate metrics must be >= these floors for exit code 0. The risk floor is 0.97 so that a single failing case (27/28 = 0.964) still trips the gate; it was 0.96 at 22 cases. Re-record both baseline and floors in docs/EVALS.md after any intentional behavior change.",
     "retrieval": {
       "precisionAtK": 0.82,
       "recallAtK": 0.9,
       "mrr": 0.9
     },
     "risk": {
-      "accuracy": 0.96
+      "accuracy": 0.97
     }
   },
   "fixtureRoots": {
@@ -34,6 +34,7 @@
     "python-orders-api": "evals/fixtures/python-orders-api",
     "go-inventory-api": "evals/fixtures/go-inventory-api",
     "git-hooks": "evals/fixtures/git-hooks",
+    "node-upgrade-api": "evals/fixtures/node-upgrade-api",
     "gate-legacy-secret": "evals/fixtures/gate-legacy-secret"
   },
   "retrieval": [
@@ -285,6 +286,41 @@
       "repoFixture": "go-inventory-api",
       "expectedPrimary": ["internal/platform/retry.go"],
       "expectedAnyOf": ["internal/stock/store.go"]
+    },
+    {
+      "name": "node-upgrade-bump-one-dependency",
+      "knownGap": true,
+      "comment": "Dogfood miss (bashbop-api 2026-10-20): a dependency bump names a package, not a file. The manifest that declares it is the file to change.",
+      "query": "bump lint-staged to 17",
+      "repoFixture": "node-upgrade-api",
+      "expectedPrimary": ["package.json"]
+    },
+    {
+      "name": "node-upgrade-dependabot-group",
+      "knownGap": true,
+      "comment": "Dogfood miss (bashbop-api 2026-10-20): the context pack for a Dependabot batch ranked CHANGELOG.md and docs first and never surfaced package.json or the lockfile.",
+      "query": "apply the dependabot minor and patch dependency updates",
+      "repoFixture": "node-upgrade-api",
+      "expectedPrimary": ["package.json"],
+      "expectedAnyOf": ["yarn.lock"]
+    },
+    {
+      "name": "node-upgrade-runtime-version",
+      "knownGap": true,
+      "comment": "Dogfood miss (bashbop-api 2026-10-20): moving the runtime to Node 22 read as intent unknown and missed .nvmrc, which every workflow reads.",
+      "query": "move the service to Node 22",
+      "repoFixture": "node-upgrade-api",
+      "expectedPrimary": [".nvmrc"],
+      "expectedAnyOf": ["package.json", ".github/workflows/ci.yml"]
+    },
+    {
+      "name": "node-upgrade-sdk-api-change",
+      "knownGap": true,
+      "comment": "A dependency upgrade with an API change needs both the call site and the manifest.",
+      "query": "upgrade @stream-io/node-sdk to 0.8 and pass recording_type to startRecording",
+      "repoFixture": "node-upgrade-api",
+      "expectedPrimary": ["src/stream/stream.service.ts"],
+      "expectedAnyOf": ["package.json"]
     }
   ],
   "risk": [
@@ -454,6 +490,53 @@
       "path": "docs/secrets-management.md",
       "expectedConcepts": [],
       "notExpectedConcepts": ["secret"]
+    },
+    {
+      "name": "path-nvmrc-is-configuration",
+      "comment": "Dogfood miss (bashbop-api 2026-10-20): .nvmrc picks the Node version for CI and the deploy build, so changing it changes the production runtime. It carried no flag.",
+      "mode": "path",
+      "path": ".nvmrc",
+      "expectedConcepts": ["configuration"],
+      "notExpectedConcepts": []
+    },
+    {
+      "name": "gate-nvmrc-gates",
+      "comment": "The review gate did not ask for review of a runtime version change.",
+      "mode": "gate",
+      "path": ".nvmrc",
+      "expectedConcepts": ["gate"],
+      "notExpectedConcepts": []
+    },
+    {
+      "name": "gate-lockfile-still-does-not-gate",
+      "comment": "Guard: dependency churn scores zero (SZZ backtest), so recognising dependency requests must not make every lockfile bump demand sign-off.",
+      "mode": "gate",
+      "path": "yarn.lock",
+      "expectedConcepts": [],
+      "notExpectedConcepts": ["gate"]
+    },
+    {
+      "name": "query-dependabot-batch-is-dependency",
+      "comment": "Dogfood miss (bashbop-api 2026-10-20): a Dependabot batch implied no concept, so convergence called package.json and yarn.lock unrequested risky drift.",
+      "mode": "query",
+      "query": "apply the dependabot minor and patch dependency updates",
+      "expectedConcepts": ["dependency"],
+      "notExpectedConcepts": []
+    },
+    {
+      "name": "query-bump-deps-is-dependency",
+      "mode": "query",
+      "query": "bump the deps",
+      "expectedConcepts": ["dependency"],
+      "notExpectedConcepts": []
+    },
+    {
+      "name": "query-upgrade-plan-not-dependency",
+      "comment": "Guard: 'upgrade' alone is a pricing word as often as a dependency word, so it must not imply dependency.",
+      "mode": "query",
+      "query": "upgrade the organiser to the pro plan",
+      "expectedConcepts": [],
+      "notExpectedConcepts": ["dependency"]
     }
   ],
   "harnessExecution": [
@@ -683,6 +766,25 @@
           "name": "Secret safety",
           "status": "FAIL",
           "summaryIncludes": "credential value found in changed content"
+        }
+      ]
+    },
+    {
+      "name": "dependency-bump-converges",
+      "knownGap": true,
+      "comment": "Dogfood miss (bashbop-api 2026-10-20): a dependency batch scored 27/100 because the manifest and lockfile it changed counted as unrequested risky drift.",
+      "repoFixture": "gate-node",
+      "changeSet": "dependency-bump",
+      "expectedVerdict": "PASS",
+      "options": {
+        "request": "bump the left-pad dependency",
+        "minConvergence": 70
+      },
+      "expectedChecks": [
+        {
+          "name": "Convergence",
+          "status": "PASS",
+          "summaryIncludes": "satisfy the convergence requirement"
         }
       ]
     }

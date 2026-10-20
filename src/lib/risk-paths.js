@@ -103,6 +103,9 @@ export const RISK_PATTERNS = [
       /^tsconfig(\.[^/]+)?\.json$/,
       /^[^/]+\.config\.[cm]?[jt]sx?$/,
       /^\.env(\.[^/]+)?$/,
+      // Runtime version pins: CI's setup-node and deploy builders such as
+      // Nixpacks read these, so a change moves the production runtime.
+      /^\.(nvmrc|node-version|tool-versions)$/,
     ],
     // Whole directory segments. Replaces the bare "config" and "lock" word
     // tokens, which matched any path component — including `src/lib/lock.js`
@@ -297,6 +300,9 @@ export const CONCEPT_SYNONYMS = {
   [RISK_FLAGS.dataModel]: ["prisma", "migration", "migrations", "schema", "database", "db", "sql", "model", "models"],
   [RISK_FLAGS.requestSurface]: ["route", "routes", "endpoint", "endpoints", "controller", "controllers", "api", "dto", "handler", "handlers"],
   [RISK_FLAGS.configuration]: ["config", "env", "docker", "deploy", "ci", "pipeline", "workflow", "workflows"],
+  // Only words that mean dependencies on their own. "upgrade", "package" and
+  // "bump" also mean a pricing tier, a release, or a version number.
+  [RISK_FLAGS.dependency]: ["dependency", "dependencies", "deps", "dependabot", "renovate", "lockfile", "lockfiles"],
 };
 
 // Emoji glyphs surfaced by the fancy renderer. Plain mode strips these.

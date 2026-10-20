@@ -52,6 +52,8 @@ import { runCommand } from "./tools.js";
  * @property {string[]} [repoFixtures]
  * @property {string[]} [expectedPrimary]
  * @property {string[]} [expectedAnyOf]
+ * @property {boolean} [knownGap] - a miss recorded before its fix: scored and
+ *   reported, but kept out of the floors and the exit code
  */
 
 /**
@@ -136,6 +138,8 @@ import { runCommand } from "./tools.js";
  *   the working tree.)
  * @property {"PASS"|"WARN"|"FAIL"} expectedVerdict
  * @property {GateCheckExpectation[]} expectedChecks
+ * @property {boolean} [knownGap] - a miss recorded before its fix: run and
+ *   reported, but kept out of the pass count and the exit code
  * @property {{ policy?: string, governance?: string, request?: string, minConvergence?: number, runValidation?: boolean }} [options]
  */
 
@@ -646,7 +650,12 @@ export function runRetrievalEval(options = {}) {
   const k = Number.isInteger(corpus.k) && (corpus.k ?? 0) > 0 ? /** @type {number} */ (corpus.k) : 5;
   const fixtureRoots = corpus.fixtureRoots ?? {};
 
-  const retrievalCases = (corpus.retrieval ?? []).map((testCase) => scoreRetrievalCase(testCase, { root, fixtureRoots, k }));
+  const allRetrieval = (corpus.retrieval ?? []).map((testCase) => ({
+    knownGap: Boolean(testCase.knownGap),
+    scored: scoreRetrievalCase(testCase, { root, fixtureRoots, k }),
+  }));
+  const retrievalCases = allRetrieval.filter((entry) => !entry.knownGap).map((entry) => entry.scored);
+  const knownGaps = allRetrieval.filter((entry) => entry.knownGap).map((entry) => entry.scored);
   const riskCases = (corpus.risk ?? []).map((testCase) => scoreRiskCase(testCase));
 
   const retrievalScore = aggregateRetrieval(retrievalCases);
@@ -665,6 +674,7 @@ export function runRetrievalEval(options = {}) {
     counts: {
       retrieval: retrievalCases.length,
       risk: riskCases.length,
+      knownGaps: knownGaps.length,
     },
     scoreboard: {
       retrieval: retrievalScore,
@@ -678,6 +688,7 @@ export function runRetrievalEval(options = {}) {
       retrieval: retrievalCases,
       risk: riskCases,
     },
+    knownGaps,
   };
 
   return { data, markdown: formatRetrievalEvalMarkdown(data) };
@@ -765,7 +776,9 @@ export function runGateEffectivenessEval(options = {}) {
     throw new Error(`corpus must define a non-empty gateEffectiveness[] array: ${corpusPath}`);
   }
 
-  const results = cases.map((testCase) => scoreGateEffectivenessCase(testCase, { root, fixtureRoots }));
+  const scored = cases.map((testCase) => ({ knownGap: Boolean(testCase.knownGap), result: scoreGateEffectivenessCase(testCase, { root, fixtureRoots }) }));
+  const results = scored.filter((entry) => !entry.knownGap).map((entry) => entry.result);
+  const knownGaps = scored.filter((entry) => entry.knownGap).map((entry) => entry.result);
   const passedCases = results.filter((result) => result.pass).length;
   const expectedBlocked = results.filter((result) => result.expectedVerdict === "FAIL").length;
   const blockedAsExpected = results.filter((result) => result.expectedVerdict === "FAIL" && result.actualVerdict === "FAIL" && result.pass).length;
@@ -781,10 +794,12 @@ export function runGateEffectivenessEval(options = {}) {
       passedCases,
       expectedBlocked,
       blockedAsExpected,
+      knownGaps: knownGaps.length,
     },
     passed,
     exitCode: passed ? 0 : 1,
     cases: results,
+    knownGaps,
   };
 
   return { data, markdown: formatGateEffectivenessEvalMarkdown(data) };
@@ -1571,7 +1586,7 @@ function round3(value) {
 }
 
 /**
- * @param {{ generatedAt: string, corpusPath: string, k: number, counts: { retrieval: number, risk: number }, scoreboard: { retrieval: ReturnType<typeof aggregateRetrieval>, risk: ReturnType<typeof aggregateRisk> }, checks: ReturnType<typeof evaluateThresholds>, passed: boolean, exitCode: number, cases: { retrieval: ScoredRetrievalCase[], risk: ScoredRiskCase[] } }} data
+ * @param {{ generatedAt: string, corpusPath: string, k: number, counts: { retrieval: number, risk: number, knownGaps?: number }, scoreboard: { retrieval: ReturnType<typeof aggregateRetrieval>, risk: ReturnType<typeof aggregateRisk> }, checks: ReturnType<typeof evaluateThresholds>, passed: boolean, exitCode: number, cases: { retrieval: ScoredRetrievalCase[], risk: ScoredRiskCase[] }, knownGaps?: ScoredRetrievalCase[] }} data
  * @returns {string}
  */
 export function formatRetrievalEvalMarkdown(data) {
@@ -1598,6 +1613,11 @@ export function formatRetrievalEvalMarkdown(data) {
     "",
     ...formatFailingCases(data),
     "",
+    ...formatKnownGaps(
+      data.knownGaps,
+      (/** @type {ScoredRetrievalCase} */ gap) =>
+        `expected ${JSON.stringify(gap.expectedPrimary)} anyOf ${JSON.stringify(gap.expectedAnyOf)}, got ${JSON.stringify(gap.ranked)}`,
+    ),
   ];
   return lines.join("\n");
 }
@@ -1639,7 +1659,7 @@ export function formatHarnessExecutionEvalMarkdown(data) {
 }
 
 /**
- * @param {{ generatedAt: string, corpusPath: string, counts: { cases: number, passedCases: number, expectedBlocked: number, blockedAsExpected: number }, passed: boolean, exitCode: number, cases: ScoredGateEffectivenessCase[] }} data
+ * @param {{ generatedAt: string, corpusPath: string, counts: { cases: number, passedCases: number, expectedBlocked: number, blockedAsExpected: number, knownGaps?: number }, passed: boolean, exitCode: number, cases: ScoredGateEffectivenessCase[], knownGaps?: ScoredGateEffectivenessCase[] }} data
  * @returns {string}
  */
 export function formatGateEffectivenessEvalMarkdown(data) {
@@ -1668,8 +1688,32 @@ export function formatGateEffectivenessEvalMarkdown(data) {
     "",
     ...formatFailingGateCases(data),
     "",
+    ...formatKnownGaps(
+      data.knownGaps,
+      (/** @type {ScoredGateEffectivenessCase} */ gap) =>
+        `expected ${gap.expectedVerdict}, got ${gap.actualVerdict ?? "ERROR"}: ${gap.checks.map((check) => `${check.name}=${check.actualStatus ?? "missing"}`).join("; ")}`,
+    ),
   ];
   return lines.join("\n");
+}
+
+/**
+ * Known gaps are misses recorded before their fix. They are scored like any
+ * other case, so the report shows when one closes, but they never count
+ * toward the floors, the pass counts or the exit code. The section is left
+ * out when a corpus has none.
+ * @param {{ name: string, pass: boolean }[] | undefined} gaps
+ * @param {(gap: any) => string} describe
+ * @returns {string[]}
+ */
+function formatKnownGaps(gaps, describe) {
+  if (!gaps || gaps.length === 0) return [];
+  return [
+    "## Known gaps",
+    "",
+    ...gaps.map((gap) => (gap.pass ? `- ${gap.name}: now passes; remove its knownGap marker` : `- ${gap.name}: still open (${describe(gap)})`)),
+    "",
+  ];
 }
 
 /**
