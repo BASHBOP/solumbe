@@ -1,0 +1,11 @@
+{
+  "name": "solumbe-gate-eval-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "left-pad": "^1.3.0"
+  }
+}

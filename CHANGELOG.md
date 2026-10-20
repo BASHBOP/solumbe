@@ -6,6 +6,16 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Runtime version pins are configuration.** `.nvmrc`, `.node-version` and `.tool-versions` carried no risk flag, so moving bashbop-api from Node 20 to 22 never asked for review even though CI and the deploy build read the file. They now classify as configuration and gate a merge.
+- **A dependency request implies the dependency concept.** A Dependabot batch implied no concept, so convergence called the `package.json` and `yarn.lock` it changed unrequested risky drift (27/100 on a correct batch). `dependency`, `dependencies`, `deps`, `dependabot`, `renovate` and `lockfile` now imply it. `upgrade`, `bump` and `package` do not, because they name pricing tiers, releases and versions as often. Lockfile churn still does not gate a merge.
+
+### Added
+
+- **Known gaps in the eval corpus.** A retrieval or gate case marked `"knownGap": true` runs and is reported under **Known gaps** ("still open", or "now passes" once fixed) without counting toward the floors, the pass counts or the exit code, so a miss can be recorded the day it is found.
+- **Eleven cases from the bashbop-api dependency and Node 22 work**, on a new `node-upgrade-api` fixture and a `dependency-bump` gate change-set. Six pass with the fixes above. Five are known gaps until manifests, lockfiles and version pins are indexed. The risk floor moves from 0.96 to 0.97 so one failing case of 28 still trips it.
+
 ## [4.7.2] - 2026-10-19
 
 Two gate fixes found by dogfooding solumbe on another repository, and a test that no longer fails on a loaded machine. No command or field was removed.

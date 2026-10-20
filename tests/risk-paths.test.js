@@ -368,3 +368,29 @@ test("isGateRiskPath ignores a fixture repository's auth and payment files", () 
   // An eval folder can hold real product code; only fixture folders are test input.
   assert.equal(isGateRiskPath("src/eval/auth/session.ts"), true);
 });
+
+// Dogfood miss (bashbop-api 2026-10-20): moving .nvmrc from 20 to 22 changed
+// the Node version for CI and the deploy build, and the gate never asked for
+// review of it.
+test("runtime version pins are configuration and gate a merge", () => {
+  for (const pin of [".nvmrc", ".node-version", ".tool-versions", "apps/api/.nvmrc"]) {
+    assert.ok(classifyPath(pin).includes(RISK_FLAGS.configuration), pin);
+    assert.equal(isGateRiskPath(pin), true, pin);
+  }
+  assert.deepEqual(classifyPath("docs/nvmrc-guide.md").includes(RISK_FLAGS.configuration), false);
+});
+
+// Dogfood miss (bashbop-api 2026-10-20): a Dependabot batch implied no
+// concept, so convergence called the manifest and lockfile it changed
+// unrequested drift.
+test("conceptsFromQuery reads dependency work only from words that mean it", () => {
+  for (const query of ["apply the dependabot updates", "bump the deps", "update the dependencies", "refresh the lockfile", "merge the renovate PRs"]) {
+    assert.ok(conceptsFromQuery(query).includes(RISK_FLAGS.dependency), query);
+  }
+  for (const query of ["upgrade the organiser to the pro plan", "bump the version for the release", "package the CLI for npm"]) {
+    assert.ok(!conceptsFromQuery(query).includes(RISK_FLAGS.dependency), query);
+  }
+  // Recognising the request must not make lockfile churn gate a merge.
+  assert.equal(isGateRiskPath("yarn.lock"), false);
+  assert.equal(isGateRiskPath("package.json"), false);
+});
