@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "generatedAt": "2026-10-19T21:18:04.562Z",
+  "generatedAt": "2026-10-21T18:02:34.618Z",
   "schemaVersion": 3,
   "reviewEngineVersion": 1,
   "request": "review this change",
@@ -15,28 +15,28 @@
     "concepts": [],
     "topFiles": [
       {
-        "path": "src/lib/pass-local.js",
-        "score": 10,
+        "path": "src/lib/review.js",
+        "score": 41,
         "riskFlags": []
       },
       {
-        "path": "CHANGELOG.md",
-        "score": 0,
+        "path": "src/lib/pr-review.js",
+        "score": 36,
         "riskFlags": []
       },
       {
-        "path": "docs/07-deterministic-verification/convergence-score-spec.md",
-        "score": 0,
+        "path": "codex/skills/solumbe-review/SKILL.md",
+        "score": 32.2,
         "riskFlags": []
       },
       {
-        "path": "docs/18-model-routing/README.md",
-        "score": 0,
+        "path": "src/lib/agent-tools.js",
+        "score": 23.6,
         "riskFlags": []
       },
       {
-        "path": "docs/EVALS.md",
-        "score": 0,
+        "path": "src/lib/agent-workflow.js",
+        "score": 23.6,
         "riskFlags": []
       }
     ],
@@ -45,9 +45,9 @@
     ]
   },
   "prReviewSummary": {
-    "changedFiles": 31,
-    "additions": 596,
-    "deletions": 56,
+    "changedFiles": 1,
+    "additions": 3,
+    "deletions": 3,
     "riskLevel": "low",
     "riskFlags": [
       "dependency"
@@ -62,7 +62,7 @@
       {
         "name": "Changed files",
         "status": "PASS",
-        "summary": "31 changed files found."
+        "summary": "1 changed file found."
       },
       {
         "name": "Commit snapshot",
@@ -82,7 +82,7 @@
       {
         "name": "Release discipline",
         "status": "PASS",
-        "summary": "Version metadata is SemVer and changelog was updated."
+        "summary": "Version metadata changed but the project version is unchanged (dependency or lockfile update)."
       },
       {
         "name": "Validation commands",
@@ -106,46 +106,16 @@
       }
     ],
     "changedFiles": [
-      "CHANGELOG.md",
-      "RELEASE.md",
-      "docs/07-deterministic-verification/convergence-score-spec.md",
-      "docs/18-model-routing/README.md",
-      "docs/EVALS.md",
-      "docs/EXECUTIVE-SUMMARY.md",
-      "docs/assets/solumbe-how-it-works.html",
-      "docs/index.md",
-      "evals/corpus.json",
-      "evals/fixtures/gate-legacy-secret/base/.github/CODEOWNERS",
-      "evals/fixtures/gate-legacy-secret/base/package-lock.json",
-      "evals/fixtures/gate-legacy-secret/base/package.json",
-      "evals/fixtures/gate-legacy-secret/base/src/greeting.js",
-      "evals/fixtures/gate-legacy-secret/base/src/settings.js",
-      "evals/fixtures/gate-legacy-secret/changes/new-secret/src/settings.js",
-      "evals/fixtures/gate-legacy-secret/changes/unrelated-edit/src/settings.js",
-      "evals/fixtures/gate-node/changes/main-advance/src/farewell.js",
-      "package-lock.json",
-      "package.json",
-      "scripts/hooks/route-prompt.mjs",
-      "server.json",
-      "src/lib/change-diff.js",
-      "src/lib/converge.js",
-      "src/lib/eval.js",
-      "src/lib/impact.js",
-      "src/lib/pass-local.js",
-      "src/lib/secret-scan.js",
-      "tests/change-diff.test.js",
-      "tests/cli.test.js",
-      "tests/eval.test.js",
-      "tests/route-prompt-hook.test.js"
+      "package-lock.json"
     ],
     "subject": {
       "kind": "git-commit",
-      "baseSha": "e2829d33d416d4a2699e5890d3e00cb9c9060ee6",
-      "headSha": "a90c257c616bd566cb6396a93d5fbd0e37326752",
-      "treeSha": "4bc32f242430198b600e91e7b1b573b7936f5aa1"
+      "baseSha": "a90c257c616bd566cb6396a93d5fbd0e37326752",
+      "headSha": "49e974d4730104e2256a7846a7bee4a0d19ec53a",
+      "treeSha": "05ef6e01fb77519e0dcb3e1c2301483d07424850"
     }
   },
   "tokenEstimate": {
-    "fullJson": 807
+    "fullJson": 554
   }
 }
