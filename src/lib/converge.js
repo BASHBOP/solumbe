@@ -18,6 +18,7 @@ import path from "node:path";
 import { generateCodeMapFromSources } from "./code-map.js";
 import { isTestFilePath } from "./code-map/classify.js";
 import { isSourceFilePath } from "./code-map/generate.js";
+import { isDependencyFilePath, isDependencyListPath, summarizeDependencyFiles } from "./dependency-request.js";
 import { DIFF_RENAME_LIMIT, generateImpact, pathScopeTokens, scopeTokens } from "./impact.js";
 import { getCachedCodeMap } from "./index-cache.js";
 import { importDegrees, resolveImportSpecifier } from "./ranking-rules.js";
@@ -818,16 +819,24 @@ export function captureCommitSubject(root, base, head) {
 function codeMapForSubject(root, subject) {
   const treeish = subject.kind === "github-pr" ? String(subject.headSha) : String(subject.treeSha);
   const treeSha = resolveGitObject(root, `${treeish}^{tree}`, "change subject tree");
-  const entries = gitTreeEntries(root, treeSha).filter(
-    (entry) => (entry.mode === "100644" || entry.mode === "100755") && entry.type === "blob" && isSourceFilePath(entry.file) && entry.size <= MAX_SOURCE_BYTES,
-  );
+  const blobs = gitTreeEntries(root, treeSha).filter((entry) => (entry.mode === "100644" || entry.mode === "100755") && entry.type === "blob");
+  const entries = blobs.filter((entry) => isSourceFilePath(entry.file) && entry.size <= MAX_SOURCE_BYTES);
   const totalBytes = entries.reduce((sum, entry) => sum + entry.size, 0);
   if (entries.length > MAX_SUBJECT_SOURCE_FILES || totalBytes > MAX_SUBJECT_SOURCE_BYTES) {
     throw new Error(
       `exact-subject source set exceeds the safe analysis limit (${MAX_SUBJECT_SOURCE_FILES} files or ${MAX_SUBJECT_SOURCE_BYTES / (1024 * 1024)} MiB)`,
     );
   }
-  return generateCodeMapFromSources(root, readRawSources(root, entries), { name: path.basename(root) });
+  // Manifests and lockfiles are read from the same tree, for the package names
+  // they declare and resolve.
+  const dependencyEntries = blobs.filter((entry) => isDependencyFilePath(entry.file));
+  const manifests = dependencyEntries.filter((entry) => isDependencyListPath(entry.file) && entry.size <= MAX_BATCH_BYTES);
+  const manifestTexts = new Map([...readRawSources(root, manifests)].map((source) => [source.path, source.text]));
+  const dependencies = summarizeDependencyFiles(
+    dependencyEntries.map((entry) => entry.file),
+    (file) => manifestTexts.get(file) ?? "",
+  );
+  return generateCodeMapFromSources(root, readRawSources(root, entries), { name: path.basename(root), dependencies });
 }
 
 /**

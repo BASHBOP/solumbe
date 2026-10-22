@@ -24,7 +24,7 @@ import { isTestDataPath } from "./risk-paths.js";
  * definition of a symbol the request names (`rule: "symbol"`).
  * @typedef {object} NamedFile
  * @property {string} path
- * @property {"path" | "symbol" | "implements"} rule
+ * @property {"path" | "symbol" | "implements" | "dependency"} rule
  * @property {string} literal - the text in the request that named it
  * @property {string} [via] - for `implements`, the registry file that names it
  * @property {number} [line] - the defining line, for a named symbol

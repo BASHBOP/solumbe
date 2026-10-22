@@ -3,7 +3,7 @@
   "description": "Labeled evaluation corpus for solumbe retrieval, risk classification, fixture-backed harness command execution, and gate effectiveness. Gate cases initialize an isolated Git repository from a committed base, apply one committed change-set, and assert both the verdict and deterministic check reason. See docs/EVALS.md for how to add a case and how thresholds work. Reads cases label the intent (and, where it is unambiguous, the solumbe tool and the files) a request asks for; `solumbe eval --reads` grades a read provider against them and is not part of CI because it calls a model.",
   "k": 5,
   "thresholds": {
-    "comment": "Floors set to current-baseline-minus-slack so the suite is green today but a regression trips it. Baseline (2026-10-20): retrieval p@5=0.838 r@5=1.0 mrr=0.986 (36/36, plus 4 known gaps outside the aggregate); risk accuracy=1.0 (28/28). The precision floor moved from 0.85 to 0.82 when the Python and Go fixtures were added: their ten cases average p@5=0.767 because the Python queries return unlabeled sibling primaries, and the 25 earlier cases are unchanged at 0.861. tests/cli.test.js asserts the same floor. Aggregate metrics must be >= these floors for exit code 0. The risk floor is 0.97 so that a single failing case (27/28 = 0.964) still trips the gate; it was 0.96 at 22 cases. Re-record both baseline and floors in docs/EVALS.md after any intentional behavior change.",
+    "comment": "Floors set to current-baseline-minus-slack so the suite is green today but a regression trips it. Baseline (2026-10-22): retrieval p@5=0.865 r@5=1.0 mrr=0.988 (43/43, plus 1 known gap outside the aggregate); risk accuracy=1.0 (28/28). The dependency cases added that day raised p@5 from 0.838; the floors are unchanged. The precision floor moved from 0.85 to 0.82 when the Python and Go fixtures were added: their ten cases average p@5=0.767 because the Python queries return unlabeled sibling primaries, and the 25 earlier cases are unchanged at 0.861. tests/cli.test.js asserts the same floor. Aggregate metrics must be >= these floors for exit code 0. The risk floor is 0.97 so that a single failing case (27/28 = 0.964) still trips the gate; it was 0.96 at 22 cases. Re-record both baseline and floors in docs/EVALS.md after any intentional behavior change.",
     "retrieval": {
       "precisionAtK": 0.82,
       "recallAtK": 0.9,
@@ -35,6 +35,9 @@
     "go-inventory-api": "evals/fixtures/go-inventory-api",
     "git-hooks": "evals/fixtures/git-hooks",
     "node-upgrade-api": "evals/fixtures/node-upgrade-api",
+    "dependency-advisory-api": "evals/fixtures/dependency-advisory-api",
+    "dependency-advisory-web": "evals/fixtures/dependency-advisory-web",
+    "dependency-advisory-mobile": "evals/fixtures/dependency-advisory-mobile",
     "gate-legacy-secret": "evals/fixtures/gate-legacy-secret"
   },
   "retrieval": [
@@ -289,20 +292,17 @@
     },
     {
       "name": "node-upgrade-bump-one-dependency",
-      "knownGap": true,
       "comment": "Dogfood miss (bashbop-api 2026-10-20): a dependency bump names a package, not a file. The manifest that declares it is the file to change.",
       "query": "bump lint-staged to 17",
       "repoFixture": "node-upgrade-api",
-      "expectedPrimary": ["package.json"]
+      "expectedPrimary": ["package.json", "yarn.lock"]
     },
     {
       "name": "node-upgrade-dependabot-group",
-      "knownGap": true,
       "comment": "Dogfood miss (bashbop-api 2026-10-20): the context pack for a Dependabot batch ranked CHANGELOG.md and docs first and never surfaced package.json or the lockfile.",
       "query": "apply the dependabot minor and patch dependency updates",
       "repoFixture": "node-upgrade-api",
-      "expectedPrimary": ["package.json"],
-      "expectedAnyOf": ["yarn.lock"]
+      "expectedPrimary": ["package.json", "yarn.lock"]
     },
     {
       "name": "node-upgrade-runtime-version",
@@ -315,12 +315,45 @@
     },
     {
       "name": "node-upgrade-sdk-api-change",
-      "knownGap": true,
       "comment": "A dependency upgrade with an API change needs both the call site and the manifest.",
       "query": "upgrade @stream-io/node-sdk to 0.8 and pass recording_type to startRecording",
       "repoFixture": "node-upgrade-api",
-      "expectedPrimary": ["src/stream/stream.service.ts"],
+      "expectedPrimary": ["src/stream/stream.service.ts", "package.json", "yarn.lock"]
+    },
+    {
+      "name": "dependency-advisory-yarn-sweep",
+      "comment": "Dogfood miss (bashbop-api 2026-10-22): shell-quote matched quote-templates.controller.ts on 'quote', handlebars pulled in every email template, and yarn.lock was never listed.",
+      "query": "upgrade vulnerable yarn dependencies (handlebars, tar, proxy-addr, shell-quote, basic-ftp, websocket-driver and high advisories) to patched versions",
+      "repoFixture": "dependency-advisory-api",
+      "expectedPrimary": ["yarn.lock"],
+      "expectedAnyOf": ["package.json", ".yarnrc.yml"]
+    },
+    {
+      "name": "dependency-advisory-named-lockfile",
+      "comment": "Dogfood miss (bashbop-event-web 2026-10-22): 'package' and 'upgrade' ranked PackageSelector.tsx and EmailQuotaUpgradeModal.tsx, and yarn.lock went unranked though the request names it.",
+      "query": "upgrade vulnerable yarn dependencies (jspdf, swiper, tar and high advisories) to patched versions in package.json and yarn.lock",
+      "repoFixture": "dependency-advisory-web",
+      "expectedPrimary": ["package.json", "yarn.lock"]
+    },
+    {
+      "name": "dependency-advisory-npm-transitive",
+      "comment": "Dogfood miss (bashbop-mobile-app 2026-10-22): the request grounded to no owner and package-lock.json, the only changed file, was never predicted.",
+      "query": "upgrade vulnerable npm dependencies (shell-quote and high advisories)",
+      "repoFixture": "dependency-advisory-mobile",
+      "expectedPrimary": ["package-lock.json"],
       "expectedAnyOf": ["package.json"]
+    },
+    {
+      "name": "dependency-advisory-multi-repo",
+      "comment": "Dogfood miss (2026-10-22): a pack over three repositories ranked CHANGELOG.md and docs first and none of their manifests or lockfiles.",
+      "query": "upgrade vulnerable dependencies (shell-quote, handlebars, jspdf, swiper, tar and high advisories) to patched versions",
+      "repoFixtures": ["dependency-advisory-api", "dependency-advisory-web", "dependency-advisory-mobile"],
+      "expectedPrimary": [
+        "dependency-advisory-api/yarn.lock",
+        "dependency-advisory-web/package.json",
+        "dependency-advisory-web/yarn.lock",
+        "dependency-advisory-mobile/package-lock.json"
+      ]
     }
   ],
   "risk": [
@@ -771,7 +804,6 @@
     },
     {
       "name": "dependency-bump-converges",
-      "knownGap": true,
       "comment": "Dogfood miss (bashbop-api 2026-10-20): a dependency batch scored 27/100 because the manifest and lockfile it changed counted as unrequested risky drift.",
       "repoFixture": "gate-node",
       "changeSet": "dependency-bump",

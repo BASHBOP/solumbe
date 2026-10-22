@@ -178,7 +178,7 @@ test("generateContextPack ranks email service methods as hotspots over booking c
 
   const result = generateContextPack("extend organisation branding to RSVP confirmation booking cancellation abandonment recovery emails", { path: root });
 
-  assert.equal(result.data.contextEngineVersion, 4);
+  assert.equal(result.data.contextEngineVersion, 5);
   assert.ok(result.data.primaryFiles.some((file) => file.path === "src/email/email.service.ts"));
   assert.ok(result.data.hotspots.some((item) => item.path === "src/email/email.service.ts" && item.symbol === "resolveEventEmailBranding"));
   assert.ok(result.data.hotspots.some((item) => item.symbol === "sendRsvpConfirmationEmail"));
@@ -265,7 +265,7 @@ test("generateContextPack keeps an explicit Handlebars message template beside i
   const root = path.resolve("evals/fixtures/campaign-email");
   const result = generateContextPack("where is the branded campaign email Handlebars template rendered?", { path: root });
 
-  assert.equal(result.data.contextEngineVersion, 4);
+  assert.equal(result.data.contextEngineVersion, 5);
   const primaryPaths = result.data.primaryFiles.slice(0, 3).map((file) => file.path);
   assert.ok(primaryPaths.includes("src/email/template/campaign-message-responsive.hbs"));
   assert.ok(primaryPaths.includes("src/audience/campaign.service.ts"));
