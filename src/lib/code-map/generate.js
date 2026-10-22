@@ -5,6 +5,7 @@ import { estimateTokens, estimateTokenSections } from "../tokens.js";
 import { extractAstFacts } from "./ast.js";
 import { goImportDir, goModulePath } from "./ast-languages.js";
 import { classifyFile, extractHttpMethods, isGitHookPath, inferControllerBasePath, inferDomainInfo, inferNextRoute, isMarkdownFilePath } from "./classify.js";
+import { isDependencyListPath, summarizeDependencyFiles } from "../dependency-request.js";
 import { extractDataAccess } from "./data-access.js";
 import { isVendorFile } from "./vendor.js";
 
@@ -41,6 +42,9 @@ const sourceExtensions = new Set([
   ".mdx",
   ".markdown",
 ]);
+
+// A lockfile is read for its package names only, and outgrows a source file.
+const MAX_LOCKFILE_BYTES = 16 * 1024 * 1024;
 
 /** @param {string} file @returns {boolean} */
 function isMigrationPath(file) {
@@ -118,6 +122,7 @@ export function isSourceFilePath(file) {
  * @property {CodeMapSummary} summary
  * @property {DomainSummary[]} domains
  * @property {FileRecord[]} files
+ * @property {import('../dependency-request.js').DependencyFile[]} [dependencies] manifests, lockfiles and package-manager config, which are not indexed as source
  * @property {{ fullJson: number, estimated: boolean, method: string, total: number, sections: { name: string, tokens: number, characters: number }[] }} [tokenEstimate]
  */
 
@@ -133,7 +138,10 @@ export function generateCodeMap(repoPath = ".", options = {}) {
   const maxSymbols = Number(options.maxSymbols ?? 5000);
   const sourceFiles = /** @type {FileRecord[]} */ (files.map((file) => analyzeFile(repo.root, file, maxSymbols)).filter(Boolean));
   recordGoImportDirs(sourceFiles, readGoModules(repo.root, repoFiles));
-  return assembleCodeMap(repo, sourceFiles);
+  const dependencies = summarizeDependencyFiles(repoFiles, (file) =>
+    isDependencyListPath(file) ? safeRead(path.join(repo.root, file), MAX_LOCKFILE_BYTES) : "",
+  );
+  return assembleCodeMap(repo, sourceFiles, dependencies);
 }
 
 /**
@@ -191,7 +199,7 @@ function recordGoImportDirs(sourceFiles, modules) {
  * normalisation) when a Git tree is the exact receipt subject.
  * @param {string} repoRoot
  * @param {Iterable<{ path: string, text: string }>} sources
- * @param {{ maxSymbols?: number, name?: string }} [options]
+ * @param {{ maxSymbols?: number, name?: string, dependencies?: import('../dependency-request.js').DependencyFile[] }} [options]
  * @returns {CodeMap}
  */
 export function generateCodeMapFromSources(repoRoot, sources, options = {}) {
@@ -216,15 +224,17 @@ export function generateCodeMapFromSources(repoRoot, sources, options = {}) {
       entrypoints: [],
     },
     sourceFiles,
+    options.dependencies ?? [],
   );
 }
 
 /**
  * @param {any} repo
  * @param {FileRecord[]} sourceFiles
+ * @param {import('../dependency-request.js').DependencyFile[]} [dependencies]
  * @returns {CodeMap}
  */
-function assembleCodeMap(repo, sourceFiles) {
+function assembleCodeMap(repo, sourceFiles, dependencies = []) {
   const domains = summarizeDomains(sourceFiles);
 
   /** @type {CodeMap} */
@@ -243,6 +253,7 @@ function assembleCodeMap(repo, sourceFiles) {
     summary: summarizeFiles(sourceFiles),
     domains,
     files: sourceFiles,
+    dependencies,
   };
   map.tokenEstimate = {
     fullJson: estimateTokens(map),
@@ -474,10 +485,10 @@ function summarizeDomains(files) {
  * @param {string} filePath
  * @returns {string}
  */
-function safeRead(filePath) {
+function safeRead(filePath, maxBytes = 1024 * 1024) {
   try {
     const stats = fs.statSync(filePath);
-    if (stats.size > 1024 * 1024) {
+    if (stats.size > maxBytes) {
       return "";
     }
     return fs.readFileSync(filePath, "utf8");

@@ -1,0 +1,16 @@
+{
+  "name": "dependency-advisory-web",
+  "version": "3.1.0",
+  "private": true,
+  "packageManager": "yarn@4.5.0",
+  "scripts": {
+    "build": "next build",
+    "test": "jest"
+  },
+  "dependencies": {
+    "jspdf": "^2.5.1",
+    "next": "^15.3.0",
+    "react": "^19.1.0",
+    "swiper": "^11.1.4"
+  }
+}

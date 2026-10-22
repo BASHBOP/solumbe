@@ -7,6 +7,7 @@
 /// <reference types="node" />
 import path from "node:path";
 import { companionRepos } from "./config.js";
+import { dependencyFileRecord, readDependencyRequest } from "./dependency-request.js";
 import { getCachedCodeMap } from "./index-cache.js";
 import { conceptsFromQuery, classifyPath, CONCEPT_SYNONYMS, RISK_FLAGS, glyphFor, isDocPath, isTestDataPath, singularizeToken } from "./risk-paths.js";
 import { isRunnableTestPath, isTestFilePath } from "./code-map/classify.js";
@@ -78,7 +79,9 @@ export const DIFF_RENAME_LIMIT = 1000;
 // share one entry (`siblings`), and a named file's extension no longer scores.
 // 5: a request no owner grounds by its words is grounded in the import graph
 // when one file is named for a word in it, or is the only exporter of one.
-const impactEngineVersion = 5;
+// 6: a dependency request owns the manifests and lockfiles, and its package
+// names and dependency words no longer score source files.
+const impactEngineVersion = 6;
 const defaultTop = 10;
 const companionTop = 3;
 
@@ -201,7 +204,9 @@ const W_CONFIG_HINT = 4.0;
 const W_NAMED_DEFINER = 30.0;
 // How far a named file sits above the best candidate the request did not
 // name. A named path outranks a named symbol's definition.
-const PIN_MARGIN = { path: 20.0, symbol: 10.0, implements: 10.0 };
+// A dependency file sits below a file the request names: in "upgrade the SDK
+// and pass recording_type to startRecording", the call site leads.
+const PIN_MARGIN = { path: 20.0, symbol: 10.0, implements: 10.0, dependency: 5.0 };
 
 const CONFIG_HINTS = {
   docker: ["dockerfile", "docker-compose"],
@@ -283,38 +288,56 @@ export function generateImpact(query, options = {}) {
   const top = clampInt(options.top, defaultTop, 1, 50);
   const repoPath = options.path ?? ".";
   const map = options.codeMap ?? getCachedCodeMap(repoPath);
+  // A dependency request owns the manifests and lockfiles. Its package names
+  // and dependency words ("upgrade", "package", `shell-quote`) name no source
+  // module, so only the rest of the request scores source files.
+  const dependencyRequest = readDependencyRequest(normalized, map.dependencies);
+  const scoringQuery = dependencyRequest?.scoringQuery ?? normalized;
+  const indexed = new Set(map.files.map((/** @type {{ path: string }} */ file) => file.path));
+  // `.yarnrc.yml` and `pnpm-lock.yaml` are already indexed as YAML.
+  const dependencyRecords = dependencyRequest
+    ? [...dependencyRequest.required, ...dependencyRequest.supporting].filter((file) => !indexed.has(file)).map(dependencyFileRecord)
+    : [];
+  const files = dependencyRecords.length ? [...map.files, ...dependencyRecords] : map.files;
   // The words of a named file score; its extension, shared by every file of
   // that language, does not.
-  const termsQuery = stripFileExtensions(normalized);
+  const termsQuery = stripFileExtensions(scoringQuery);
   const weightedQuery = weightedQueryTerms(termsQuery);
   const concepts = conceptsFromQuery(normalized);
+  if (dependencyRequest && !concepts.includes(RISK_FLAGS.dependency)) concepts.push(RISK_FLAGS.dependency);
   const wantsTests = queryMentions(weightedQuery, ["test", "tests", "spec", "coverage", "qa"]);
   const wantsDocs = queryMentions(weightedQuery, ["doc", "docs", "documentation", "readme", "changelog"]);
   const wantsCopy = isCopyRequest(weightedQuery.keys());
   const wantsGitHook = queryMentions(weightedQuery, GIT_HOOK_REQUEST_TERMS);
-  const named = resolveNamedFiles(map.files, normalized, { limit: top });
+  const named = resolveNamedFiles(map.files, scoringQuery, { limit: top });
   /** @type {Map<string, PinnedFile>} */
   const pinned = new Map(named.pinned.map((entry, order) => [entry.path, { ...entry, order }]));
+  for (const file of dependencyRequest?.required ?? []) {
+    if (!pinned.has(file)) pinned.set(file, { path: file, rule: "dependency", literal: file, order: pinned.size });
+  }
 
   const docFrequency = computeTokenDocFrequency(map.files, weightedQuery);
-  const scored = scoreFiles(map.files, weightedQuery, concepts, { wantsTests, wantsDocs, wantsCopy, wantsGitHook }, docFrequency);
-  addNamedFiles(scored, map.files, pinned, named.definers);
-  const withBoosts = applyDependencyBoosts(map.files, scored, pinned);
+  // The dependency files are pinned. The concept would only lift docs and
+  // config that mention dependencies.
+  const scoringConcepts = dependencyRequest ? concepts.filter((concept) => concept !== RISK_FLAGS.dependency) : concepts;
+  const scored = scoreFiles(map.files, weightedQuery, scoringConcepts, { wantsTests, wantsDocs, wantsCopy, wantsGitHook }, docFrequency);
+  addNamedFiles(scored, files, pinned, named.definers);
+  const withBoosts = applyDependencyBoosts(files, scored, pinned);
   liftPinnedFiles(withBoosts, pinned);
   const pinOrder = (/** @type {ScoredEntry} */ entry) => pinned.get(entry.file.path)?.order ?? Number.MAX_SAFE_INTEGER;
   const byScore = [...withBoosts.values()].sort((a, b) => b.score - a.score || pinOrder(a) - pinOrder(b));
   const heuristicRanked = collapseLocaleSiblings(byScore, describeEntry, (entry) => pinned.has(entry.file.path)).slice(0, top);
-  const roles = classifyImpactRoles(heuristicRanked, map.files, termsQuery, pinned);
+  const roles = classifyImpactRoles(heuristicRanked, files, termsQuery, pinned, dependencyRequest?.supporting);
   const diffSnapshot = captureDiffSnapshot(map.repo.root, options.diffBase, options.diffFiles, options.includeUntracked ?? true);
   const exactDiffFiles = diffSnapshot?.ok ? (diffSnapshot.files ?? []) : [];
-  const diffEvidence = diffSnapshot?.ok ? buildDiffEvidence(exactDiffFiles, map.files, withBoosts, diffSnapshot.base) : null;
+  const diffEvidence = diffSnapshot?.ok ? buildDiffEvidence(exactDiffFiles, files, withBoosts, diffSnapshot.base) : null;
   const changedPaths = new Set(diffEvidence ? diffEvidence.entries.map((entry) => entry.file.path) : []);
   // A requested Git diff is evidence, not another fuzzy ranking signal. Put every
   // mapped changed file ahead of heuristic candidates and label it as such, so an
   // agent cannot silently overlook the source files that actually changed.
   const ranked = addPredictableSupportFiles(
     diffEvidence ? mergeDiffEvidence(diffEvidence.entries, heuristicRanked) : heuristicRanked,
-    map.files,
+    files,
     roles,
     (entry) => pinned.has(entry.file.path) || changedPaths.has(entry.file.path),
   );
@@ -753,11 +776,13 @@ function liftPinnedFiles(scored, pinned) {
     const lifted = Math.max(entry.score, ceiling) + PIN_MARGIN[pin.rule];
     const lift = `pinned above unnamed candidates (+${(lifted - entry.score).toFixed(1)})`;
     entry.reasons.push(
-      pin.rule === "path"
-        ? `named in the request as \`${pin.literal}\`, ${lift}`
-        : pin.rule === "implements"
-          ? `implements \`${pin.literal}\`, named in the request and registered in \`${pin.via}\`, ${lift}`
-          : `defines \`${pin.literal}\`${pin.line ? ` (line ${pin.line})` : ""}, named in the request; exported and imported by ${pin.importers} file(s), ${lift}`,
+      pin.rule === "dependency"
+        ? `dependency manifest or lockfile, owned by a dependency request, ${lift}`
+        : pin.rule === "path"
+          ? `named in the request as \`${pin.literal}\`, ${lift}`
+          : pin.rule === "implements"
+            ? `implements \`${pin.literal}\`, named in the request and registered in \`${pin.via}\`, ${lift}`
+            : `defines \`${pin.literal}\`${pin.line ? ` (line ${pin.line})` : ""}, named in the request; exported and imported by ${pin.importers} file(s), ${lift}`,
     );
     entry.score = lifted;
   }
@@ -1114,8 +1139,9 @@ function mergeDiffEvidence(evidence, heuristic) {
  * @param {CodeMapFile[]} allFiles
  * @param {string} query
  * @param {Map<string, PinnedFile>} [pinned] files the request names; each is a required owner, whatever its kind
+ * @param {string[]} [dependencySupporting] dependency files a dependency request may touch
  */
-function classifyImpactRoles(heuristicRanked, allFiles, query, pinned = new Map()) {
+function classifyImpactRoles(heuristicRanked, allFiles, query, pinned = new Map(), dependencySupporting = []) {
   /** @type {Map<string, "required" | "supporting" | "advisory">} */
   const byPath = new Map();
   const terms = new Set([...tokenize(query), ...weightedQueryTerms(query).keys()]);
@@ -1192,7 +1218,8 @@ function classifyImpactRoles(heuristicRanked, allFiles, query, pinned = new Map(
       if (knownPaths.has(related) && !byPath.has(related)) byPath.set(related, "supporting");
     }
   }
-  if (releaseFlow) byPath.set("package.json", "supporting");
+  if (releaseFlow && !byPath.has("package.json")) byPath.set("package.json", "supporting");
+  for (const file of dependencySupporting) if (!byPath.has(file)) byPath.set(file, "supporting");
 
   for (const entry of heuristicRanked) {
     if (!byPath.has(entry.file.path)) byPath.set(entry.file.path, "advisory");

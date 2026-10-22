@@ -122,6 +122,7 @@ import { listRepoFiles } from "./repo.js";
  * @property {CodeMapSummary} summary
  * @property {CodeMapDomain[]} domains
  * @property {CodeMapFile[]} files
+ * @property {import('./dependency-request.js').DependencyFile[]} [dependencies]
  * @property {object} [tokenEstimate]
  * @property {CodeMapCacheInfo} [cache]
  */
@@ -135,7 +136,9 @@ import { listRepoFiles } from "./repo.js";
 // `case "context_pack":`) are indexed as `registered` symbols.
 // 13: a Go file records the repository directories its imports name
 // (`importDirs`), read against the repository's go.mod files.
-const cacheVersion = 14;
+// 15: the map lists dependency manifests, lockfiles and package-manager
+// config (`dependencies`), with the package names each manifest declares.
+const cacheVersion = 15;
 const externalCacheDirectory = "solumbe-index-cache";
 
 // Bound on the in-process memo. MCP hosts call repo-map tools repeatedly for the

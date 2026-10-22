@@ -64,13 +64,23 @@ marker" once a change closes it. It never counts toward the floors, the pass
 counts or the exit code, so a miss can be written down the day it is found
 without turning CI red. Remove the marker in the change that fixes it.
 
-Open gaps (2026-10-20), all on `node-upgrade-api` except the last: a single
-dependency bump and a Dependabot batch should rank `package.json` (and
-`yarn.lock`); a Node 22 move should rank `.nvmrc`; an SDK upgrade with an API
-change should bring `package.json` with the call site; and the gate's
-`dependency-bump-converges` case should converge on a manifest and lockfile
-bump. All five need the code map to index manifests, lockfiles and version
-pins.
+Open gap (2026-10-22): on `node-upgrade-api`, a Node 22 move should rank
+`.nvmrc`. It needs version pins read as runtime requests; a Node version is not
+a dependency request. The four dependency gaps recorded with it on 2026-10-20
+closed when the code map began listing manifests and lockfiles (see
+`src/lib/dependency-request.js`).
+
+### Dependency requests
+
+A request that upgrades, bumps, audits or patches dependencies owns the
+manifests and lockfiles, which are not source files. The
+`dependency-advisory-api`, `-web` and `-mobile` fixtures carry the 2026-10-22
+dogfood misses: a hyphenated package (`shell-quote`) split into words that
+matched an unrelated module, a package (`handlebars`) that pulled in every
+template, `package` and `upgrade` ranking components, and lockfiles never
+ranked. Their cases expect the lockfile (and a manifest that declares a named
+package) as primary; package-manager config and a manifest a transitive fix may
+not touch are expected in Related Files.
 
 ### Risk cases
 

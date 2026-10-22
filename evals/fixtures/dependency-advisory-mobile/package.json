@@ -1,0 +1,14 @@
+{
+  "name": "dependency-advisory-mobile",
+  "version": "1.9.0",
+  "private": true,
+  "scripts": {
+    "start": "expo start",
+    "test": "jest"
+  },
+  "dependencies": {
+    "expo": "~53.0.0",
+    "react": "19.0.0",
+    "react-native": "0.79.2"
+  }
+}
