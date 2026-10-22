@@ -6,11 +6,14 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+## [4.8.0] - 2026-10-22
+
+Dependency work is read as dependency work. An upgrade, audit or advisory request now owns the manifests and lockfiles, package names are read whole, and misses can be recorded in the eval corpus as known gaps. No command or field was removed.
+
 ### Fixed
 
 - **Runtime version pins are configuration.** `.nvmrc`, `.node-version` and `.tool-versions` carried no risk flag, so moving bashbop-api from Node 20 to 22 never asked for review even though CI and the deploy build read the file. They now classify as configuration and gate a merge.
 - **A dependency request implies the dependency concept.** A Dependabot batch implied no concept, so convergence called the `package.json` and `yarn.lock` it changed unrequested risky drift (27/100 on a correct batch). `dependency`, `dependencies`, `deps`, `dependabot`, `renovate` and `lockfile` now imply it. `upgrade`, `bump` and `package` do not, because they name pricing tiers, releases and versions as often. Lockfile churn still does not gate a merge.
-
 - **Dependency requests rank manifests and lockfiles.** In a dependency security sweep (2026-10-22), `change_impact` matched `shell-quote` to `quote-templates.controller.ts` on "quote" and declared it a required owner, pulled in every `.hbs` template on "handlebars", and ranked `PackageSelector.tsx` and `EmailQuotaUpgradeModal.tsx` on "package" and "upgrade". `yarn.lock` and `package-lock.json` were never listed, so a lockfile-only advisory fix grounded to no owner and convergence came back inconclusive. A multi-repo context pack ranked CHANGELOG.md and docs first. The code map now lists each repository's manifests, lockfiles and package-manager config with the package names they declare and resolve (index cache version 15). A request that upgrades, bumps, audits or patches dependencies owns them: the lockfile, and a manifest that declares a named package, are required owners and lead Primary Files; `.yarnrc.yml`, `.npmrc` and a manifest a transitive fix may not touch are supporting. A package the request names (`shell-quote`, `@stream-io/node-sdk`, `tar@7.5.2`, or any package a lockfile resolves) is read whole, and it and the dependency words no longer score source files, so a call-site change in the same request still ranks its file. The package manager named (`yarn`, `npm`, `pnpm`) picks the lockfile. Impact engine version 6, context engine version 5.
 
 ### Added

@@ -4,7 +4,7 @@
 
 > For teams that want any coding agent to produce evidence a human can trust before merge.
 
-**v4.7.2** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
+**v4.8.0** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
 
 Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep -->
 
@@ -20,6 +20,15 @@ Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep
 ---
 
 ## What's New
+
+!!! tip "v4.8.0 published (2026-10-22)"
+    Dependency work is read as dependency work. No command or field was removed.
+
+    - An upgrade, audit or advisory request (`upgrade vulnerable yarn dependencies (shell-quote, handlebars …)`) owns the lockfile and the manifest that declares a named package, in `change_impact`, `context_pack` and `convergence_score`. A lockfile-only fix now converges instead of reading inconclusive.
+    - Package names are read whole: `shell-quote` no longer matches `quote-templates.controller.ts`, and "package" or "upgrade" no longer rank pricing components.
+    - `.nvmrc`, `.node-version` and `.tool-versions` are configuration and gate a merge. An eval case can be marked `knownGap` to record a miss before its fix.
+
+    [npm v4.8.0](https://www.npmjs.com/package/@bashbop/solumbe/v/4.8.0) · [GitHub Release](https://github.com/BASHBOP/solumbe/releases/tag/v4.8.0) · [MCP Registry](https://registry.modelcontextprotocol.io/?q=io.github.BASHBOP%2Fsolumbe)
 
 !!! tip "v4.7.2 published (2026-10-19)"
     Two gate fixes found by dogfooding solumbe on another repository. No command or field was removed.
@@ -293,7 +302,7 @@ flowchart LR
 === "Install"
 
     ```bash
-    npm install -g @bashbop/solumbe@4.7.2
+    npm install -g @bashbop/solumbe@4.8.0
     solumbe doctor
     solumbe context "review this change" --path .
     ```
@@ -301,7 +310,7 @@ flowchart LR
 === "No Global Install"
 
     ```bash
-    npx -y @bashbop/solumbe@4.7.2 doctor
+    npx -y @bashbop/solumbe@4.8.0 doctor
     ```
 
 === "Source Checkout"
