@@ -38,7 +38,10 @@
     "dependency-advisory-api": "evals/fixtures/dependency-advisory-api",
     "dependency-advisory-web": "evals/fixtures/dependency-advisory-web",
     "dependency-advisory-mobile": "evals/fixtures/dependency-advisory-mobile",
-    "gate-legacy-secret": "evals/fixtures/gate-legacy-secret"
+    "gate-legacy-secret": "evals/fixtures/gate-legacy-secret",
+    "nav-protection-web": "evals/fixtures/nav-protection-web",
+    "solumbe-hook-web": "evals/fixtures/solumbe-hook-web",
+    "feature-flag-api": "evals/fixtures/feature-flag-api"
   },
   "retrieval": [
     {
@@ -354,6 +357,30 @@
         "dependency-advisory-web/yarn.lock",
         "dependency-advisory-mobile/package-lock.json"
       ]
+    },
+    {
+      "name": "history-nav-protection-script",
+      "knownGap": true,
+      "comment": "History replay miss (bashbop-event-web 0e5aaa3, 2026-10-22): the request names nav protection almost word for word, but public/scripts/nav-protection.js ranks sixth behind partner, domain and navigation components.",
+      "query": "trust the Vendor Finder partner domain in nav protection",
+      "repoFixture": "nav-protection-web",
+      "expectedPrimary": ["public/scripts/nav-protection.js"]
+    },
+    {
+      "name": "history-solumbe-pre-commit-hook",
+      "knownGap": true,
+      "comment": "History replay miss (bashbop-event-web a6a8b7d, 2026-10-22): the solumbe-managed .githooks/pre-commit is only a related file; components named Gate and a manager that mentions staged files take the primary slots. git-hook-pre-commit-gate-step passes because its hook and request share no product name.",
+      "query": "run solumbe gate on staged tree in pre-commit",
+      "repoFixture": "solumbe-hook-web",
+      "expectedPrimary": [".githooks/pre-commit"]
+    },
+    {
+      "name": "history-feature-flag-environment-config",
+      "knownGap": true,
+      "comment": "History replay miss (bashbop-api 718d880, 2026-10-22): switching a feature on in an environment changes that environment's flag file, whose keys name the mechanism (rag_answers_enabled) rather than the feature. The file matches only on the environment word, so it ranks as related and the assistant controllers lead.",
+      "query": "switch the event assistant on in production",
+      "repoFixture": "feature-flag-api",
+      "expectedPrimary": ["src/feature-flags/config/environments/production.json"]
     }
   ],
   "risk": [

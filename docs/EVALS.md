@@ -1,6 +1,6 @@
 # solumbe Evals
 
-solumbe ships four evals. They answer different questions and must not be
+solumbe ships these evals. They answer different questions and must not be
 confused:
 
 | Eval | Entry point | Question it answers |
@@ -9,6 +9,7 @@ confused:
 | Accuracy | `runRetrievalEval()` | _Is the context pack **right**, meaning does it surface the files an agent needs, and does the risk classifier label paths/queries correctly?_ |
 | Harness execution | `runHarnessExecutionEval()` | _Do the encoded setup and validation commands Solumbe inferred actually run?_ |
 | Gate effectiveness | `runGateEffectivenessEval()` | _Does the real local gate allow a valid change and block known-bad changes for the expected deterministic reason?_ |
+| History replay | `runHistoryEval()` | _On a real repository's own recent commits, does the pack name the files each commit changed?_ |
 
 The token-savings eval is necessary but not sufficient: a randomly-ranked pack
 saves exactly as many tokens as a perfect one. Accuracy, harness execution, and
@@ -81,6 +82,25 @@ template, `package` and `upgrade` ranking components, and lockfiles never
 ranked. Their cases expect the lockfile (and a manifest that declares a named
 package) as primary; package-manager config and a manifest a transitive fix may
 not touch are expected in Related Files.
+
+Gaps from the [history replay](#history-replay) (2026-10-22), each a real miss
+rebuilt as a synthetic fixture and confirmed open on `develop` and on the
+dependency-ranking change (#325):
+
+- `history-nav-protection-script` (`nav-protection-web`): a request that names
+  nav protection ranks `public/scripts/nav-protection.js` sixth, behind the
+  partner, domain and navigation components.
+- `history-solumbe-pre-commit-hook` (`solumbe-hook-web`): a solumbe-managed
+  `.githooks/pre-commit` is only a related file for "run solumbe gate on staged
+  tree in pre-commit"; components named Gate lead.
+- `history-feature-flag-environment-config` (`feature-flag-api`): switching a
+  feature on in production should change that environment's flag file, whose
+  keys name the mechanism (`rag_answers_enabled`), not the feature.
+
+A fourth replay miss, files under `src/ai/rag/` crowded out by large event,
+booking and email services, did not reproduce on a fixture of a dozen files:
+the RAG files ranked in the top five. It needs a repository's scale, so the
+history replay is where it is measured.
 
 ### Risk cases
 
@@ -200,6 +220,90 @@ expected files a read would demote, and the cost. It calls a model, so it has
 no thresholds and is not part of `npm run quality`; results are recorded in
 [the calibration thesis](17-calibration-thesis/README.md#grading-the-request-read-2026-10-18).
 `tests/claude-read.test.js` runs it against a mocked fetch.
+
+## History replay
+
+The corpus is labelled by hand on small synthetic fixtures, and every case in
+it passes, so it can catch a regression but cannot show how far the pack is
+from right on real work. A commit is a labelled case that already exists: its
+subject is the request, and the files it changed are the files the work
+needed. `solumbe eval --history` replays recent commits of any repository that
+way:
+
+```bash
+solumbe eval --history ../bashbop-api --commits 30 [--k 5] [--max-files 12] [--ref HEAD] [--json] [--out file]
+npm run eval:history -- ../bashbop-api
+```
+
+For each commit it exports the **parent** tree with `git archive` into a
+temporary directory, builds the pack there from the cleaned subject, and
+scores the pack against the commit. The subject loses its conventional-commit
+type and scope (`fix(gate):`), which is usually a path hint the requester would
+not have given, and a trailing `(#123)`.
+
+What counts as expected:
+
+- a file the commit modified, deleted or renamed (by its old path);
+- not a file the commit added, which did not exist on the parent;
+- not a changelog, which every change touches by convention (a lockfile is
+  expected: for a dependency request it is the file to change, and it counts
+  as unindexed on an engine that does not list it);
+- a changed test is expected in the pack's Tests section, so it counts toward
+  pack recall but not the primary metrics;
+- a changed file the code map does not index is reported as a coverage gap
+  and kept out of the ranking metrics, since no ranking could name it.
+
+Merges, releases, version bumps, root commits, bot authors and commits with
+more than `--max-files` expected files are skipped and counted by reason. A
+subject seen on a newer commit (a cherry-pick or a re-landed change) is skipped
+too, so one miss is not counted twice.
+
+It reports, over the scored commits:
+
+| Metric | Meaning |
+|---|---|
+| hit@k | at least one changed file in the top k primary files |
+| recall@k, precision@k, MRR | as for the corpus (`computeRetrievalMetrics`), on the changed non-test files |
+| pack recall | changed files, tests included, found anywhere in the pack |
+| unindexed share | changed files the code map does not index |
+
+and lists each commit, the misses (commits with nothing changed in the top k)
+and the unindexed files.
+
+It is a measurement, not a gate. The numbers depend on the repository and the
+commits it reads, and a commit's diff is a noisy label: it holds files the
+request never named (a refactor carried along, a doc touched in passing), so
+recall@k has a ceiling well below 1.0 and is for comparing engine versions on
+the same commits, not for reading in isolation. It has no thresholds and is not
+part of `npm run quality`. The inspected repository is only read: nothing from
+it is executed, and each temporary tree and its index cache are removed.
+`tests/history-eval.test.js` runs it on a small generated repository.
+
+### First replay (2026-10-22)
+
+The first comparison: the 30 most recent eligible commits of bashbop-api at
+`fbd8484`, the same commits scored by the engine before and after
+dependency-request ranking (#325, context engine 5). k = 5.
+
+| Engine | Commits | hit@5 | recall@5 | MRR | pack recall | unindexed |
+|---|---:|---:|---:|---:|---:|---:|
+| before #325 | 27 | 0.37 | 0.205 | 0.182 | 0.212 | 0.14 |
+| with #325 | 29 | 0.414 | 0.214 | 0.239 | 0.218 | 0.061 |
+
+Two dependency commits that scored nothing now hit: "patch handlebars, tar,
+proxy-addr and other vulnerable dependencies" ranks `yarn.lock` first (recall
+0.5, it also changed `package.json`), and "make the Dependabot batch install,
+lint, test and build" gains `yarn.lock` (recall 0.2). Two more commits are
+scored because manifests and lockfiles are now indexed, so the unindexed share
+halves. "move to Node 22 and take the upgrades that needed it" still scores
+zero; `.nvmrc` is the open `node-upgrade-runtime-version` gap.
+
+On the same first run the engine before #325 scored hit@5 0.75 on solumbe,
+0.741 on bashbop-mobile-app and 0.345 on bashbop-event-web; the synthetic
+corpus scores recall@5 1.0. The misses behind the low scores are the known
+gaps above, files under `src/ai/rag/` crowded out by large services, plan and
+spec documents edited by "record the …" commits, and translation catalogues
+that every string change touches.
 
 ## How thresholds work
 

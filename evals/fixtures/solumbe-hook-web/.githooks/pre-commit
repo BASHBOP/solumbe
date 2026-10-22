@@ -1,0 +1,8 @@
+#!/bin/sh
+# Managed by solumbe (`solumbe init`). Runs fast static checks before each commit.
+# Bypass a single commit with: git commit --no-verify
+# Slower gates (tests, build, audit) run in CI, not here.
+set -e
+
+echo "solumbe pre-commit: running static checks"
+yarn lint
