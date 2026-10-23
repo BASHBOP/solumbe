@@ -66,7 +66,7 @@ test("regenerates (without throwing) when the cache file is corrupted JSON", () 
 
   // The corrupted file is replaced with a valid one.
   const onDisk = JSON.parse(fs.readFileSync(cachePath, "utf8"));
-  assert.equal(onDisk.version, 14);
+  assert.equal(onDisk.version, 15);
   assert.ok(onDisk.map);
 });
 
@@ -99,7 +99,7 @@ test("writes the cache atomically and leaves no temp files behind", () => {
 
   // The single file present is complete, valid JSON (never a half-written index).
   const parsed = JSON.parse(fs.readFileSync(cachePathFor(root), "utf8"));
-  assert.equal(parsed.version, 14);
+  assert.equal(parsed.version, 15);
   assert.ok(parsed.map.ok);
 });
 

@@ -2,6 +2,7 @@
 import path from "node:path";
 import { isRunnableTestPath } from "./code-map/classify.js";
 import { joinedCamelCaseWords } from "./code-map/text.js";
+import { dependencyFileRecord, readDependencyRequest } from "./dependency-request.js";
 import { generateHarness } from "./harness.js";
 import { getCachedCodeMap } from "./index-cache.js";
 import { collapseLocaleSiblings, formatLocales, isCopyRequest, resolveNamedFiles, stripFileExtensions, TRANSLATION_DEMOTION } from "./ranking-rules.js";
@@ -50,7 +51,7 @@ import { estimateTokens, estimateTokenSections } from "./tokens.js";
  * whether it is about copy, the one request a translation catalog can own.
  * @typedef {object} RequestRules
  * @property {boolean} wantsCopy
- * @property {Map<string, import('./ranking-rules.js').NamedFile & { order: number }>} pinned
+ * @property {Map<string, import('./ranking-rules.js').NamedFile & { order: number, supporting?: boolean }>} pinned - a supporting pin leads Related Files, not Primary Files
  * @property {Map<string, import('./ranking-rules.js').NamedFile>} definers
  * @property {Set<string>} symbols
  * @property {Set<string>} repoHints - repo.root values the request names directly (only populated across 2+ repos).
@@ -85,13 +86,17 @@ import { estimateTokens, estimateTokenSections } from "./tokens.js";
 // demoted unless the request is about copy and its locale files share one
 // entry (`siblings`), a named file's extension no longer scores, and Tests
 // lists only files a test runner executes.
-const contextEngineVersion = 4;
+// 5: a dependency request leads with the manifests and lockfiles, and its
+// package names and dependency words no longer score source files.
+const contextEngineVersion = 5;
 const defaultLimit = 8;
 // A definition of a symbol the request names that is not the one the code
 // imports (that one is pinned): a local copy, an export nothing uses.
 const NAMED_DEFINER_BONUS = 60;
 // How far a named file sits above the best candidate the request did not name.
-const PIN_MARGIN = { path: 20, symbol: 10, implements: 10 };
+// A dependency file sits below a file the request names: in "upgrade the SDK
+// and pass recording_type to startRecording", the call site leads.
+const PIN_MARGIN = { path: 20, symbol: 10, implements: 10, dependency: 5 };
 // Enough to put the definition of a named symbol ahead of every hotspot that
 // only shares words with the request.
 const NAMED_HOTSPOT_BONUS = 200;
@@ -188,19 +193,60 @@ export function generateContextPack(query, options = {}) {
   const repoPaths = normalizePaths(options.paths ?? [options.path ?? "."]);
   // The cached map's git state is whatever the tree looked like at index time;
   // a commit leaves the index fingerprint unchanged, so read the tree live.
-  const maps = repoPaths.map((repoPath) => {
+  const cachedMaps = repoPaths.map((repoPath) => {
     const map = getCachedCodeMap(repoPath);
     return { ...map, repo: { ...map.repo, git: getGitInfo(map.repo.root) } };
   });
+  // A dependency request owns each repository's manifests and lockfiles. Its
+  // package names and dependency words ("upgrade", "package", `shell-quote`)
+  // name no source module, so only the rest of the request scores source files.
+  const dependencyRequest = readDependencyRequest(
+    normalizedQuery,
+    cachedMaps.flatMap((map) => map.dependencies ?? []),
+  );
+  const dependencyFiles = new Map(
+    cachedMaps.map((map) => {
+      const owned = dependencyRequest ? readDependencyRequest(normalizedQuery, map.dependencies ?? []) : undefined;
+      return [map.repo.root, { required: owned?.required ?? [], supporting: owned?.supporting ?? [] }];
+    }),
+  );
+  const maps = cachedMaps.map((map) => {
+    const owned = dependencyFiles.get(map.repo.root);
+    const indexed = new Set(map.files.map((/** @type {{ path: string }} */ file) => file.path));
+    // `.yarnrc.yml` and `pnpm-lock.yaml` are already indexed as YAML.
+    const records = [...(owned?.required ?? []), ...(owned?.supporting ?? [])].filter((file) => !indexed.has(file)).map(dependencyFileRecord);
+    return records.length ? { ...map, files: [...map.files, ...records] } : map;
+  });
+  const scoringQuery = dependencyRequest?.scoringQuery ?? normalizedQuery;
   const graphs = new Map(maps.map((map) => [map.repo.root, buildImportGraph(map.files)]));
   // The words of a named file score; its extension, shared by every file of
   // that language, does not.
-  const termsQuery = stripFileExtensions(normalizedQuery);
+  const termsQuery = stripFileExtensions(scoringQuery);
   const tokens = uniqueConcepts([...tokenize(termsQuery), ...joinedCamelCaseWords(termsQuery)]);
   const phrases = extractPhrases(termsQuery);
-  const intent = inferIntent(tokens, normalizedQuery);
+  const intent = dependencyRequest
+    ? dependencyIntent(inferIntent(uniqueConcepts(tokenize(stripFileExtensions(normalizedQuery))), normalizedQuery))
+    : inferIntent(tokens, normalizedQuery);
   const tokenStats = { ...computeTokenDocFrequency(maps, tokens), partners: compoundPartners(termsQuery) };
-  const rules = requestRules(maps, normalizedQuery, tokens, limit);
+  const rules = requestRules(maps, scoringQuery, tokens, limit);
+  // Each repository's required dependency files are primary; its supporting
+  // ones (package-manager config, a manifest a transitive fix may not touch)
+  // lead Related Files.
+  for (const role of /** @type {const} */ (["required", "supporting"])) {
+    for (const [root, owned] of dependencyFiles) {
+      for (const file of owned[role]) {
+        const key = `${root}:${file}`;
+        if (rules.pinned.has(key)) continue;
+        rules.pinned.set(key, {
+          path: file,
+          rule: "dependency",
+          literal: file,
+          order: rules.pinned.size,
+          ...(role === "supporting" ? { supporting: true } : {}),
+        });
+      }
+    }
+  }
   const scoredFiles = scoreMaps(maps, tokens, intent, phrases, tokenStats, rules);
   const matchedPrimaryFiles = selectPrimaryFiles(scoredFiles, limit, rules);
   const usedFallback = matchedPrimaryFiles.length === 0;
@@ -642,11 +688,13 @@ function liftPinnedFiles(scored, pinned) {
     if (!pin) continue;
     file.score = Math.max(file.score, ceiling) + PIN_MARGIN[pin.rule];
     file.reasons.push(
-      pin.rule === "path"
-        ? "named in request"
-        : pin.rule === "implements"
-          ? `implements ${pin.literal}, registered in ${pin.via}`
-          : `defines ${pin.literal}, named in request`,
+      pin.rule === "dependency"
+        ? "dependency manifest or lockfile for a dependency request"
+        : pin.rule === "path"
+          ? "named in request"
+          : pin.rule === "implements"
+            ? `implements ${pin.literal}, registered in ${pin.via}`
+            : `defines ${pin.literal}, named in request`,
     );
   }
 }
@@ -1256,7 +1304,9 @@ function formatHotspots(hotspots) {
  * @returns {ScoredFile[]}
  */
 function selectPrimaryFiles(scoredFiles, limit, rules = noRequestRules) {
-  const named = uniqueFiles(scoredFiles.filter((file) => rules.pinned.has(fileKey(file)) && !isRunnableTestPath(file.path))).slice(0, limit);
+  const named = uniqueFiles(
+    scoredFiles.filter((file) => rules.pinned.has(fileKey(file)) && !rules.pinned.get(fileKey(file))?.supporting && !isRunnableTestPath(file.path)),
+  ).slice(0, limit);
   const files = uniqueFiles(scoredFiles.filter((file) => file.kind !== "test" && !rules.pinned.has(fileKey(file))));
   const strong = gitHookOwnedPool(files.filter((file) => file.score >= 25));
   const pool = strong.length ? strong : files.slice(0, Math.min(limit, 3));
@@ -1607,6 +1657,15 @@ function inferIntent(tokens, query) {
     action,
     topics: tokens.filter((token) => !actionWordOf(token)).slice(0, 8),
   };
+}
+
+/**
+ * A dependency request upgrades, whatever action word it lacks.
+ * @param {Intent} intent
+ * @returns {Intent}
+ */
+function dependencyIntent(intent) {
+  return intent.action === "unknown" ? { ...intent, action: "upgrade" } : intent;
 }
 
 /**

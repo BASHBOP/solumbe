@@ -159,8 +159,8 @@ test("runGateEffectivenessEval proves the committed gate cases and their determi
   assert.equal(data.evalKind, "gate-effectiveness");
   assert.equal(data.passed, true, "committed gate-effectiveness corpus must pass");
   assert.equal(data.exitCode, 0);
-  assert.equal(data.counts.cases, 12);
-  assert.equal(data.counts.passedCases, 12);
+  assert.equal(data.counts.cases, 13);
+  assert.equal(data.counts.passedCases, 13);
   assert.equal(data.counts.expectedBlocked, 8);
   assert.equal(data.counts.blockedAsExpected, 8);
 
@@ -173,6 +173,7 @@ test("runGateEffectivenessEval proves the committed gate cases and their determi
   assert.equal(byName.get("scope-drift-fails-convergence")?.checks[0]?.name, "Convergence");
   assert.equal(byName.get("base-moving-on-is-not-part-of-the-change")?.actualVerdict, "PASS");
   assert.equal(byName.get("credential-already-on-base-is-not-blocked")?.actualVerdict, "PASS");
+  assert.equal(byName.get("dependency-bump-converges")?.actualVerdict, "PASS");
   assert.equal(byName.get("credential-added-beside-a-legacy-one-is-blocked")?.checks[0]?.name, "Secret safety");
   assert.ok(data.cases.every((testCase) => testCase.pass && testCase.unexpectedFailures.length === 0));
 
@@ -210,6 +211,47 @@ test("runGateEffectivenessEval fails when the real gate reason differs from the 
   assert.equal(data.cases[0].checks[0].pass, false);
   assert.match(data.cases[0].checks[0].error, /summary does not include/);
   assert.match(markdown, /Overall: FAIL/);
+
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("runGateEffectivenessEval reports a known gap without failing the run", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "solumbe-gate-gap-"));
+  const corpusPath = path.join(dir, "corpus.json");
+  const fixture = path.join(repoRoot, "evals", "fixtures", "gate-node");
+  fs.writeFileSync(
+    corpusPath,
+    JSON.stringify({
+      fixtureRoots: { fixture },
+      retrieval: [],
+      risk: [],
+      gateEffectiveness: [
+        {
+          name: "secret-is-blocked",
+          repoFixture: "fixture",
+          changeSet: "secret",
+          expectedVerdict: "FAIL",
+          expectedChecks: [{ name: "Secret safety", status: "FAIL" }],
+        },
+        {
+          name: "open-gap",
+          knownGap: true,
+          repoFixture: "fixture",
+          changeSet: "secret",
+          expectedVerdict: "FAIL",
+          expectedChecks: [{ name: "Secret safety", status: "FAIL", summaryIncludes: "a reason the gate did not return" }],
+        },
+      ],
+    }),
+  );
+
+  const { data, markdown } = runGateEffectivenessEval({ corpusPath });
+  assert.equal(data.passed, true, "a known gap must not fail the run");
+  assert.equal(data.exitCode, 0);
+  assert.equal(data.counts.cases, 1);
+  assert.equal(data.counts.knownGaps, 1);
+  assert.equal(data.knownGaps[0].pass, false);
+  assert.match(markdown, /open-gap: still open/);
 
   fs.rmSync(dir, { recursive: true, force: true });
 });
@@ -348,6 +390,46 @@ test("runRetrievalEval fails (exit 1) when a corpus regresses below threshold", 
   assert.equal(data.exitCode, 1);
   const failing = [...data.cases.retrieval, ...data.cases.risk].filter((c) => !c.pass);
   assert.equal(failing.length, 2, "both the impossible retrieval and wrong-risk cases must fail");
+
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("runRetrievalEval reports a known gap without letting it move the floors or the exit code", () => {
+  // A miss is recorded as a case before its fix lands. It still runs, so the
+  // report says when it closes, but it must not fail the gate meanwhile.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "solumbe-eval-gap-"));
+  const corpusPath = path.join(dir, "corpus.json");
+  const passing = { name: "events-controller", query: "events controller", repoFixture: "sample-api", expectedPrimary: ["src/events/events.controller.ts"] };
+  fs.writeFileSync(
+    corpusPath,
+    JSON.stringify({
+      k: 5,
+      thresholds: { retrieval: { precisionAtK: 0.99, recallAtK: 0.99, mrr: 0.99 } },
+      fixtureRoots: { "sample-api": "codex/skills/solumbe/evals/files/sample-api" },
+      retrieval: [
+        passing,
+        {
+          name: "open-gap",
+          knownGap: true,
+          query: "completely unrelated nonexistent symbol xyzzy",
+          repoFixture: "sample-api",
+          expectedPrimary: ["src/does/not/exist.ts"],
+        },
+        { ...passing, name: "closed-gap", knownGap: true },
+      ],
+      risk: [],
+    }),
+  );
+
+  const { data, markdown } = runRetrievalEval({ corpusPath, repoRoot });
+
+  assert.equal(data.passed, true, "a known gap must not fail the floors");
+  assert.equal(data.exitCode, 0);
+  assert.equal(data.counts.retrieval, 1, "known gaps are not counted as retrieval cases");
+  assert.equal(data.counts.knownGaps, 2);
+  assert.equal(data.scoreboard.retrieval.rAtK, 1, "the open gap's zero recall stays out of the aggregate");
+  assert.match(markdown, /open-gap: still open/);
+  assert.match(markdown, /closed-gap: now passes; remove its knownGap marker/);
 
   fs.rmSync(dir, { recursive: true, force: true });
 });

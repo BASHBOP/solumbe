@@ -1753,6 +1753,38 @@ async function handleEval(parsed) {
     return;
   }
 
+  // --history replays a repository's recent commits as retrieval cases: the
+  // subject is the request, the changed files are the answer, and the pack is
+  // built on the parent tree. Its numbers depend on the repository it reads,
+  // so it is a measurement with no thresholds and not part of CI.
+  if (parsed.flags.history) {
+    const { runHistoryEval } = await import("./lib/history-eval.js");
+    // `--history <repo>` reads the path as the flag's value.
+    const repoPath = typeof parsed.flags.history === "string" ? parsed.flags.history : (parsed.positionals[0] ?? ".");
+    const result = runHistoryEval({
+      repoPath,
+      ref: typeof parsed.flags.ref === "string" ? parsed.flags.ref : undefined,
+      commits: Number(parsed.flags.commits) || undefined,
+      k: Number(parsed.flags.k) || undefined,
+      maxFiles: Number(parsed.flags.max_files) || undefined,
+    });
+    noteResult(result.data);
+    if (parsed.flags.json) {
+      printJson(result.data);
+    } else if (parsed.flags.out) {
+      const artifact = writeArtifact(parsed.flags.out, result.markdown);
+      printText(`History replay eval written: ${artifact.path}`);
+    } else {
+      await printDocument(parsed, result.markdown, {
+        title: "HISTORY REPLAY",
+        glyph: "\u{1F9EA}",
+        close: { status: result.data.exitCode ? "not-verified" : "runs" },
+      });
+    }
+    if (result.data.exitCode) process.exitCode = 1;
+    return;
+  }
+
   // --harness runs only the committed, fixture-backed command corpus. It
   // proves that the inferred install/test/typecheck/build commands execute in
   // an isolated temp copy rather than executing an inspected user repository.
@@ -2086,6 +2118,7 @@ function handleHelp(_parsed) {
         "  solumbe eval --harness [--corpus path] [--json] [--out file]    # run inferred install/test/typecheck/build commands in isolated fixtures",
         "  solumbe eval --gate-effectiveness [--corpus path] [--json] [--out file] # assert gate verdicts and deterministic reasons in isolated Git fixtures",
         "  solumbe eval --reads [--provider heuristic|jev|claude] [--json] [--out file] # grade a request-read provider on the corpus reads suite (calls a model)",
+        "  solumbe eval --history [repo] [--commits 30] [--k 5] [--max-files 12] [--ref HEAD] [--json] [--out file] # replay recent commits: subject as request, changed files as expected",
         "",
       ]
     : [];

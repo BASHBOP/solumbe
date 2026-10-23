@@ -1,0 +1,19 @@
+{
+  "name": "dependency-advisory-api",
+  "version": "2.3.0",
+  "private": true,
+  "packageManager": "yarn@4.5.0",
+  "scripts": {
+    "build": "nest build",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@nestjs-modules/mailer": "^2.0.2",
+    "@nestjs/common": "^11.1.6",
+    "pg": "^8.17.1"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "typescript": "^5.8.3"
+  }
+}

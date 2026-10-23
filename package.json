@@ -1,6 +1,6 @@
 {
   "name": "@bashbop/solumbe",
-  "version": "4.7.2",
+  "version": "4.8.0",
   "mcpName": "io.github.BASHBOP/solumbe",
   "description": "Solumbe: deterministic local repository context, impact analysis, and merge evidence.",
   "type": "module",
@@ -43,6 +43,7 @@
     "eval:accuracy": "node src/cli.js eval --accuracy",
     "eval:harness": "node src/cli.js eval --harness",
     "eval:gate": "node src/cli.js eval --gate-effectiveness",
+    "eval:history": "node src/cli.js eval --history",
     "docs:diagram": "node scripts/generate-how-it-works.mjs",
     "docs:diagram:check": "node scripts/generate-how-it-works.mjs --check",
     "skills:sync": "node scripts/sync-skills.mjs",

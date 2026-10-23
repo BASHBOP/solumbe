@@ -1,0 +1,7 @@
+{
+  "name": "nav-protection-web",
+  "private": true,
+  "scripts": {
+    "test": "jest"
+  }
+}

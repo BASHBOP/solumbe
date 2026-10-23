@@ -1,6 +1,6 @@
 # solumbe Evals
 
-solumbe ships four evals. They answer different questions and must not be
+solumbe ships these evals. They answer different questions and must not be
 confused:
 
 | Eval | Entry point | Question it answers |
@@ -9,6 +9,7 @@ confused:
 | Accuracy | `runRetrievalEval()` | _Is the context pack **right**, meaning does it surface the files an agent needs, and does the risk classifier label paths/queries correctly?_ |
 | Harness execution | `runHarnessExecutionEval()` | _Do the encoded setup and validation commands Solumbe inferred actually run?_ |
 | Gate effectiveness | `runGateEffectivenessEval()` | _Does the real local gate allow a valid change and block known-bad changes for the expected deterministic reason?_ |
+| History replay | `runHistoryEval()` | _On a real repository's own recent commits, does the pack name the files each commit changed?_ |
 
 The token-savings eval is necessary but not sufficient: a randomly-ranked pack
 saves exactly as many tokens as a perfect one. Accuracy, harness execution, and
@@ -55,6 +56,52 @@ Two fixtures are whole repositories in one non-JavaScript language:
 cases that rank a file from its name or a symbol, and importer cases that
 expect a file's only caller in the pack when the two share no name.
 
+### Known gaps
+
+A retrieval or gate case can carry `"knownGap": true`. It records a miss
+before its fix exists: the case runs like any other and the report lists it
+under **Known gaps** as "still open", or as "now passes; remove its knownGap
+marker" once a change closes it. It never counts toward the floors, the pass
+counts or the exit code, so a miss can be written down the day it is found
+without turning CI red. Remove the marker in the change that fixes it.
+
+Open gap (2026-10-22): on `node-upgrade-api`, a Node 22 move should rank
+`.nvmrc`. It needs version pins read as runtime requests; a Node version is not
+a dependency request. The four dependency gaps recorded with it on 2026-10-20
+closed when the code map began listing manifests and lockfiles (see
+`src/lib/dependency-request.js`).
+
+### Dependency requests
+
+A request that upgrades, bumps, audits or patches dependencies owns the
+manifests and lockfiles, which are not source files. The
+`dependency-advisory-api`, `-web` and `-mobile` fixtures carry the 2026-10-22
+dogfood misses: a hyphenated package (`shell-quote`) split into words that
+matched an unrelated module, a package (`handlebars`) that pulled in every
+template, `package` and `upgrade` ranking components, and lockfiles never
+ranked. Their cases expect the lockfile (and a manifest that declares a named
+package) as primary; package-manager config and a manifest a transitive fix may
+not touch are expected in Related Files.
+
+Gaps from the [history replay](#history-replay) (2026-10-22), each a real miss
+rebuilt as a synthetic fixture and confirmed open on `develop` and on the
+dependency-ranking change (#325):
+
+- `history-nav-protection-script` (`nav-protection-web`): a request that names
+  nav protection ranks `public/scripts/nav-protection.js` sixth, behind the
+  partner, domain and navigation components.
+- `history-solumbe-pre-commit-hook` (`solumbe-hook-web`): a solumbe-managed
+  `.githooks/pre-commit` is only a related file for "run solumbe gate on staged
+  tree in pre-commit"; components named Gate lead.
+- `history-feature-flag-environment-config` (`feature-flag-api`): switching a
+  feature on in production should change that environment's flag file, whose
+  keys name the mechanism (`rag_answers_enabled`), not the feature.
+
+A fourth replay miss, files under `src/ai/rag/` crowded out by large event,
+booking and email services, did not reproduce on a fixture of a dozen files:
+the RAG files ranked in the top five. It needs a repository's scale, so the
+history replay is where it is measured.
+
 ### Risk cases
 
 Each risk case exercises the shared risk vocabulary in
@@ -76,6 +123,9 @@ absent. Encoded regression guards include:
 - `roles.guard.ts` → auth/security, **not** money flow
 - `tests/checkout.spec.ts` → **no** merge-gate flag
 - `config/dev.environments.ts` → **not** a secret (`.env` substring must not match)
+- `.nvmrc` → configuration, **and** gates a merge (it picks the production Node version)
+- `yarn.lock` → **no** merge-gate flag (dependency churn scores zero)
+- `upgrade the organiser to the pro plan` → **not** dependency
 
 ### Harness execution cases
 
@@ -171,6 +221,90 @@ no thresholds and is not part of `npm run quality`; results are recorded in
 [the calibration thesis](17-calibration-thesis/README.md#grading-the-request-read-2026-10-18).
 `tests/claude-read.test.js` runs it against a mocked fetch.
 
+## History replay
+
+The corpus is labelled by hand on small synthetic fixtures, and every case in
+it passes, so it can catch a regression but cannot show how far the pack is
+from right on real work. A commit is a labelled case that already exists: its
+subject is the request, and the files it changed are the files the work
+needed. `solumbe eval --history` replays recent commits of any repository that
+way:
+
+```bash
+solumbe eval --history ../bashbop-api --commits 30 [--k 5] [--max-files 12] [--ref HEAD] [--json] [--out file]
+npm run eval:history -- ../bashbop-api
+```
+
+For each commit it exports the **parent** tree with `git archive` into a
+temporary directory, builds the pack there from the cleaned subject, and
+scores the pack against the commit. The subject loses its conventional-commit
+type and scope (`fix(gate):`), which is usually a path hint the requester would
+not have given, and a trailing `(#123)`.
+
+What counts as expected:
+
+- a file the commit modified, deleted or renamed (by its old path);
+- not a file the commit added, which did not exist on the parent;
+- not a changelog, which every change touches by convention (a lockfile is
+  expected: for a dependency request it is the file to change, and it counts
+  as unindexed on an engine that does not list it);
+- a changed test is expected in the pack's Tests section, so it counts toward
+  pack recall but not the primary metrics;
+- a changed file the code map does not index is reported as a coverage gap
+  and kept out of the ranking metrics, since no ranking could name it.
+
+Merges, releases, version bumps, root commits, bot authors and commits with
+more than `--max-files` expected files are skipped and counted by reason. A
+subject seen on a newer commit (a cherry-pick or a re-landed change) is skipped
+too, so one miss is not counted twice.
+
+It reports, over the scored commits:
+
+| Metric | Meaning |
+|---|---|
+| hit@k | at least one changed file in the top k primary files |
+| recall@k, precision@k, MRR | as for the corpus (`computeRetrievalMetrics`), on the changed non-test files |
+| pack recall | changed files, tests included, found anywhere in the pack |
+| unindexed share | changed files the code map does not index |
+
+and lists each commit, the misses (commits with nothing changed in the top k)
+and the unindexed files.
+
+It is a measurement, not a gate. The numbers depend on the repository and the
+commits it reads, and a commit's diff is a noisy label: it holds files the
+request never named (a refactor carried along, a doc touched in passing), so
+recall@k has a ceiling well below 1.0 and is for comparing engine versions on
+the same commits, not for reading in isolation. It has no thresholds and is not
+part of `npm run quality`. The inspected repository is only read: nothing from
+it is executed, and each temporary tree and its index cache are removed.
+`tests/history-eval.test.js` runs it on a small generated repository.
+
+### First replay (2026-10-22)
+
+The first comparison: the 30 most recent eligible commits of bashbop-api at
+`fbd8484`, the same commits scored by the engine before and after
+dependency-request ranking (#325, context engine 5). k = 5.
+
+| Engine | Commits | hit@5 | recall@5 | MRR | pack recall | unindexed |
+|---|---:|---:|---:|---:|---:|---:|
+| before #325 | 27 | 0.37 | 0.205 | 0.182 | 0.212 | 0.14 |
+| with #325 | 29 | 0.414 | 0.214 | 0.239 | 0.218 | 0.061 |
+
+Two dependency commits that scored nothing now hit: "patch handlebars, tar,
+proxy-addr and other vulnerable dependencies" ranks `yarn.lock` first (recall
+0.5, it also changed `package.json`), and "make the Dependabot batch install,
+lint, test and build" gains `yarn.lock` (recall 0.2). Two more commits are
+scored because manifests and lockfiles are now indexed, so the unindexed share
+halves. "move to Node 22 and take the upgrades that needed it" still scores
+zero; `.nvmrc` is the open `node-upgrade-runtime-version` gap.
+
+On the same first run the engine before #325 scored hit@5 0.75 on solumbe,
+0.741 on bashbop-mobile-app and 0.345 on bashbop-event-web; the synthetic
+corpus scores recall@5 1.0. The misses behind the low scores are the known
+gaps above, files under `src/ai/rag/` crowded out by large services, plan and
+spec documents edited by "record the …" commits, and translation catalogues
+that every string change touches.
+
 ## How thresholds work
 
 The corpus header carries a `thresholds` block so the pass/fail bar is tunable
@@ -179,7 +313,7 @@ without touching code:
 ```json
 "thresholds": {
   "retrieval": { "precisionAtK": 0.82, "recallAtK": 0.9, "mrr": 0.9 },
-  "risk": { "accuracy": 0.96 }
+  "risk": { "accuracy": 0.97 }
 }
 ```
 
@@ -187,10 +321,9 @@ The runner computes the aggregate metrics, compares each against its floor, and
 sets `exitCode` to `0` only when **every** check passes. Thresholds are set to
 **current-baseline-minus-slack**: high enough that a real regression trips the
 gate, low enough that the suite is green today. (At the recorded baseline a
-single risk-case regression drops accuracy to 21/22 = 0.955, below the 0.96
-floor, so the gate catches it. The risk floor is 0.96 rather than 0.95
-because at this corpus size a single failure would otherwise land on or above
-the older floor.)
+single risk-case regression drops accuracy to 27/28 = 0.964, below the 0.97
+floor, so the gate catches it. The floor moved from 0.96 to 0.97 when the risk
+corpus grew from 22 to 28 cases, because 27/28 would otherwise pass 0.96.)
 
 ## Current baseline
 
@@ -203,12 +336,23 @@ corpus (36 retrieval + 22 risk cases):
 | retrieval | precisionAtK | 0.838 |      0.82 | yes  |
 | retrieval | recallAtK    | 1.0   |      0.9  | yes  |
 | retrieval | mrr          | 0.986 |      0.9  | yes  |
-| risk      | accuracy     | 1.0   |      0.96 | yes  |
+| risk      | accuracy     | 1.0   |      0.97 | yes  |
 
 Retrieval: p@5=0.838, r@5=1.0, mrr=0.986 (36/36 cases pass)
-Risk:      accuracy=1.0 (22/22 cases pass)
+Risk:      accuracy=1.0 (28/28 cases pass)
 Overall:   PASS (exit 0)
 ```
+
+The 2026-10-20 change recorded the misses from a Dependabot batch and a Node
+20 → 22 upgrade on bashbop-api. Two were rules and are fixed: `.nvmrc`,
+`.node-version` and `.tool-versions` are configuration and gate a merge, and
+`dependency`, `dependencies`, `deps`, `dependabot`, `renovate` and `lockfile`
+in a request imply the dependency concept. `upgrade`, `bump` and `package` do
+not, since they name pricing tiers, releases and versions as often. The rest
+need manifests, lockfiles and version pins indexed, which the code map skips,
+so they are recorded as known gaps (below): four `node-upgrade-api` retrieval
+cases and the `dependency-bump-converges` gate case. The risk floor moved to
+0.97 for the larger corpus. Retrieval aggregates are unchanged.
 
 The 2026-10-13 change added the `git-hooks` fixture and the
 `git-hook-pre-commit-gate-step` case. Git hook scripts have no extension, so
