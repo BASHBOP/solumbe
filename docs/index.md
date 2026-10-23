@@ -21,12 +21,13 @@ Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep
 
 ## What's New
 
-!!! tip "v4.8.0 published (2026-10-22)"
+!!! tip "v4.8.0 published (2026-10-23)"
     Dependency work is read as dependency work. No command or field was removed.
 
     - An upgrade, audit or advisory request (`upgrade vulnerable yarn dependencies (shell-quote, handlebars …)`) owns the lockfile and the manifest that declares a named package, in `change_impact`, `context_pack` and `convergence_score`. A lockfile-only fix now converges instead of reading inconclusive.
     - Package names are read whole: `shell-quote` no longer matches `quote-templates.controller.ts`, and "package" or "upgrade" no longer rank pricing components.
     - `.nvmrc`, `.node-version` and `.tool-versions` are configuration and gate a merge. An eval case can be marked `knownGap` to record a miss before its fix.
+    - `solumbe eval --history [repo]` replays a repository's recent commits as retrieval cases (the subject is the request, the changed files the answer) and reports hit@k, recall@k and MRR on real work. On bashbop-api, dependency-request ranking moves hit@5 from 0.37 to 0.41.
 
     [npm v4.8.0](https://www.npmjs.com/package/@bashbop/solumbe/v/4.8.0) · [GitHub Release](https://github.com/BASHBOP/solumbe/releases/tag/v4.8.0) · [MCP Registry](https://registry.modelcontextprotocol.io/?q=io.github.BASHBOP%2Fsolumbe)
 

@@ -6,9 +6,9 @@ This project follows SemVer.
 
 ## [Unreleased]
 
-## [4.8.0] - 2026-10-22
+## [4.8.0] - 2026-10-23
 
-Dependency work is read as dependency work. An upgrade, audit or advisory request now owns the manifests and lockfiles, package names are read whole, and misses can be recorded in the eval corpus as known gaps. No command or field was removed.
+Dependency work is read as dependency work. An upgrade, audit or advisory request now owns the manifests and lockfiles, package names are read whole, and misses can be recorded in the eval corpus as known gaps. `solumbe eval --history` replays a repository's own commits to measure the pack on real work. No command or field was removed.
 
 ### Fixed
 
