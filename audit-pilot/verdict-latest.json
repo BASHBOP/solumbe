@@ -1,12 +1,12 @@
 {
   "ok": true,
-  "generatedAt": "2026-10-21T18:02:34.618Z",
+  "generatedAt": "2026-10-23T03:55:23.471Z",
   "schemaVersion": 3,
   "reviewEngineVersion": 1,
   "request": "review this change",
   "requestStated": false,
   "verdict": "PASS",
-  "confidence": 85,
+  "confidence": 80,
   "repo": {
     "root": "/home/runner/work/solumbe/solumbe",
     "name": "solumbe"
@@ -15,28 +15,28 @@
     "concepts": [],
     "topFiles": [
       {
-        "path": "src/lib/review.js",
-        "score": 41,
+        "path": "src/cli.js",
+        "score": 15,
         "riskFlags": []
       },
       {
-        "path": "src/lib/pr-review.js",
-        "score": 36,
+        "path": "CHANGELOG.md",
+        "score": 0,
         "riskFlags": []
       },
       {
-        "path": "codex/skills/solumbe-review/SKILL.md",
-        "score": 32.2,
+        "path": "docs/EVALS.md",
+        "score": 0,
         "riskFlags": []
       },
       {
-        "path": "src/lib/agent-tools.js",
-        "score": 23.6,
+        "path": "docs/index.md",
+        "score": 0,
         "riskFlags": []
       },
       {
-        "path": "src/lib/agent-workflow.js",
-        "score": 23.6,
+        "path": "evals/corpus.json",
+        "score": 0,
         "riskFlags": []
       }
     ],
@@ -45,14 +45,18 @@
     ]
   },
   "prReviewSummary": {
-    "changedFiles": 1,
-    "additions": 3,
-    "deletions": 3,
-    "riskLevel": "low",
+    "changedFiles": 83,
+    "additions": 2486,
+    "deletions": 75,
+    "riskLevel": "medium",
     "riskFlags": [
-      "dependency"
+      "dependency",
+      "large PR",
+      "large file diff",
+      "money flow",
+      "request surface"
     ],
-    "reviewTargetsCount": 0
+    "reviewTargetsCount": 1
   },
   "pass": {
     "verdict": "PASS",
@@ -62,7 +66,7 @@
       {
         "name": "Changed files",
         "status": "PASS",
-        "summary": "1 changed file found."
+        "summary": "83 changed files found."
       },
       {
         "name": "Commit snapshot",
@@ -82,7 +86,7 @@
       {
         "name": "Release discipline",
         "status": "PASS",
-        "summary": "Version metadata changed but the project version is unchanged (dependency or lockfile update)."
+        "summary": "Version metadata is SemVer and changelog was updated."
       },
       {
         "name": "Validation commands",
@@ -106,16 +110,98 @@
       }
     ],
     "changedFiles": [
-      "package-lock.json"
+      "CHANGELOG.md",
+      "RELEASE.md",
+      "docs/EVALS.md",
+      "docs/assets/solumbe-how-it-works.html",
+      "docs/index.md",
+      "evals/corpus.json",
+      "evals/fixtures/dependency-advisory-api/.yarnrc.yml",
+      "evals/fixtures/dependency-advisory-api/package.json",
+      "evals/fixtures/dependency-advisory-api/src/email/email.service.ts",
+      "evals/fixtures/dependency-advisory-api/src/email/template/booking-confirmation.hbs",
+      "evals/fixtures/dependency-advisory-api/src/email/template/patched-version-notice.hbs",
+      "evals/fixtures/dependency-advisory-api/src/email/template/quote-sent.hbs",
+      "evals/fixtures/dependency-advisory-api/src/quote-templates/dto/create-quote-template.dto.ts",
+      "evals/fixtures/dependency-advisory-api/src/quote-templates/quote-templates.controller.ts",
+      "evals/fixtures/dependency-advisory-api/src/quote-templates/quote-templates.service.ts",
+      "evals/fixtures/dependency-advisory-api/yarn.lock",
+      "evals/fixtures/dependency-advisory-mobile/package-lock.json",
+      "evals/fixtures/dependency-advisory-mobile/package.json",
+      "evals/fixtures/dependency-advisory-mobile/src/screens/TicketScreen.tsx",
+      "evals/fixtures/dependency-advisory-mobile/src/utils/format.ts",
+      "evals/fixtures/dependency-advisory-web/.yarnrc.yml",
+      "evals/fixtures/dependency-advisory-web/components/email/EmailQuotaUpgradeModal.tsx",
+      "evals/fixtures/dependency-advisory-web/components/packages/PackageSelector.tsx",
+      "evals/fixtures/dependency-advisory-web/components/packages/VisualPackageCard.tsx",
+      "evals/fixtures/dependency-advisory-web/package.json",
+      "evals/fixtures/dependency-advisory-web/yarn.lock",
+      "evals/fixtures/feature-flag-api/package.json",
+      "evals/fixtures/feature-flag-api/src/ai/controllers/event-assistant.controller.ts",
+      "evals/fixtures/feature-flag-api/src/ai/controllers/mascot-assistant.controller.ts",
+      "evals/fixtures/feature-flag-api/src/ai/services/conversational-event.service.ts",
+      "evals/fixtures/feature-flag-api/src/events/events.controller.ts",
+      "evals/fixtures/feature-flag-api/src/feature-flags/config/environments/production.json",
+      "evals/fixtures/feature-flag-api/src/feature-flags/config/environments/stable-int.json",
+      "evals/fixtures/feature-flag-api/src/feature-flags/feature-flags.service.ts",
+      "evals/fixtures/feature-flag-api/src/guests/guest.controller.ts",
+      "evals/fixtures/gate-node/changes/dependency-bump/package-lock.json",
+      "evals/fixtures/gate-node/changes/dependency-bump/package.json",
+      "evals/fixtures/nav-protection-web/app/(customer)/partnership/page.tsx",
+      "evals/fixtures/nav-protection-web/app/(customer)/service-providers/vendor-finder/page.tsx",
+      "evals/fixtures/nav-protection-web/app/dashboard/domains/page.tsx",
+      "evals/fixtures/nav-protection-web/components/common/NavbarRedesigned.tsx",
+      "evals/fixtures/nav-protection-web/components/navigation/AppleInspiredBottomNav.tsx",
+      "evals/fixtures/nav-protection-web/components/organisations/OrganisationDomainsCard.tsx",
+      "evals/fixtures/nav-protection-web/components/partners/PartnerCard.tsx",
+      "evals/fixtures/nav-protection-web/constants/partners.ts",
+      "evals/fixtures/nav-protection-web/package.json",
+      "evals/fixtures/nav-protection-web/public/scripts/nav-protection.js",
+      "evals/fixtures/node-upgrade-api/.github/workflows/ci.yml",
+      "evals/fixtures/node-upgrade-api/.nvmrc",
+      "evals/fixtures/node-upgrade-api/package.json",
+      "evals/fixtures/node-upgrade-api/src/email/email.service.ts",
+      "evals/fixtures/node-upgrade-api/src/main.ts",
+      "evals/fixtures/node-upgrade-api/src/stream/stream.service.ts",
+      "evals/fixtures/node-upgrade-api/tsconfig.json",
+      "evals/fixtures/node-upgrade-api/yarn.lock",
+      "evals/fixtures/solumbe-hook-web/.githooks/pre-commit",
+      "evals/fixtures/solumbe-hook-web/AGENTS.md",
+      "evals/fixtures/solumbe-hook-web/app/testing/nda-gate.tsx",
+      "evals/fixtures/solumbe-hook-web/components/organisations/OrganisationWorkspace.tsx",
+      "evals/fixtures/solumbe-hook-web/components/subscription/SubscriptionGate.tsx",
+      "evals/fixtures/solumbe-hook-web/package.json",
+      "evals/fixtures/solumbe-hook-web/utils/premium-feedback-manager.ts",
+      "package-lock.json",
+      "package.json",
+      "server.json",
+      "src/cli.js",
+      "src/lib/code-map/generate.js",
+      "src/lib/context-engine.js",
+      "src/lib/converge.js",
+      "src/lib/dependency-request.js",
+      "src/lib/eval.js",
+      "src/lib/history-eval.js",
+      "src/lib/impact.js",
+      "src/lib/index-cache.js",
+      "src/lib/ranking-rules.js",
+      "src/lib/risk-paths.js",
+      "tests/cli.test.js",
+      "tests/context-engine.test.js",
+      "tests/dependency-request.test.js",
+      "tests/eval.test.js",
+      "tests/history-eval.test.js",
+      "tests/index-cache.test.js",
+      "tests/risk-paths.test.js"
     ],
     "subject": {
       "kind": "git-commit",
-      "baseSha": "a90c257c616bd566cb6396a93d5fbd0e37326752",
-      "headSha": "49e974d4730104e2256a7846a7bee4a0d19ec53a",
-      "treeSha": "05ef6e01fb77519e0dcb3e1c2301483d07424850"
+      "baseSha": "49e974d4730104e2256a7846a7bee4a0d19ec53a",
+      "headSha": "1594d61c4f5e1cf8a83acc86798fce12eac50cef",
+      "treeSha": "ba8467a6bfe6636fc40274c1c13b1dd846c39295"
     }
   },
   "tokenEstimate": {
-    "fullJson": 554
+    "fullJson": 1645
   }
 }
