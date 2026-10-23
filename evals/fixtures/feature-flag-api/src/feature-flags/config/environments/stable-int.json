@@ -1,0 +1,10 @@
+{
+  "flags": {
+    "ai_plans_enabled": true,
+    "attendee_referral_rollout": 100,
+    "openpanel_api_url": "https://analytics.staging.example.com",
+    "rag_indexer_enabled": false,
+    "rag_answers_enabled": false,
+    "faq_retrieval_enabled": false
+  }
+}

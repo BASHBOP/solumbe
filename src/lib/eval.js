@@ -1398,7 +1398,7 @@ function fixtureForPrimary(file, fixtureNames, paths) {
  * @param {number} k
  * @returns {RetrievalMetrics}
  */
-function computeRetrievalMetrics(expectedPrimary, ranked, k) {
+export function computeRetrievalMetrics(expectedPrimary, ranked, k) {
   if (expectedPrimary.length === 0) {
     return { precisionAtK: null, recallAtK: null, mrr: null, hits: 0, relevant: 0 };
   }

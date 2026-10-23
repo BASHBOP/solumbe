@@ -1,0 +1,8 @@
+{
+  "name": "solumbe-hook-web",
+  "private": true,
+  "scripts": {
+    "lint": "eslint .",
+    "test": "jest"
+  }
+}
