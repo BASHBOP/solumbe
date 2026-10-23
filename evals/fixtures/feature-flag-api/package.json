@@ -1,0 +1,7 @@
+{
+  "name": "feature-flag-api",
+  "private": true,
+  "scripts": {
+    "test": "jest"
+  }
+}
