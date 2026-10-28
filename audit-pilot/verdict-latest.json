@@ -1,12 +1,12 @@
 {
   "ok": true,
-  "generatedAt": "2026-10-23T03:55:23.471Z",
+  "generatedAt": "2026-10-28T23:40:45.081Z",
   "schemaVersion": 3,
   "reviewEngineVersion": 1,
   "request": "review this change",
   "requestStated": false,
   "verdict": "PASS",
-  "confidence": 80,
+  "confidence": 85,
   "repo": {
     "root": "/home/runner/work/solumbe/solumbe",
     "name": "solumbe"
@@ -15,17 +15,7 @@
     "concepts": [],
     "topFiles": [
       {
-        "path": "src/cli.js",
-        "score": 15,
-        "riskFlags": []
-      },
-      {
         "path": "CHANGELOG.md",
-        "score": 0,
-        "riskFlags": []
-      },
-      {
-        "path": "docs/EVALS.md",
         "score": 0,
         "riskFlags": []
       },
@@ -35,7 +25,17 @@
         "riskFlags": []
       },
       {
-        "path": "evals/corpus.json",
+        "path": "RELEASE.md",
+        "score": 0,
+        "riskFlags": []
+      },
+      {
+        "path": "server.json",
+        "score": 0,
+        "riskFlags": []
+      },
+      {
+        "path": "src/lib/dependency-graph.js",
         "score": 0,
         "riskFlags": []
       }
@@ -45,18 +45,14 @@
     ]
   },
   "prReviewSummary": {
-    "changedFiles": 83,
-    "additions": 2486,
-    "deletions": 75,
-    "riskLevel": "medium",
+    "changedFiles": 11,
+    "additions": 369,
+    "deletions": 11,
+    "riskLevel": "low",
     "riskFlags": [
-      "dependency",
-      "large PR",
-      "large file diff",
-      "money flow",
-      "request surface"
+      "dependency"
     ],
-    "reviewTargetsCount": 1
+    "reviewTargetsCount": 0
   },
   "pass": {
     "verdict": "PASS",
@@ -66,7 +62,7 @@
       {
         "name": "Changed files",
         "status": "PASS",
-        "summary": "83 changed files found."
+        "summary": "11 changed files found."
       },
       {
         "name": "Commit snapshot",
@@ -112,96 +108,24 @@
     "changedFiles": [
       "CHANGELOG.md",
       "RELEASE.md",
-      "docs/EVALS.md",
       "docs/assets/solumbe-how-it-works.html",
       "docs/index.md",
-      "evals/corpus.json",
-      "evals/fixtures/dependency-advisory-api/.yarnrc.yml",
-      "evals/fixtures/dependency-advisory-api/package.json",
-      "evals/fixtures/dependency-advisory-api/src/email/email.service.ts",
-      "evals/fixtures/dependency-advisory-api/src/email/template/booking-confirmation.hbs",
-      "evals/fixtures/dependency-advisory-api/src/email/template/patched-version-notice.hbs",
-      "evals/fixtures/dependency-advisory-api/src/email/template/quote-sent.hbs",
-      "evals/fixtures/dependency-advisory-api/src/quote-templates/dto/create-quote-template.dto.ts",
-      "evals/fixtures/dependency-advisory-api/src/quote-templates/quote-templates.controller.ts",
-      "evals/fixtures/dependency-advisory-api/src/quote-templates/quote-templates.service.ts",
-      "evals/fixtures/dependency-advisory-api/yarn.lock",
-      "evals/fixtures/dependency-advisory-mobile/package-lock.json",
-      "evals/fixtures/dependency-advisory-mobile/package.json",
-      "evals/fixtures/dependency-advisory-mobile/src/screens/TicketScreen.tsx",
-      "evals/fixtures/dependency-advisory-mobile/src/utils/format.ts",
-      "evals/fixtures/dependency-advisory-web/.yarnrc.yml",
-      "evals/fixtures/dependency-advisory-web/components/email/EmailQuotaUpgradeModal.tsx",
-      "evals/fixtures/dependency-advisory-web/components/packages/PackageSelector.tsx",
-      "evals/fixtures/dependency-advisory-web/components/packages/VisualPackageCard.tsx",
-      "evals/fixtures/dependency-advisory-web/package.json",
-      "evals/fixtures/dependency-advisory-web/yarn.lock",
-      "evals/fixtures/feature-flag-api/package.json",
-      "evals/fixtures/feature-flag-api/src/ai/controllers/event-assistant.controller.ts",
-      "evals/fixtures/feature-flag-api/src/ai/controllers/mascot-assistant.controller.ts",
-      "evals/fixtures/feature-flag-api/src/ai/services/conversational-event.service.ts",
-      "evals/fixtures/feature-flag-api/src/events/events.controller.ts",
-      "evals/fixtures/feature-flag-api/src/feature-flags/config/environments/production.json",
-      "evals/fixtures/feature-flag-api/src/feature-flags/config/environments/stable-int.json",
-      "evals/fixtures/feature-flag-api/src/feature-flags/feature-flags.service.ts",
-      "evals/fixtures/feature-flag-api/src/guests/guest.controller.ts",
-      "evals/fixtures/gate-node/changes/dependency-bump/package-lock.json",
-      "evals/fixtures/gate-node/changes/dependency-bump/package.json",
-      "evals/fixtures/nav-protection-web/app/(customer)/partnership/page.tsx",
-      "evals/fixtures/nav-protection-web/app/(customer)/service-providers/vendor-finder/page.tsx",
-      "evals/fixtures/nav-protection-web/app/dashboard/domains/page.tsx",
-      "evals/fixtures/nav-protection-web/components/common/NavbarRedesigned.tsx",
-      "evals/fixtures/nav-protection-web/components/navigation/AppleInspiredBottomNav.tsx",
-      "evals/fixtures/nav-protection-web/components/organisations/OrganisationDomainsCard.tsx",
-      "evals/fixtures/nav-protection-web/components/partners/PartnerCard.tsx",
-      "evals/fixtures/nav-protection-web/constants/partners.ts",
-      "evals/fixtures/nav-protection-web/package.json",
-      "evals/fixtures/nav-protection-web/public/scripts/nav-protection.js",
-      "evals/fixtures/node-upgrade-api/.github/workflows/ci.yml",
-      "evals/fixtures/node-upgrade-api/.nvmrc",
-      "evals/fixtures/node-upgrade-api/package.json",
-      "evals/fixtures/node-upgrade-api/src/email/email.service.ts",
-      "evals/fixtures/node-upgrade-api/src/main.ts",
-      "evals/fixtures/node-upgrade-api/src/stream/stream.service.ts",
-      "evals/fixtures/node-upgrade-api/tsconfig.json",
-      "evals/fixtures/node-upgrade-api/yarn.lock",
-      "evals/fixtures/solumbe-hook-web/.githooks/pre-commit",
-      "evals/fixtures/solumbe-hook-web/AGENTS.md",
-      "evals/fixtures/solumbe-hook-web/app/testing/nda-gate.tsx",
-      "evals/fixtures/solumbe-hook-web/components/organisations/OrganisationWorkspace.tsx",
-      "evals/fixtures/solumbe-hook-web/components/subscription/SubscriptionGate.tsx",
-      "evals/fixtures/solumbe-hook-web/package.json",
-      "evals/fixtures/solumbe-hook-web/utils/premium-feedback-manager.ts",
       "package-lock.json",
       "package.json",
       "server.json",
-      "src/cli.js",
-      "src/lib/code-map/generate.js",
-      "src/lib/context-engine.js",
-      "src/lib/converge.js",
-      "src/lib/dependency-request.js",
-      "src/lib/eval.js",
-      "src/lib/history-eval.js",
+      "src/lib/dependency-graph.js",
       "src/lib/impact.js",
-      "src/lib/index-cache.js",
-      "src/lib/ranking-rules.js",
-      "src/lib/risk-paths.js",
-      "tests/cli.test.js",
-      "tests/context-engine.test.js",
-      "tests/dependency-request.test.js",
-      "tests/eval.test.js",
-      "tests/history-eval.test.js",
-      "tests/index-cache.test.js",
-      "tests/risk-paths.test.js"
+      "tests/dependency-graph.test.js",
+      "tests/impact.test.js"
     ],
     "subject": {
       "kind": "git-commit",
-      "baseSha": "49e974d4730104e2256a7846a7bee4a0d19ec53a",
-      "headSha": "1594d61c4f5e1cf8a83acc86798fce12eac50cef",
-      "treeSha": "ba8467a6bfe6636fc40274c1c13b1dd846c39295"
+      "baseSha": "1594d61c4f5e1cf8a83acc86798fce12eac50cef",
+      "headSha": "74ef80492883a848ce224b1cc02ee30776029657",
+      "treeSha": "b2d063c6a8337440488bba2626d117b2b3494c65"
     }
   },
   "tokenEstimate": {
-    "fullJson": 1645
+    "fullJson": 585
   }
 }
