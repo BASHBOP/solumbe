@@ -4,7 +4,7 @@
 
 > For teams that want any coding agent to produce evidence a human can trust before merge.
 
-**v4.8.0** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
+**v4.9.0** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
 
 Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep -->
 
@@ -20,6 +20,14 @@ Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep
 ---
 
 ## What's New
+
+!!! tip "v4.9.0 published (2026-10-28)"
+    A change shows what depends on it. Ranking is unchanged, and no command or field was removed.
+
+    - With a diff (`solumbe impact --diff-base`, or `diffBase` over MCP), `change_impact` carries a `dependents` block: the files that import a changed file, directly or through other files, up to three hops and 20 files, each with its depth and the file it reaches the change through.
+    - Each dependent is `EXTRACTED` when every import on its path is stated in the source (a relative or root-alias specifier, or a Go package import) and `INFERRED` when one rests on a bare specifier matching exactly one file and no declared package. Docs and vendored files are left out.
+
+    [npm v4.9.0](https://www.npmjs.com/package/@bashbop/solumbe/v/4.9.0) · [GitHub Release](https://github.com/BASHBOP/solumbe/releases/tag/v4.9.0) · [MCP Registry](https://registry.modelcontextprotocol.io/?q=io.github.BASHBOP%2Fsolumbe)
 
 !!! tip "v4.8.0 published (2026-10-23)"
     Dependency work is read as dependency work. No command or field was removed.
@@ -303,7 +311,7 @@ flowchart LR
 === "Install"
 
     ```bash
-    npm install -g @bashbop/solumbe@4.8.0
+    npm install -g @bashbop/solumbe@4.9.0
     solumbe doctor
     solumbe context "review this change" --path .
     ```
@@ -311,7 +319,7 @@ flowchart LR
 === "No Global Install"
 
     ```bash
-    npx -y @bashbop/solumbe@4.8.0 doctor
+    npx -y @bashbop/solumbe@4.9.0 doctor
     ```
 
 === "Source Checkout"
