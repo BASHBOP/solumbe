@@ -6,6 +6,14 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+## [4.9.0] - 2026-10-28
+
+A change shows what depends on it. With a diff, `change_impact` lists the files that import a changed file and says, for each, whether the code states the import or solumbe inferred it. Ranking is unchanged, and no command or field was removed.
+
+### Added
+
+- **`change_impact` lists what imports the changed files.** With a diff (`--diff-base`, or `diffBase` over MCP), the result carries a `dependents` block: the files that import a changed file, directly or through other files, up to three hops and 20 files, each with its depth and the file it reaches the change through. Each is labelled `EXTRACTED` when every import on its path is stated in the source (a relative or root-alias specifier, or a Go package import) and `INFERRED` when one rests on a bare specifier such as `utils/format` matching exactly one file and no declared package. A reviewer can then tell a dependent the code states from one solumbe guessed. Ranking is unchanged, and without a diff nothing is reported.
+
 ## [4.8.0] - 2026-10-23
 
 Dependency work is read as dependency work. An upgrade, audit or advisory request now owns the manifests and lockfiles, package names are read whole, and misses can be recorded in the eval corpus as known gaps. `solumbe eval --history` replays a repository's own commits to measure the pack on real work. No command or field was removed.

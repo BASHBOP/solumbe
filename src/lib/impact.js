@@ -7,6 +7,7 @@
 /// <reference types="node" />
 import path from "node:path";
 import { companionRepos } from "./config.js";
+import { buildDependencyGraph, transitiveDependents } from "./dependency-graph.js";
 import { dependencyFileRecord, readDependencyRequest } from "./dependency-request.js";
 import { getCachedCodeMap } from "./index-cache.js";
 import { conceptsFromQuery, classifyPath, CONCEPT_SYNONYMS, RISK_FLAGS, glyphFor, isDocPath, isTestDataPath, singularizeToken } from "./risk-paths.js";
@@ -353,6 +354,10 @@ export function generateImpact(query, options = {}) {
     concepts,
   );
   const validation = diffSnapshot ? (diffSnapshot.ok ? validateChangedFiles(diffSnapshot.base, exactDiffFiles, roles) : diffSnapshot) : null;
+  // What imports the changed files, directly or through other files. A diff
+  // is the only evidence of which files changed, so without one there is no
+  // starting point and nothing is reported.
+  const dependents = changedPaths.size ? describeDependents(map, changedPaths) : null;
 
   const data = /** @type {Record<string, any> & { tokenEstimate?: any }} */ ({
     ok: true,
@@ -393,6 +398,7 @@ export function generateImpact(query, options = {}) {
     },
     validation,
   });
+  if (dependents?.files.length) data.dependents = dependents;
   if (options.companions) {
     const companions = companionLeads(normalized, repoPath);
     if (companions.length) data.companions = companions;
@@ -413,6 +419,28 @@ export function generateImpact(query, options = {}) {
   data.tokenEstimate.markdown = estimateTokens(markdown);
 
   return { data, markdown };
+}
+
+const DEPENDENT_MAX_DEPTH = 3;
+const DEPENDENT_LIMIT = 20;
+
+/**
+ * Files that import the changed files, up to three hops away, each labelled
+ * EXTRACTED when every import on its path is stated in the source and
+ * INFERRED when one rests on a name match.
+ * @param {{ files: CodeMapFile[], dependencies?: import('./dependency-request.js').DependencyFile[] }} map
+ * @param {Set<string>} changedPaths
+ */
+function describeDependents(map, changedPaths) {
+  const packages = (map.dependencies ?? []).flatMap((file) => file.packages ?? []);
+  const graph = buildDependencyGraph(map.files, { packages });
+  const result = transitiveDependents(graph, changedPaths, map.files, { maxDepth: DEPENDENT_MAX_DEPTH, limit: DEPENDENT_LIMIT });
+  return {
+    maxDepth: DEPENDENT_MAX_DEPTH,
+    files: result.files,
+    truncated: result.truncated,
+    inferredCount: result.files.filter((file) => file.provenance === "INFERRED").length,
+  };
 }
 
 /**
@@ -1498,6 +1526,14 @@ export function formatImpactMarkdown(data) {
   for (const suggestion of data.testSuggestions) lines.push(`- ${suggestion}`);
   lines.push("", "## Risks To Check", "");
   for (const risk of data.risks) lines.push(`- ${risk}`);
+  if (data.dependents) {
+    const { files, inferredCount, truncated, maxDepth } = data.dependents;
+    lines.push("", "## Dependents Of The Changed Files", "");
+    lines.push(
+      `- Files importing the change within ${maxDepth} hop(s): ${files.length}${truncated ? " (truncated)" : ""}, ${inferredCount} through an inferred import`,
+    );
+    for (const file of files) lines.push(`- \`${file.path}\` (${file.kind}, depth ${file.depth}, ${file.provenance}, via \`${file.via}\`)`);
+  }
   if (data.companions) {
     lines.push("", "## Companion Repository Leads", "");
     for (const companion of data.companions) lines.push(`- ${companion.repo}: ${formatCompanionFiles(companion)}`);
@@ -1770,6 +1806,21 @@ export function formatImpactTerminal(data, rendererFactory) {
       data.risks.slice(0, 6).map((/** @type {string} */ r) => `${renderer.paint(renderer.glyphs.item, "dim")} ${r}`),
     ),
   );
+  if (data.dependents) {
+    const { files, inferredCount, truncated, maxDepth } = data.dependents;
+    lines.push("");
+    lines.push(
+      renderer.section(
+        `${decor("🕸️")}Dependents of the change (${files.length}${truncated ? "+" : ""} within ${maxDepth} hops, ${inferredCount} inferred)`,
+        files
+          .slice(0, 10)
+          .map(
+            (/** @type {{ path: string, depth: number, provenance: string }} */ file) =>
+              `${renderer.paint(renderer.glyphs.item, "dim")} ${file.path}  depth ${file.depth}${file.provenance === "INFERRED" ? " · inferred" : ""}`,
+          ),
+      ),
+    );
+  }
   if (data.companions) {
     lines.push("");
     lines.push(
