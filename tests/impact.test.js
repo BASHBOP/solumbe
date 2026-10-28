@@ -883,3 +883,33 @@ test("generateImpact ranks a git hook script above components that share generic
   assert.equal(result.data.topFiles[0].kind, "gitHook");
   assert.ok(!top.includes(".husky/_/pre-commit"), `husky shims must not be indexed: ${top.join(", ")}`);
 });
+
+test("generateImpact reports the files that import a changed file, with how each import was found", () => {
+  const root = gitFixture("dependents", {
+    "package.json": JSON.stringify({ name: "dependents-fixture", dependencies: { lodash: "^4.0.0" } }),
+    "src/pricing/core.ts": "export function price(amount) { return amount; }\n",
+    "src/pricing/quote.ts": 'import { price } from "./core.js";\nexport const quote = (a) => price(a);\n',
+    "src/api/checkout.ts": 'import { quote } from "../pricing/quote.js";\nexport const checkout = (a) => quote(a);\n',
+    "src/web/banner.ts": 'import { price } from "pricing/core";\nexport const banner = price(1);\n',
+    "src/web/unrelated.ts": 'import get from "lodash/get";\nexport const x = get;\n',
+  });
+  fs.writeFileSync(path.join(root, "src/pricing/core.ts"), "export function price(amount) { return Math.round(amount); }\n");
+
+  const result = generateImpact("round prices in the pricing core", { path: root, diffBase: "HEAD" });
+  const dependents = result.data.dependents;
+  assert.ok(dependents, "expected a dependents block for a diff");
+  assert.deepEqual(
+    dependents.files.map((file) => [file.path, file.depth, file.provenance]),
+    [
+      ["src/pricing/quote.ts", 1, "EXTRACTED"],
+      ["src/web/banner.ts", 1, "INFERRED"],
+      ["src/api/checkout.ts", 2, "EXTRACTED"],
+    ],
+  );
+  assert.equal(dependents.inferredCount, 1);
+  assert.match(result.markdown, /## Dependents Of The Changed Files/);
+  assert.match(result.markdown, /`src\/api\/checkout\.ts` \(source, depth 2, EXTRACTED, via `src\/pricing\/quote\.ts`\)/);
+
+  const withoutDiff = generateImpact("round prices in the pricing core", { path: root });
+  assert.equal(withoutDiff.data.dependents, undefined);
+});
