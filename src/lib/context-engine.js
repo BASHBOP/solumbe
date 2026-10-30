@@ -88,8 +88,14 @@ import { estimateTokens, estimateTokenSections } from "./tokens.js";
 // lists only files a test runner executes.
 // 5: a dependency request leads with the manifests and lockfiles, and its
 // package names and dependency words no longer score source files.
-const contextEngineVersion = 5;
+// 6: a symbol match found only in the identifiers of a symbol's body counts
+// for less than one in its name, and another symbol matching the same words
+// adds less each time.
+const contextEngineVersion = 6;
 const defaultLimit = 8;
+// What a query word found only among a symbol's body identifiers is worth,
+// against one in the symbol's own name.
+const BODY_ONLY_SYMBOL_WEIGHT = 0.4;
 // A definition of a symbol the request names that is not the one the code
 // imports (that one is pinned): a local copy, an export nothing uses.
 const NAMED_DEFINER_BONUS = 60;
@@ -1109,6 +1115,8 @@ function scoreSymbols(symbols, tokens, tokenStats) {
   let strongScore = 0;
   /** @type {Map<string, number>} */
   const weakByToken = new Map();
+  /** @type {Map<string, number>} */
+  const strongRepeats = new Map();
 
   for (const symbol of symbols) {
     const nameTokens = new Set(tokenize(`${symbol.name} ${symbol.terms?.join(" ") ?? ""}`));
@@ -1134,7 +1142,15 @@ function scoreSymbols(symbols, tokens, tokenStats) {
     // and "booking" hitting `formatBookingDate` in an events app) shouldn't
     // score the same as two genuinely distinctive tokens. Weight each match
     // by its rarity across the indexed repo instead of counting it flatly.
-    const weightSum = matchedTokens.reduce((sum, token) => sum + tokenWeightFactor(token, tokenStats), 0);
+    // A word found only among the identifiers in the symbol's body, not in
+    // its name, says less about what the symbol is for: six language
+    // extractors that each loop over a local `definitions` were the top file
+    // for "the MCP tool definitions and their names".
+    const weightSum = matchedTokens.reduce(
+      (sum, token) =>
+        sum + tokenWeightFactor(token, tokenStats) * (tokenVariants(token).some((variant) => ownNameTokens.has(variant)) ? 1 : BODY_ONLY_SYMBOL_WEIGHT),
+      0,
+    );
     const avgWeight = weightSum / matchedTokens.length;
     let hitScore = weightSum * 9 + Math.max(0, variantHits.length - matchedTokens.length) * 9 * avgWeight;
     if (symbol.type === "method" && matchedTokens.length >= 2) {
@@ -1146,7 +1162,13 @@ function scoreSymbols(symbols, tokens, tokenStats) {
     hitScore = Math.round(hitScore);
 
     if (matchedTokens.length >= 2 || variantHits.length >= 2) {
-      strongScore += hitScore;
+      // The same words matched again by another symbol add less each time: a
+      // file of near-identical functions repeats one match, it does not
+      // make a stronger one.
+      const key = [...matchedTokens].sort().join(" ");
+      const seen = (strongRepeats.get(key) ?? 0) + 1;
+      strongRepeats.set(key, seen);
+      strongScore += Math.round(hitScore / seen);
     } else {
       for (const token of matchedTokens) {
         weakByToken.set(token, Math.max(weakByToken.get(token) ?? 0, hitScore));
