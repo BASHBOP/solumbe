@@ -34,7 +34,7 @@
     "audit": "npm audit --omit=dev",
     "benchmark:cli": "node scripts/benchmark-cli.mjs",
     "smoke": "node src/cli.js doctor && node src/cli.js harness . --json && npm run smoke:tarball",
-    "quality": "npm run format:check && npm run lint && npm run typecheck && npm run version:check && npm run rebrand:check && npm run docs:diagram:check && npm test && npm run test:coverage && npm run eval:accuracy && npm run eval:harness && npm run eval:gate && npm run audit && npm run smoke",
+    "quality": "npm run format:check && npm run lint && npm run typecheck && npm run version:check && npm run rebrand:check && npm run docs:diagram:check && npm run test:coverage && npm run eval:accuracy && npm run eval:harness && npm run eval:gate && npm run audit && npm run smoke",
     "ci": "npm run quality",
     "prepublishOnly": "npm run ci",
     "smoke:tarball": "node scripts/smoke-tarball.mjs",
