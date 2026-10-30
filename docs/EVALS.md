@@ -327,21 +327,36 @@ corpus grew from 22 to 28 cases, because 27/28 would otherwise pass 0.96.)
 
 ## Current baseline
 
-Recorded **2026-10-13** by running `runRetrievalEval()` against the committed
-corpus (36 retrieval + 22 risk cases):
+Recorded **2026-10-30** by running `runRetrievalEval()` against the committed
+corpus (44 retrieval + 28 risk cases, plus known gaps outside the aggregate):
 
 ```
 | Group     | Metric       | Value | Threshold | Pass |
 |-----------|--------------|------:|----------:|:----:|
-| retrieval | precisionAtK | 0.838 |      0.82 | yes  |
+| retrieval | precisionAtK | 0.857 |      0.82 | yes  |
 | retrieval | recallAtK    | 1.0   |      0.9  | yes  |
-| retrieval | mrr          | 0.986 |      0.9  | yes  |
+| retrieval | mrr          | 0.988 |      0.9  | yes  |
 | risk      | accuracy     | 1.0   |      0.97 | yes  |
 
-Retrieval: p@5=0.838, r@5=1.0, mrr=0.986 (36/36 cases pass)
+Retrieval: p@5=0.857, r@5=1.0, mrr=0.988 (44/44 cases pass)
 Risk:      accuracy=1.0 (28/28 cases pass)
 Overall:   PASS (exit 0)
 ```
+
+The 2026-10-30 change added the `symbol-stacking` fixture and the
+`symbol-stacking-tool-registry` case, from a miss on solumbe itself: asked to
+trim the MCP tool definitions, the pack ranked `ast-languages.js` (146) far
+above `mcp.js` (55), because each of its per-language extractors loops over a
+local `definitions` of `names`, and every one matched the query again through
+its body identifiers. A query word found only in a symbol's body now counts
+0.4 of one in its name, and each further symbol matching the same words adds
+less (1, 1/2, 1/3...). Context engine version 6. Without the change the case
+still passes at k=5 (the registry ranks second), so
+`tests/context-engine.test.js` requires it first and at more than twice the
+decoy's score; MRR moves from 0.977 to 0.988 with it. The case lowers p@5 from
+0.865 to 0.857 because the decoy stays in Primary Files. Two other misses from
+the same session (`telemetry.js` and `tokens.js` for a billed-token request)
+are not fixed by this and are not yet recorded.
 
 The 2026-10-20 change recorded the misses from a Dependabot batch and a Node
 20 → 22 upgrade on bashbop-api. Two were rules and are fixed: `.nvmrc`,

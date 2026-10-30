@@ -3,7 +3,7 @@
   "description": "Labeled evaluation corpus for solumbe retrieval, risk classification, fixture-backed harness command execution, and gate effectiveness. Gate cases initialize an isolated Git repository from a committed base, apply one committed change-set, and assert both the verdict and deterministic check reason. See docs/EVALS.md for how to add a case and how thresholds work. Reads cases label the intent (and, where it is unambiguous, the solumbe tool and the files) a request asks for; `solumbe eval --reads` grades a read provider against them and is not part of CI because it calls a model.",
   "k": 5,
   "thresholds": {
-    "comment": "Floors set to current-baseline-minus-slack so the suite is green today but a regression trips it. Baseline (2026-10-22): retrieval p@5=0.865 r@5=1.0 mrr=0.988 (43/43, plus 1 known gap outside the aggregate); risk accuracy=1.0 (28/28). The dependency cases added that day raised p@5 from 0.838; the floors are unchanged. The precision floor moved from 0.85 to 0.82 when the Python and Go fixtures were added: their ten cases average p@5=0.767 because the Python queries return unlabeled sibling primaries, and the 25 earlier cases are unchanged at 0.861. tests/cli.test.js asserts the same floor. Aggregate metrics must be >= these floors for exit code 0. The risk floor is 0.97 so that a single failing case (27/28 = 0.964) still trips the gate; it was 0.96 at 22 cases. Re-record both baseline and floors in docs/EVALS.md after any intentional behavior change.",
+    "comment": "Floors set to current-baseline-minus-slack so the suite is green today but a regression trips it. Baseline (2026-10-30): retrieval p@5=0.857 r@5=1.0 mrr=0.988 (44/44, plus known gaps outside the aggregate). The symbol-stacking case added that day took p@5 from 0.865; risk accuracy=1.0 (28/28). The dependency cases added that day raised p@5 from 0.838; the floors are unchanged. The precision floor moved from 0.85 to 0.82 when the Python and Go fixtures were added: their ten cases average p@5=0.767 because the Python queries return unlabeled sibling primaries, and the 25 earlier cases are unchanged at 0.861. tests/cli.test.js asserts the same floor. Aggregate metrics must be >= these floors for exit code 0. The risk floor is 0.97 so that a single failing case (27/28 = 0.964) still trips the gate; it was 0.96 at 22 cases. Re-record both baseline and floors in docs/EVALS.md after any intentional behavior change.",
     "retrieval": {
       "precisionAtK": 0.82,
       "recallAtK": 0.9,
@@ -41,7 +41,8 @@
     "gate-legacy-secret": "evals/fixtures/gate-legacy-secret",
     "nav-protection-web": "evals/fixtures/nav-protection-web",
     "solumbe-hook-web": "evals/fixtures/solumbe-hook-web",
-    "feature-flag-api": "evals/fixtures/feature-flag-api"
+    "feature-flag-api": "evals/fixtures/feature-flag-api",
+    "symbol-stacking": "evals/fixtures/symbol-stacking"
   },
   "retrieval": [
     {
@@ -381,6 +382,13 @@
       "query": "switch the event assistant on in production",
       "repoFixture": "feature-flag-api",
       "expectedPrimary": ["src/feature-flags/config/environments/production.json"]
+    },
+    {
+      "name": "symbol-stacking-tool-registry",
+      "comment": "Session miss (solumbe, 2026-10-30): a file holding many look-alike symbols (one extractor per language, each looping over a local `definitions` of `names`) matched the query once per symbol through body identifiers, and outranked the MCP tool registry the query was about. Body-only symbol matches now count for less, and repeats of the same matched words saturate.",
+      "query": "trim the MCP tool definitions and names the server lists",
+      "repoFixture": "symbol-stacking",
+      "expectedPrimary": ["src/mcp/server.js"]
     }
   ],
   "risk": [

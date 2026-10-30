@@ -6,6 +6,10 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Look-alike symbols no longer outrank the file a request is about.** Asked to trim the MCP tool definitions, the pack ranked `ast-languages.js` (146) far above `mcp.js` (55): each per-language extractor loops over a local `definitions` of `names`, and every one matched the query again through its body identifiers. A query word found only among a symbol's body identifiers now counts 0.4 of one in its name, and each further symbol matching the same words adds less. Context engine version 6. A new `symbol-stacking` fixture and eval case record the miss; retrieval p@5 moves from 0.865 to 0.857 and MRR stays 0.988.
+
 ## [4.9.0] - 2026-10-28
 
 A change shows what depends on it. With a diff, `change_impact` lists the files that import a changed file and says, for each, whether the code states the import or solumbe inferred it. Ranking is unchanged, and no command or field was removed.
