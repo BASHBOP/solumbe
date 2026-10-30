@@ -305,7 +305,7 @@ test("repo_index, repo_search query, and no-query repo_search catalog round-trip
       jsonrpc: "2.0",
       id: 3,
       method: "tools/call",
-      params: { name: "repo_search", arguments: { query: "events", catalog: catalogPath, limit: 10, offline: true } },
+      params: { name: "repo_search", arguments: { query: "events", path: fixture, catalog: catalogPath, limit: 10, offline: true } },
     },
   ]);
 
@@ -328,11 +328,12 @@ test("repo_index, repo_search query, and no-query repo_search catalog round-trip
   if (fs.existsSync(catalogPath)) fs.unlinkSync(catalogPath);
 });
 
-test("repo_search on an empty catalog returns a remediation hint pointing at repo_index", async () => {
-  // A non-existent catalog path loads as an empty catalog (no repositories).
+test("repo_search outside a repository with an empty catalog returns a remediation hint", async () => {
+  // A non-existent catalog path loads as an empty catalog (no repositories),
+  // and the temp directory is not inside a repository.
   const emptyCatalog = path.join(os.tmpdir(), `solumbe-mcp-empty-cat-${Date.now()}-${Math.random().toString(16).slice(2)}.json`);
   const messages = await runRequests([
-    { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "repo_search", arguments: { query: "events", catalog: emptyCatalog } } },
+    { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "repo_search", arguments: { query: "events", path: os.tmpdir(), catalog: emptyCatalog } } },
   ]);
 
   const search = structured(messages, 1);
@@ -1365,6 +1366,7 @@ test("a path-taking tool called without a path refuses a server cwd of / or home
         call(2, "change_impact", { query: "rename greet", path: " " }),
         call(3, "context_pack", { query: "where is greet", path: fixture }),
         call(4, "repo_search", {}),
+        call(5, "repo_search", { query: "greet" }),
       ]);
       assert.ok(Date.now() - startedAt < 20_000, `answers without scanning ${dir}`);
       for (const id of [1, 2]) {
@@ -1375,6 +1377,7 @@ test("a path-taking tool called without a path refuses a server cwd of / or home
       }
       assert.ok(byId(messages, 3).result, "an explicit path still works");
       assert.ok(byId(messages, 4).result, "a tool with no path argument is unaffected");
+      assert.ok(byId(messages, 5).result, "repo_search skips a broad cwd and still searches the catalog");
     } finally {
       process.chdir(saved);
     }

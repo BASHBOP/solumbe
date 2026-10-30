@@ -144,12 +144,15 @@ export const tools = [
     summary: "Search indexed repositories by path, domain, kind, route, imports, exports and symbols. Omit the query to list the catalog.",
     title: "Search Repository Catalog",
     description:
-      "Search indexed local repositories by path, domain, kind, route, imports, exports, and symbols. Omit query to list the local repository catalog instead (the catalog listing the old repo_catalog tool returned). Only searches repositories already in the local catalog — if the catalog is empty this returns no matches, so call repo_index on the target repositories first.",
+      "Search indexed local repositories by path, domain, kind, route, imports, exports, and symbols. Omit query to list the local repository catalog instead (the catalog listing the old repo_catalog tool returned). Searches the repository at `path` (the working directory by default) only; pass `paths` to search those repositories, or `all: true` to add every repository in the local catalog (call repo_index to add one). Outside a repository it searches the catalog.",
     annotations: { readOnlyHint: true },
     inputSchema: {
       type: "object",
       properties: {
         query: { type: "string", description: "Search query. Omit to return the catalog listing instead of search matches." },
+        path: { type: "string", description: "Repository to search. Defaults to current working directory." },
+        paths: { type: "array", items: { type: "string" }, description: "Repositories to search instead of the catalog." },
+        all: { type: "boolean", description: "Also search every repository in the local catalog." },
         catalog: { type: "string", description: "Optional catalog JSON path." },
         limit: { type: "number", description: "Maximum matches. Defaults to 25." },
         offline: { type: "boolean", description: "Use stored index files without refreshing fingerprints." },
@@ -770,7 +773,7 @@ async function dispatchTool(name, args) {
       if (typeof args.query !== "string" || !args.query.trim()) {
         return listCatalog(args);
       }
-      return withSearchRemediation(searchCatalog(args.query, args));
+      return withSearchRemediation(searchCatalog(args.query, { ...args, path: args.path ?? (broadServerCwd() ? undefined : ".") }));
     case "context_pack": {
       let result = generateContextPack(requiredString(args.query, "query"), { ...args, paths: contextRepoPaths(args) });
       if (args.online === true) result = await readContextPack(result);
@@ -906,9 +909,9 @@ async function dispatchTool(name, args) {
   }
 }
 
-// repo_search only sees repositories already in the local catalog. When the
-// catalog is empty (or holds no repositories), the agent gets an empty match
-// list with no clue why — so attach an explicit next step pointing at repo_index.
+// repo_search searches the working repository, or the local catalog when there
+// is none. When neither gave it a repository, the agent gets an empty match
+// list with no clue why — so attach an explicit next step.
 /**
  * @param {any} result
  * @returns {any}
@@ -917,7 +920,8 @@ function withSearchRemediation(result) {
   if (result && typeof result === "object" && !result.repositoryCount) {
     return {
       ...result,
-      remediation: "No repositories are in the local catalog yet. Call repo_index on the repositories you want to search, then retry repo_search.",
+      remediation:
+        "No repository was searched: the working directory is not inside a repository and the local catalog is empty. Pass `path` or `paths`, or call repo_index, then retry repo_search.",
     };
   }
   return result;
@@ -1030,6 +1034,22 @@ function isNotableFile(file) {
 }
 
 /**
+ * The server's cwd when it is / or home, too broad to treat as a repository.
+ * @returns {string|undefined}
+ */
+function broadServerCwd() {
+  const real = (/** @type {string} */ dir) => {
+    try {
+      return fs.realpathSync(dir);
+    } catch {
+      return path.resolve(dir);
+    }
+  };
+  const cwd = real(process.cwd());
+  return cwd === path.parse(cwd).root || cwd === real(os.homedir()) ? cwd : undefined;
+}
+
+/**
  * A tool that takes a repository path falls back to the server's cwd when the
  * call names none. A host that starts the server with no cwd (Claude Desktop's
  * config has none, so it runs from /) would then scan the whole filesystem: the
@@ -1041,17 +1061,13 @@ function isNotableFile(file) {
 function requireScannableDefaultPath(name, args) {
   const schema = tools.find((tool) => tool.name === name)?.inputSchema;
   if (!schema?.properties?.path) return;
+  // repo_search still has the catalog to search: from a broad cwd it skips
+  // the working repository and searches the catalog instead.
+  if (name === "repo_search") return;
   if (typeof args.path === "string" && args.path.trim()) return;
   if (Array.isArray(args.paths) && args.paths.length) return;
-  const real = (/** @type {string} */ dir) => {
-    try {
-      return fs.realpathSync(dir);
-    } catch {
-      return path.resolve(dir);
-    }
-  };
-  const cwd = real(process.cwd());
-  if (cwd !== path.parse(cwd).root && cwd !== real(os.homedir())) return;
+  const cwd = broadServerCwd();
+  if (!cwd) return;
   throw new McpProtocolError(
     -32602,
     `path is required: this solumbe server runs from ${cwd}, which is too broad to scan. Pass path (the repository's absolute path), or start the server from inside a repository.`,
