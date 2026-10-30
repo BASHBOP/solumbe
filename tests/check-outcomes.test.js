@@ -7,8 +7,9 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { formatCheckOutcomes, gradeCheckOutcomes } from "../scripts/hooks/check-outcomes.mjs";
-import { promptHash, readSessions } from "../scripts/hooks/route-outcomes.mjs";
+import { promptHash, readSessions, readUsage, turnTokens } from "../scripts/hooks/route-outcomes.mjs";
 import { requestHash } from "../src/lib/check-trial.js";
+import { billedTokens } from "../src/lib/tokens.js";
 
 const SCRIPT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "scripts", "hooks", "check-outcomes.mjs");
 const T0 = Date.parse("2026-09-26T10:00:00Z");
@@ -111,6 +112,85 @@ test("below the minimum sample no rate and no difference is claimed", () => {
   assert.equal(data.arms[0].corrected.rate, null);
   assert.deepEqual(data.fewerWhenShown, { corrected: null, reworked: null });
   assert.match(formatCheckOutcomes(data), /n < 30, withheld/);
+});
+
+function reply(sessionId, minutes, id, usage, extra = {}) {
+  return { type: "assistant", sessionId, timestamp: at(minutes), message: { id, role: "assistant", content: [{ type: "text", text: "ok" }], usage }, ...extra };
+}
+
+/** The fixture, with what each response was billed written into its sessions. */
+function billedFixture() {
+  const base = fixture();
+  const project = path.join(base.transcripts, "-Users-me-repo");
+  const append = (id, lines) => fs.appendFileSync(path.join(project, `${id}.jsonl`), `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
+  const first = { input_tokens: 10, cache_read_input_tokens: 1000, output_tokens: 100 };
+  append("s1", [
+    reply("s1", 1.5, "m1", first),
+    // A response that streamed two blocks repeats its usage under one id.
+    reply("s1", 1.6, "m1", first),
+    // The next prompt's turn, which no check graded.
+    reply("s1", 6.5, "m2", { input_tokens: 5000 }),
+  ]);
+  append("s2", [
+    reply("s2", 1.5, "m3", { cache_creation_input_tokens: 1000, cache_creation: { ephemeral_1h_input_tokens: 400 }, output_tokens: 20 }),
+    reply("s2", 3, "m4", { input_tokens: 50 }),
+    // A subagent's response is not this session's turn.
+    reply("s2", 2, "m5", { input_tokens: 999999 }, { isSidechain: true }),
+  ]);
+  return base;
+}
+
+test("billed tokens weight each kind by its price against an input token", () => {
+  assert.deepEqual(billedTokens({ input_tokens: 10, cache_read_input_tokens: 1000, output_tokens: 100 }), {
+    input: 10,
+    cacheRead: 1000,
+    cacheWrite5m: 0,
+    cacheWrite1h: 0,
+    output: 100,
+    weighted: 610,
+  });
+  const split = billedTokens({ cache_creation_input_tokens: 1000, cache_creation: { ephemeral_1h_input_tokens: 400, ephemeral_5m_input_tokens: 600 } });
+  assert.deepEqual([split.cacheWrite5m, split.cacheWrite1h, split.weighted], [600, 400, 1550]);
+  assert.equal(
+    billedTokens({ cache_creation_input_tokens: 10, cache_creation: { ephemeral_1h_input_tokens: 99 } }).cacheWrite1h,
+    10,
+    "the 1-hour share never exceeds the writes",
+  );
+  assert.equal(billedTokens({ input_tokens: -5, output_tokens: "x" }).weighted, 0);
+  assert.equal(billedTokens(undefined).weighted, 0);
+});
+
+test("a session's usage counts each response once and leaves subagents out", () => {
+  const { transcripts } = billedFixture();
+  const usage = readUsage(transcripts);
+  assert.deepEqual(
+    (usage.get("s1") ?? []).map((entry) => entry.tokens.weighted),
+    [610, 5000],
+  );
+  assert.deepEqual(
+    (usage.get("s2") ?? []).map((entry) => entry.tokens.weighted),
+    [1650, 50],
+  );
+  const events = readSessions(transcripts).get("s2") ?? [];
+  assert.equal(turnTokens(events, 0, usage.get("s2") ?? []), 1700, "a turn runs from its prompt to the next one");
+  assert.equal(turnTokens(events, events.length - 1, []), null, "a turn with no usage is unknown, not free");
+});
+
+test("each arm reports what its graded prompts' turns were billed", () => {
+  const { decisions, transcripts } = billedFixture();
+  const data = gradeCheckOutcomes(decisions, readSessions(transcripts), { minSample: 1, usage: readUsage(transcripts) });
+  const [shown, withheld] = data.arms;
+  assert.deepEqual(shown.billed, { n: 1, total: 610, median: 610, mean: 610, publishable: true }, "a prompt whose turn carried no usage is left out");
+  assert.deepEqual(withheld.billed, { n: 1, total: 1700, median: 1700, mean: 1700, publishable: true });
+  assert.match(formatCheckOutcomes(data), /\| withheld \| 1 \|.*\| 1 · 1,700 median, 1,700 mean \|/);
+
+  const below = gradeCheckOutcomes(decisions, readSessions(transcripts), { usage: readUsage(transcripts) });
+  assert.deepEqual([below.arms[1].billed.median, below.arms[1].billed.total], [null, 1700]);
+  assert.match(formatCheckOutcomes(below), /1 · 1,700 in all _\(n < 30, withheld\)_/);
+
+  const without = gradeCheckOutcomes(decisions, readSessions(transcripts), { minSample: 1 });
+  assert.equal(without.arms[0].billed, null);
+  assert.doesNotMatch(formatCheckOutcomes(without), /billed per prompt/);
 });
 
 test("the script reads a decision log and a transcripts directory, and says when there is no log", () => {
