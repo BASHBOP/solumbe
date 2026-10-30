@@ -8,6 +8,10 @@ This project follows SemVer.
 
 ### Fixed
 
+- **`repo_search` searches the repository you are working in.** It searched only the repositories in `~/.solumbe/catalog.json`, so a repository that was never indexed was invisible to it and every match came from whatever else had been indexed. It now searches the repository at `path` alone (the working directory by default, found from any subdirectory), without adding it to the catalog. `all: true` adds every catalogued repository, and `paths` searches only the repositories it names. Outside a repository, including a server started from `/` or the home directory, it searches the catalog as before. Each result says which it searched in `scope`. The CLI's `solumbe search` takes `--path` and `--all` the same way.
+
+### Fixed
+
 - **Look-alike symbols no longer outrank the file a request is about.** Asked to trim the MCP tool definitions, the pack ranked `ast-languages.js` (146) far above `mcp.js` (55): each per-language extractor loops over a local `definitions` of `names`, and every one matched the query again through its body identifiers. A query word found only among a symbol's body identifiers now counts 0.4 of one in its name, and each further symbol matching the same words adds less. Context engine version 6. A new `symbol-stacking` fixture and eval case record the miss; retrieval p@5 moves from 0.865 to 0.857 and MRR stays 0.988.
 
 ## [4.9.0] - 2026-10-28
