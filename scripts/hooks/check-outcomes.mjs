@@ -17,7 +17,9 @@
 // counts once, in the arm of its first check.
 //
 // Both outcomes are the proxies route-outcomes.mjs documents, with the same
-// minimum-sample rule and intervals.
+// minimum-sample rule and intervals. Beside them, each arm reports what its
+// turns were billed (`readUsage`), so a check that saves rework but costs more
+// tokens than it saves shows as that.
 //
 //   node scripts/hooks/check-outcomes.mjs [--log <file>] [--transcripts <dir>]
 //        [--window-min 60] [--min-sample 30] [--json]
@@ -29,7 +31,7 @@ import { fileURLToPath } from "node:url";
 
 import { checkLogPath, readDecisions } from "../../src/lib/check-trial.js";
 import { wilson } from "../../src/lib/regret.js";
-import { outcomesFor, readSessions } from "./route-outcomes.mjs";
+import { outcomesFor, readSessions, readUsage, turnTokens } from "./route-outcomes.mjs";
 
 const ARMS = ["shown", "withheld"];
 // A decision is logged when the tool returns; the transcript stamps the call
@@ -40,11 +42,14 @@ const JOIN_WINDOW_MS = 10 * 60000;
  * Join the decision log to the sessions and grade each arm.
  * @param {Record<string, any>[]} decisions check-decision log lines
  * @param {Map<string, any[]>} sessions
- * @param {{ windowMin?: number, minSample?: number }} [options]
+ * @param {{ windowMin?: number, minSample?: number, usage?: ReturnType<typeof readUsage> }} [options]
+ *   `usage`, from `readUsage` over the same transcripts, adds what each arm's
+ *   turns were billed.
  */
 export function gradeCheckOutcomes(decisions, sessions, options = {}) {
   const windowMs = (options.windowMin ?? 60) * 60000;
   const minSample = options.minSample ?? 30;
+  const usage = options.usage;
 
   /** @type {{ sessionId: string, events: any[], index: number, used: boolean }[]} */
   const calls = [];
@@ -54,7 +59,7 @@ export function gradeCheckOutcomes(decisions, sessions, options = {}) {
     });
   }
 
-  /** @type {Map<string, { arm: string, checks: number, outcome: ReturnType<typeof outcomesFor> }>} */
+  /** @type {Map<string, { arm: string, checks: number, outcome: ReturnType<typeof outcomesFor>, tokens: number|null }>} */
   const prompts = new Map();
   let unjoined = 0;
   let noPrompt = 0;
@@ -85,7 +90,13 @@ export function gradeCheckOutcomes(decisions, sessions, options = {}) {
     const key = `${call.sessionId}:${promptIndex}`;
     const known = prompts.get(key);
     if (known) known.checks += 1;
-    else prompts.set(key, { arm: decision.arm, checks: 1, outcome: outcomesFor(call.events, promptIndex, windowMs) });
+    else
+      prompts.set(key, {
+        arm: decision.arm,
+        checks: 1,
+        outcome: outcomesFor(call.events, promptIndex, windowMs),
+        tokens: usage ? turnTokens(call.events, promptIndex, usage.get(call.sessionId) ?? []) : null,
+      });
   }
 
   const rows = [...prompts.values()];
@@ -97,6 +108,12 @@ export function gradeCheckOutcomes(decisions, sessions, options = {}) {
       prompts: rows.filter((row) => row.arm === arm).length,
       corrected: proportion(graded.filter((row) => row.outcome.corrected).length, graded.length, minSample),
       reworked: proportion(editing.filter((row) => row.outcome.reworked).length, editing.length, minSample),
+      billed: usage
+        ? tokenSummary(
+            rows.flatMap((row) => (row.arm === arm && row.tokens !== null ? [row.tokens] : [])),
+            minSample,
+          )
+        : null,
     };
   });
   const [shown, withheld] = arms;
@@ -122,8 +139,24 @@ export function gradeCheckOutcomes(decisions, sessions, options = {}) {
       "A prompt is graded in the arm of its first check. A blocking FAIL is shown in both arms, and the command line is never withheld, so the arms differ by less than their names say.",
       "Rates over fewer than the minimum sample are withheld. A published rate carries a Wilson 95% interval; two rates whose intervals overlap are not shown to differ.",
       "Only the hosts whose transcripts are read here are graded, and only checks made through the MCP server.",
+      "`billed` is the turn from a prompt to the next one, in input-token equivalents (cache reads ×0.1, cache writes ×1.25 or ×2 by TTL, output ×5), not dollars. It leaves out subagents, whose turns live in transcripts of their own, and costs are heavy-tailed, so read the median before the mean. No interval is given, and two arms' figures are not shown to differ.",
     ],
   };
+}
+
+/**
+ * @param {number[]} values
+ * @param {number} minSample
+ * @returns {{ n: number, total: number, median: number|null, mean: number|null, publishable: boolean }}
+ */
+function tokenSummary(values, minSample) {
+  const n = values.length;
+  const publishable = n >= minSample && n > 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(n / 2);
+  const median = n % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+  const total = values.reduce((sum, v) => sum + v, 0);
+  return { n, total, median: publishable ? Math.round(median) : null, mean: publishable ? Math.round(total / n) : null, publishable };
 }
 
 /**
@@ -143,14 +176,18 @@ export function formatCheckOutcomes(data) {
   const cell = (/** @type {any} */ s) =>
     s.publishable ? `${s.n} · ${pct(s.rate)} (${pct(s.ci95[0])} to ${pct(s.ci95[1])})` : `${s.n} · ${s.hits} _(n < ${data.minSample}, withheld)_`;
   const differ = (/** @type {boolean|null} */ v) => (v === null ? "unknown (an arm fell below the minimum sample)" : v ? "yes" : "no — the intervals overlap");
+  const count = (/** @type {number} */ v) => Math.round(v).toLocaleString("en-US");
+  const billed = (/** @type {any} */ b) =>
+    b.publishable ? `${b.n} · ${count(b.median)} median, ${count(b.mean)} mean` : `${b.n} · ${count(b.total)} in all _(n < ${data.minSample}, withheld)_`;
+  const costed = data.arms.every((arm) => arm.billed);
   return [
     "# Check trial outcomes, same session",
     "",
     `Decisions: ${data.decisions} logged, ${data.joined} joined to a tool call in a transcript (${data.unjoined} not found), ${data.prompts} prompts, ${data.graded} with a follow-up inside ${data.windowMin} minutes. Minimum sample: ${data.minSample}.`,
     "",
-    "| Arm | prompts | corrected | reworked (of editing requests) |",
-    "| --- | ---: | --- | --- |",
-    ...data.arms.map((arm) => `| ${arm.name} | ${arm.prompts} | ${cell(arm.corrected)} | ${cell(arm.reworked)} |`),
+    `| Arm | prompts | corrected | reworked (of editing requests) |${costed ? " billed per prompt (input-token equivalents) |" : ""}`,
+    `| --- | ---: | --- | --- |${costed ? " --- |" : ""}`,
+    ...data.arms.map((arm) => `| ${arm.name} | ${arm.prompts} | ${cell(arm.corrected)} | ${cell(arm.reworked)} |${costed ? ` ${billed(arm.billed)} |` : ""}`),
     "",
     `Fewer corrections when the checks were shown: ${differ(data.fewerWhenShown.corrected)}`,
     `Less rework when the checks were shown: ${differ(data.fewerWhenShown.reworked)}`,
@@ -187,6 +224,7 @@ function main() {
   const data = gradeCheckOutcomes(readDecisions(logPath), readSessions(transcripts), {
     windowMin: flags["window-min"] === undefined ? undefined : Number(flags["window-min"]),
     minSample: flags["min-sample"] === undefined ? undefined : Number(flags["min-sample"]),
+    usage: readUsage(transcripts),
   });
   process.stdout.write(flags.json ? `${JSON.stringify({ ok: true, log: logPath, transcripts, ...data }, null, 2)}\n` : `${formatCheckOutcomes(data)}\n`);
 }
