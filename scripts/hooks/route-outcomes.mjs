@@ -46,6 +46,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { wilson } from "../../src/lib/regret.js";
+import { billedTokens } from "../../src/lib/tokens.js";
 import { agentModelLogPath } from "./enforce-agent-model.mjs";
 import { isHarnessPrompt, routeLogPath } from "./route-prompt.mjs";
 
@@ -99,13 +100,7 @@ function promptText(record) {
 export function readSessions(dir) {
   /** @type {Map<string, any[]>} */
   const sessions = new Map();
-  const files = [];
-  for (const entry of safeReaddir(dir)) {
-    const full = path.join(dir, entry);
-    if (entry.endsWith(".jsonl")) files.push(full);
-    else for (const inner of safeReaddir(full)) if (inner.endsWith(".jsonl")) files.push(path.join(full, inner));
-  }
-  for (const file of files) {
+  for (const file of transcriptFiles(dir)) {
     let raw;
     try {
       raw = fs.readFileSync(file, "utf8");
@@ -167,6 +162,76 @@ export function readSessions(dir) {
     sessions.set(id, kept);
   }
   return sessions;
+}
+
+/**
+ * What every model response in a session was billed, in time order, from the
+ * `usage` each assistant record carries. Kept apart from `readSessions`, whose
+ * events are addressed by position. A response that streamed several content
+ * blocks is written as several records with the same message id and the same
+ * usage, so each message id counts once.
+ * @param {string} dir `~/.claude/projects` or a directory shaped like it
+ * @returns {Map<string, { ts: number, tokens: ReturnType<typeof billedTokens> }[]>}
+ */
+export function readUsage(dir) {
+  /** @type {Map<string, { ts: number, tokens: ReturnType<typeof billedTokens> }[]>} */
+  const usage = new Map();
+  const seen = new Set();
+  for (const file of transcriptFiles(dir)) {
+    let raw;
+    try {
+      raw = fs.readFileSync(file, "utf8");
+    } catch {
+      continue;
+    }
+    for (const line of raw.split("\n")) {
+      if (!line.includes('"type":"assistant"') || !line.includes('"usage"')) continue;
+      let record;
+      try {
+        record = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      const sessionId = record?.sessionId;
+      const ts = Date.parse(record?.timestamp ?? "");
+      const id = record?.message?.id ?? record?.requestId;
+      if (record?.type !== "assistant" || !sessionId || Number.isNaN(ts) || record.isSidechain || !record.message?.usage) continue;
+      if (id) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+      }
+      usage.set(sessionId, [...(usage.get(sessionId) ?? []), { ts, tokens: billedTokens(record.message.usage) }]);
+    }
+  }
+  for (const entries of usage.values()) entries.sort((a, b) => a.ts - b.ts);
+  return usage;
+}
+
+/**
+ * What the turn answering the prompt at `index` was billed: every response from
+ * that prompt until the next prompt or interruption, or the end of the session.
+ * @param {any[]} events a session from `readSessions`
+ * @param {number} index
+ * @param {{ ts: number, tokens: ReturnType<typeof billedTokens> }[]} usage the same session from `readUsage`
+ * @returns {number|null} input-token equivalents, or null when no response in the turn carried usage
+ */
+export function turnTokens(events, index, usage) {
+  const start = events[index].ts;
+  const next = events.slice(index + 1).find((e) => e.kind === "prompt" || e.kind === "interrupt");
+  const end = next ? next.ts : Infinity;
+  const inTurn = usage.filter((entry) => entry.ts >= start && entry.ts < end);
+  return inTurn.length ? inTurn.reduce((sum, entry) => sum + entry.tokens.weighted, 0) : null;
+}
+
+/** @param {string} dir */
+function transcriptFiles(dir) {
+  const files = [];
+  for (const entry of safeReaddir(dir)) {
+    const full = path.join(dir, entry);
+    if (entry.endsWith(".jsonl")) files.push(full);
+    else for (const inner of safeReaddir(full)) if (inner.endsWith(".jsonl")) files.push(path.join(full, inner));
+  }
+  return files;
 }
 
 /** @param {string} dir */
