@@ -4,7 +4,7 @@
 
 > For teams that want any coding agent to produce evidence a human can trust before merge.
 
-**v4.9.0** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
+**v4.10.0** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
 
 Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep -->
 
@@ -20,6 +20,15 @@ Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep
 ---
 
 ## What's New
+
+!!! tip "v4.10.0 published (2026-10-31)"
+    Search and ranking fixes, and shorter tool definitions. No command or field was removed.
+
+    - `repo_search` searches the repository at `path` (the working directory by default) instead of only the catalog, so a repository that was never indexed is no longer invisible to it. `all: true` adds every catalogued repository; each result names its `scope`.
+    - A symbol matches strongly only when two request words are in its own name, so look-alike helpers no longer outrank the file a request is about. Context engine version 7.
+    - The MCP `tools/list` response is about 700 tokens (13%) shorter. A declared intent is never written through a symlink or outside the repository.
+
+    [npm v4.10.0](https://www.npmjs.com/package/@bashbop/solumbe/v/4.10.0) · [GitHub Release](https://github.com/BASHBOP/solumbe/releases/tag/v4.10.0) · [MCP Registry](https://registry.modelcontextprotocol.io/?q=io.github.BASHBOP%2Fsolumbe)
 
 !!! tip "v4.9.0 published (2026-10-28)"
     A change shows what depends on it. Ranking is unchanged, and no command or field was removed.
@@ -311,7 +320,7 @@ flowchart LR
 === "Install"
 
     ```bash
-    npm install -g @bashbop/solumbe@4.9.0
+    npm install -g @bashbop/solumbe@4.10.0
     solumbe doctor
     solumbe context "review this change" --path .
     ```
@@ -319,7 +328,7 @@ flowchart LR
 === "No Global Install"
 
     ```bash
-    npx -y @bashbop/solumbe@4.9.0 doctor
+    npx -y @bashbop/solumbe@4.10.0 doctor
     ```
 
 === "Source Checkout"
