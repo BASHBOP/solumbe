@@ -227,10 +227,43 @@ export function readIntent(root, value) {
  * @returns {string} the path written
  */
 export function writeIntent(root, intent, out = DEFAULT_INTENT_PATH) {
+  // The default path is the repository's, so a checkout decides what is there:
+  // a committed `.solumbe` or `intent.json` that is a symlink would carry the
+  // write to a file outside it. A relative path stays inside the repository,
+  // and every write is a new file renamed into place, never one through a link.
   const file = path.resolve(root, out);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `${JSON.stringify(intent, null, 2)}\n`);
+  const dir = path.dirname(file);
+  if (!path.isAbsolute(out)) {
+    const realRoot = fs.realpathSync(root);
+    const relative = path.relative(realRoot, fs.realpathSync(nearestExisting(dir)));
+    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+      throw new Error(`refusing to write ${out}: it leads out of the repository`);
+    }
+  }
+  if (fs.lstatSync(file, { throwIfNoEntry: false })?.isSymbolicLink()) {
+    throw new Error(`refusing to write ${out}: it is a symlink`);
+  }
+  fs.mkdirSync(dir, { recursive: true });
+  const temp = path.join(dir, `.${path.basename(file)}.${process.pid}.${crypto.randomBytes(4).toString("hex")}.tmp`);
+  fs.writeFileSync(temp, `${JSON.stringify(intent, null, 2)}\n`, { flag: "wx" });
+  try {
+    fs.renameSync(temp, file);
+  } catch (error) {
+    fs.rmSync(temp, { force: true });
+    throw error;
+  }
   return file;
+}
+
+/**
+ * The deepest existing directory at or above `dir`.
+ * @param {string} dir
+ * @returns {string}
+ */
+function nearestExisting(dir) {
+  let current = dir;
+  while (!fs.existsSync(current) && path.dirname(current) !== current) current = path.dirname(current);
+  return current;
 }
 
 /**

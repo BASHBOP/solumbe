@@ -88,7 +88,10 @@ import { estimateTokens, estimateTokenSections } from "./tokens.js";
 // lists only files a test runner executes.
 // 5: a dependency request leads with the manifests and lockfiles, and its
 // package names and dependency words no longer score source files.
-const contextEngineVersion = 5;
+// 7: a strong symbol match needs two words in the symbol's own name; words
+// found only in its body count as weak matches (version 6 discounted them by
+// a tuned 0.4 instead). Another symbol matching the same words adds less.
+const contextEngineVersion = 7;
 const defaultLimit = 8;
 // A definition of a symbol the request names that is not the one the code
 // imports (that one is pinned): a local copy, an export nothing uses.
@@ -1109,6 +1112,8 @@ function scoreSymbols(symbols, tokens, tokenStats) {
   let strongScore = 0;
   /** @type {Map<string, number>} */
   const weakByToken = new Map();
+  /** @type {Map<string, number>} */
+  const strongRepeats = new Map();
 
   for (const symbol of symbols) {
     const nameTokens = new Set(tokenize(`${symbol.name} ${symbol.terms?.join(" ") ?? ""}`));
@@ -1145,8 +1150,21 @@ function scoreSymbols(symbols, tokens, tokenStats) {
     }
     hitScore = Math.round(hitScore);
 
-    if (matchedTokens.length >= 2 || variantHits.length >= 2) {
-      strongScore += hitScore;
+    // A strong match needs two of the words in the symbol's own name. Words
+    // found only among the identifiers in its body still count, through the
+    // weak path below: six language extractors that each loop over a local
+    // `definitions` of `names` were the top file for "the MCP tool
+    // definitions and their names".
+    const ownNameHits = matchedTokens.flatMap((token) => tokenVariants(token).filter((variant) => ownNameTokens.has(variant)));
+    const ownNameMatches = matchedTokens.filter((token) => tokenVariants(token).some((variant) => ownNameTokens.has(variant)));
+    if (ownNameMatches.length >= 2 || ownNameHits.length >= 2) {
+      // The same words matched again by another symbol add less each time: a
+      // file of near-identical functions repeats one match, it does not
+      // make a stronger one.
+      const key = [...matchedTokens].sort().join(" ");
+      const seen = (strongRepeats.get(key) ?? 0) + 1;
+      strongRepeats.set(key, seen);
+      strongScore += Math.round(hitScore / seen);
     } else {
       for (const token of matchedTokens) {
         weakByToken.set(token, Math.max(weakByToken.get(token) ?? 0, hitScore));

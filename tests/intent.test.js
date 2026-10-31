@@ -166,6 +166,33 @@ test("an intent round-trips through its file, its JSON and the record itself", (
   assert.throws(() => readIntent(root, "{not json"), /not valid JSON/);
 });
 
+test("an intent is never written through a symlink or out of the repository", () => {
+  const root = fixture();
+  const intent = declareIntent(REQUEST, { path: root });
+  const outside = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "solumbe-outside-")));
+  const victim = path.join(outside, "victim.txt");
+  fs.writeFileSync(victim, "keep me\n");
+
+  // A checkout can commit the intent file, or its directory, as a link.
+  fs.mkdirSync(path.join(root, ".solumbe"));
+  fs.symlinkSync(victim, path.join(root, DEFAULT_INTENT_PATH));
+  assert.throws(() => writeIntent(root, intent), /is a symlink/);
+  fs.rmSync(path.join(root, ".solumbe"), { recursive: true });
+  fs.symlinkSync(outside, path.join(root, ".solumbe"));
+  assert.throws(() => writeIntent(root, intent), /leads out of the repository/);
+  assert.throws(() => writeIntent(root, intent, "../escaped.json"), /leads out of the repository/);
+  assert.equal(fs.readFileSync(victim, "utf8"), "keep me\n");
+  assert.deepEqual(fs.readdirSync(outside), ["victim.txt"]);
+
+  // An absolute path is the caller's own choice, and an existing file is replaced.
+  fs.rmSync(path.join(root, ".solumbe"));
+  assert.equal(writeIntent(root, intent, path.join(outside, "chosen.json")), path.join(outside, "chosen.json"));
+  writeIntent(root, intent);
+  writeIntent(root, amendIntent(intent, ["README.md"], "docs too"));
+  assert.equal(readIntent(root, DEFAULT_INTENT_PATH).amendments.length, 1);
+  assert.deepEqual(fs.readdirSync(path.join(root, ".solumbe")), ["intent.json"]);
+});
+
 test("convergence holds the diff against the declared scope and binds the receipt to the contract", () => {
   const root = fixture();
   const intent = declareIntent(REQUEST, { path: root });

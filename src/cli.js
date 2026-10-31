@@ -326,6 +326,8 @@ async function handleSearch(parsed) {
   const { formatSearchResults, searchCatalog } = await import("./lib/catalog.js");
   const query = parsed.positionals.join(" ").trim();
   const result = searchCatalog(query, {
+    path: parsed.flags.path ?? ".",
+    all: parsed.flags.all === true,
     catalog: parsed.flags.catalog,
     limit: parsed.flags.limit,
     offline: parsed.flags.offline,
