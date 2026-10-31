@@ -348,9 +348,14 @@ The 2026-10-30 change added the `symbol-stacking` fixture and the
 trim the MCP tool definitions, the pack ranked `ast-languages.js` (146) far
 above `mcp.js` (55), because each of its per-language extractors loops over a
 local `definitions` of `names`, and every one matched the query again through
-its body identifiers. A query word found only in a symbol's body now counts
-0.4 of one in its name, and each further symbol matching the same words adds
-less (1, 1/2, 1/3...). Context engine version 6. Without the change the case
+its body identifiers. Each further symbol matching the same words now adds
+less (1, 1/2, 1/3...), and a strong match needs two query words in the
+symbol's own name: words found only in a body count as weak matches, one per
+word for the file. (Context engine version 6 discounted body-only words by a
+tuned 0.4; version 7, 2026-10-31, replaced it with that rule, which scores the
+decoy 44 against the registry's 118, and `ast-languages.js` 45 for the original
+query, against 41 with the weight and 86 with saturation alone. The retrieval
+metrics are unchanged.) Without the change the case
 still passes at k=5 (the registry ranks second), so
 `tests/context-engine.test.js` requires it first and at more than twice the
 decoy's score; MRR moves from 0.977 to 0.988 with it. The case lowers p@5 from
