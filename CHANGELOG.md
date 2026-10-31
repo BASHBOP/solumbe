@@ -6,6 +6,14 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+## [4.10.0] - 2026-10-31
+
+`repo_search` searches the repository you are working in, the pack stops ranking look-alike symbols above the file a request names, and the MCP tool definitions are 13% shorter. A declared intent is never written through a symlink. No command or field was removed.
+
+### Added
+
+- **The check trial reports what each arm's turns were billed.** `check-outcomes` grades each arm on corrections and rework, and now also on billed tokens per graded prompt (n, total, median, mean), weighted into input-token equivalents by price ratio (cache reads ×0.1, cache writes ×1.25 or ×2, output ×5). Subagent turns are left out, and no difference between the arms is claimed.
+
 ### Changed
 
 - **Shorter MCP tool definitions.** The tools/list response drops from 21,732 to 18,951 characters (about 700 tokens, 13%) for a client that loads every definition up front. Notes on retired tool names, a cache sentence repeated by four tools, and implementation detail in the `head`, `staged`, `receipt`, `intent` and `online` descriptions are gone. No tool, option or behaviour changed.
@@ -13,9 +21,7 @@ This project follows SemVer.
 ### Fixed
 
 - **`repo_search` searches the repository you are working in.** It searched only the repositories in `~/.solumbe/catalog.json`, so a repository that was never indexed was invisible to it and every match came from whatever else had been indexed. It now searches the repository at `path` alone (the working directory by default, found from any subdirectory), without adding it to the catalog. `all: true` adds every catalogued repository, and `paths` searches only the repositories it names. Outside a repository, including a server started from `/` or the home directory, it searches the catalog as before. Each result says which it searched in `scope`. The CLI's `solumbe search` takes `--path` and `--all` the same way.
-
-### Fixed
-
+- **A declared intent is never written through a symlink or out of the repository.** `solumbe declare` and `solumbe amend` wrote `.solumbe/intent.json` with a plain write, so a checkout that committed that path, or `.solumbe` itself, as a symlink could send the write to any file the user can write. A relative path must now resolve inside the repository, a symlinked target is refused, and the record is written to a new temp file and renamed into place.
 - **Look-alike symbols no longer outrank the file a request is about.** Asked to trim the MCP tool definitions, the pack ranked `ast-languages.js` (146) far above `mcp.js` (55): each per-language extractor loops over a local `definitions` of `names`, and every one matched the query again through its body identifiers. A symbol now matches strongly only when two query words are in its own name; words found only among its body identifiers count as weak matches, one per word for the whole file. Each further symbol matching the same words adds less. Context engine version 7 (version 6 discounted body-only words by a tuned 0.4 instead, which is gone). A new `symbol-stacking` fixture and eval case record the miss; retrieval p@5 moves from 0.865 to 0.857 and MRR stays 0.988.
 
 ## [4.9.0] - 2026-10-28
