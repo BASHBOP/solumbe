@@ -189,3 +189,48 @@ test("a repository deleted from disk is stale in search and dropped by the next 
     [live],
   );
 });
+
+// Search must not depend on what happens to be in the catalog: the repository
+// being worked in is searched alone, even though it was never indexed; `all`
+// adds the catalog, and `paths` searches only the repositories it names.
+// Outside a repository the catalog is searched. None of it touches the catalog.
+test("searchCatalog searches the working repository alone unless asked for the catalog", () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "solumbe-scope-"));
+  const catalogPath = path.join(home, "catalog.json");
+  const indexed = path.join(home, "indexed");
+  const working = path.join(home, "working");
+  for (const [root, file] of [
+    [indexed, "billing.ts"],
+    [working, "rsvp.ts"],
+  ]) {
+    fs.mkdirSync(path.join(root, "src"), { recursive: true });
+    fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: path.basename(root) }));
+    fs.writeFileSync(path.join(root, "src", file), "export function submitRsvp() { return true; }\n");
+  }
+  indexRepositories([indexed], { catalog: catalogPath });
+  const names = (/** @type {ReturnType<typeof searchCatalog>} */ result) => [...new Set(result.matches.map((match) => match.repository.name))].sort();
+
+  const fromSubdirectory = searchCatalog("submit rsvp", { catalog: catalogPath, path: path.join(working, "src") });
+  assert.equal(fromSubdirectory.scope, "working");
+  assert.deepEqual(names(fromSubdirectory), ["working"]);
+
+  const all = searchCatalog("submit rsvp", { catalog: catalogPath, path: working, all: true });
+  assert.equal(all.scope, "working+catalog");
+  assert.deepEqual(names(all), ["indexed", "working"]);
+
+  const alreadyIndexed = searchCatalog("submit rsvp", { catalog: catalogPath, path: indexed, all: true });
+  assert.equal(alreadyIndexed.repositoryCount, 1);
+
+  const onlyPaths = searchCatalog("submit rsvp", { catalog: catalogPath, paths: [working], all: true, offline: true });
+  assert.equal(onlyPaths.scope, "paths");
+  assert.deepEqual(names(onlyPaths), ["working"]);
+
+  const outside = searchCatalog("submit rsvp", { catalog: catalogPath, path: os.tmpdir() });
+  assert.equal(outside.scope, "catalog");
+  assert.deepEqual(names(outside), ["indexed"]);
+
+  assert.deepEqual(
+    listCatalog({ catalog: catalogPath }).repositories.map((repository) => repository.name),
+    ["indexed"],
+  );
+});

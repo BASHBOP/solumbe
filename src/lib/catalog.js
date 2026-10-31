@@ -50,6 +50,9 @@ import { computeTokenDocFrequency, extractPhrases, scorePhraseMatches, tokenWeig
  * @property {number} [limit]
  * @property {boolean} [discover]
  * @property {boolean} [offline]
+ * @property {string} [path] The repository being worked in: searched with the catalog even when it was never indexed.
+ * @property {string[]} [paths] Repositories to search instead of the catalog.
+ * @property {boolean} [all] Search the catalog as well as the working repository.
  */
 
 const catalogVersion = 1;
@@ -242,16 +245,42 @@ export function searchCatalog(query, options = {}) {
   // indexer's probe answers, identical for every repository in the loop.
   const capabilities = options.offline ? codeMapCapabilitySignature() : "";
 
-  for (const repository of catalog.repositories) {
+  // Search must not depend on what happens to be in the catalog. `paths`
+  // searches exactly those repositories; otherwise the repository being worked
+  // in is searched alone, and the catalog joins only with `all` or when there
+  // is no working repository. Nothing here is written to the catalog.
+  const explicit = Array.isArray(options.paths) && options.paths.length > 0;
+  const working = explicit
+    ? normalizePathList(options.paths ?? [])
+    : options.path
+      ? [enclosingRepositoryRoot(options.path)].filter((root) => root !== undefined)
+      : [];
+  const withCatalog = !explicit && (options.all === true || working.length === 0);
+  const catalogued = new Set(catalog.repositories.map((repository) => realpath(repository.root) ?? repository.root));
+  /** @type {{ repository: CatalogRepository, catalogued: boolean }[]} */
+  const targets = [
+    ...(withCatalog ? catalog.repositories.map((repository) => ({ repository, catalogued: true })) : []),
+    ...working
+      .filter((root) => !withCatalog || !catalogued.has(realpath(root) ?? root))
+      .map((root) => ({ repository: { root, name: path.basename(root) }, catalogued: false })),
+  ];
+  const scope = explicit ? "paths" : working.length ? (withCatalog ? "working+catalog" : "working") : "catalog";
+
+  for (const { repository, catalogued: fromCatalog } of targets) {
     // A deleted repository is stale, not failing: say so once, and the next
     // `solumbe index` drops it.
     if (!fs.existsSync(repository.root)) {
-      stale.push(repository.root);
+      if (fromCatalog) {
+        stale.push(repository.root);
+      } else {
+        errors.push({ root: repository.root, error: "repository not found" });
+      }
       continue;
     }
     try {
-      const map = options.offline ? readIndexedMap(repository, capabilities) : getCachedCodeMap(repository.root);
-      loaded.push({ repository, map });
+      // A repository outside the catalog has no stored index to read offline.
+      const map = options.offline && fromCatalog ? readIndexedMap(repository, capabilities) : getCachedCodeMap(repository.root);
+      loaded.push({ repository: fromCatalog ? repository : catalogEntryFromMap(map, new Date().toISOString()), map });
     } catch (error) {
       errors.push({
         root: repository.root,
@@ -283,13 +312,14 @@ export function searchCatalog(query, options = {}) {
 
   matches.sort((a, b) => b.score - a.score || a.repository.name.localeCompare(b.repository.name) || a.file.path.localeCompare(b.file.path));
 
-  /** @type {{ ok: boolean, query: string, tokens: string[], catalogPath: string, repositoryCount: number, matchCount: number, matches: ReturnType<typeof scoreFile>[], errors: { root: string, error: string }[], stale?: string[], staleHint?: string, tokenEstimate?: object }} */
+  /** @type {{ ok: boolean, query: string, tokens: string[], catalogPath: string, scope: string, repositoryCount: number, matchCount: number, matches: ReturnType<typeof scoreFile>[], errors: { root: string, error: string }[], stale?: string[], staleHint?: string, tokenEstimate?: object }} */
   const result = {
     ok: true,
     query,
     tokens,
     catalogPath,
-    repositoryCount: catalog.repositories.length,
+    scope,
+    repositoryCount: targets.length,
     matchCount: matches.length,
     matches: matches.slice(0, limit),
     errors,
@@ -649,8 +679,27 @@ function normalizeLimit(value, fallback, max) {
 }
 
 /**
- * @param {string} root
+ * The nearest directory at or above `start` that looks like a repository root.
+ * @param {string} start
  * @returns {string|undefined}
+ */
+function enclosingRepositoryRoot(start) {
+  let current = path.resolve(start);
+  for (;;) {
+    if (isDirectory(current) && repoMarker(current)) {
+      return current;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      return undefined;
+    }
+    current = parent;
+  }
+}
+
+/**
+ * @param {string} root
+ * @returns {string | undefined}
  */
 function repoMarker(root) {
   for (const marker of repoMarkers) {
