@@ -97,7 +97,7 @@ export const tools = [
     summary: "AST-backed JSON code map: imports, exports, routes, domains and data access across TS/JS, Go, C#, Python, Java, Ruby and Rust.",
     title: "Map Repository",
     description:
-      "Map a repository into a compact JSON code map, optionally narrowed by domain, file kind, or controller route. Pass domain to find files for a feature, kind to find files of a type (route, controller, service, apiClient, component, test), or route to match Nest controller routes by substring/regex. Replaces the old find_domain, find_file_kind, find_backend_route, and find_frontend_api_client tools. Uses a per-user external cache and leaves the target repository unchanged.",
+      "Map a repository into a compact JSON code map, optionally narrowed by domain, file kind, or controller route. Pass domain to find files for a feature, kind to find files of a type (route, controller, service, apiClient, component, test), or route to match Nest controller routes by substring/regex.",
     annotations: { readOnlyHint: true },
     inputSchema: {
       type: "object",
@@ -121,7 +121,7 @@ export const tools = [
       "Index local repositories into a per-user catalog; dryRun discovers read-only. Markdown is indexed too, so skills and docs pages rank alongside code. The inspected repository is never modified.",
     title: "Index Repositories",
     description:
-      "Index local repositories: generate per-user external indexes and add them to the local catalog. Pass discover:true to find repository roots under the given paths first. Pass dryRun:true to discover and report without writing any indexes or catalog (read-only); this replaces the old repo_discover tool. Without dryRun this mutates the persistent local catalog, so it is not a pure read.",
+      "Index local repositories: generate per-user external indexes and add them to the local catalog. Pass discover:true to find repository roots under the given paths first. Pass dryRun:true to discover and report without writing any indexes or catalog (read-only). Without dryRun this mutates the persistent local catalog, so it is not a pure read.",
     annotations: { readOnlyHint: false },
     inputSchema: {
       type: "object",
@@ -144,7 +144,7 @@ export const tools = [
     summary: "Search indexed repositories by path, domain, kind, route, imports, exports and symbols. Omit the query to list the catalog.",
     title: "Search Repository Catalog",
     description:
-      "Search indexed local repositories by path, domain, kind, route, imports, exports, and symbols. Omit query to list the local repository catalog instead (the catalog listing the old repo_catalog tool returned). Searches the repository at `path` (the working directory by default) only; pass `paths` to search those repositories, or `all: true` to add every repository in the local catalog (call repo_index to add one). Outside a repository it searches the catalog.",
+      "Search indexed local repositories by path, domain, kind, route, imports, exports, and symbols. Omit query to list the local repository catalog instead. Searches the repository at `path` (the working directory by default) only; pass `paths` to search those repositories, or `all: true` to add every repository in the local catalog (call repo_index to add one). Outside a repository it searches the catalog.",
     annotations: { readOnlyHint: true },
     inputSchema: {
       type: "object",
@@ -165,7 +165,7 @@ export const tools = [
       "Task-aware packet: primary and related files, hotspots, tests, validation commands and token estimates, with git state read live. online lets a model read demote files it judges irrelevant; it is off unless asked. Run before planning or editing.",
     title: "Context Pack",
     description:
-      "Generate a task-aware local context packet with primary files, related files, tests, and validation commands. Uses a per-user external cache and leaves the target repository unchanged. Deterministic by default; pass online:true to also ask a read model (TypeSafe's Jev with TYPESAFE_API_KEY, or Claude with ANTHROPIC_API_KEY or SOLUMBE_READ_PROVIDER=claude) what kind of work the request is and which candidate files it needs, which relabels a confidently read intent and demotes files it judges irrelevant, reported under modelRead.",
+      "Generate a task-aware local context packet with primary files, related files, tests, and validation commands. Deterministic by default; online:true also asks a read model for the request's intent and which candidate files it needs, reported under modelRead.",
     annotations: { readOnlyHint: true, openWorldHint: true },
     inputSchema: {
       type: "object",
@@ -189,7 +189,7 @@ export const tools = [
         online: {
           type: "boolean",
           description:
-            "Ask a read model (TypeSafe's Jev, or Claude through forced tool use) to read the request (intent, and relevance of each candidate file) in one call, and apply answers that clear their confidence gate. Needs TYPESAFE_API_KEY or ANTHROPIC_API_KEY (SOLUMBE_READ_PROVIDER picks one when both are set); without either the pack is returned unchanged with modelRead.source offline. Defaults to false.",
+            "Ask a read model (TypeSafe's Jev or Claude) for the request's intent and each candidate file's relevance, applying confident answers. Needs TYPESAFE_API_KEY or ANTHROPIC_API_KEY; without either the pack is unchanged. Defaults to false.",
         },
       },
       required: ["query"],
@@ -201,7 +201,7 @@ export const tools = [
       "Ranks the files most likely to own a plain-English change request, with risk flags and suggested tests. A diff base adds exact changed-file evidence beside the heuristic.",
     title: "Change Impact",
     description:
-      "Given a plain-English change request, rank the files most likely to own the change, with risk flags, suggested tests, and an implementation plan. Optional diff base surfaces exact changed-file evidence alongside the heuristic. When the repository's .solumberc.json lists companions, companions also carries the top few files each companion repository would own for the same request. Uses a per-user external cache and leaves the target repository unchanged.",
+      "Given a plain-English change request, rank the files most likely to own the change, with risk flags, suggested tests, and an implementation plan. Optional diff base surfaces exact changed-file evidence alongside the heuristic. When the repository's .solumberc.json lists companions, companions also carries the top few files each companion repository would own for the same request.",
     annotations: { readOnlyHint: true },
     inputSchema: {
       type: "object",
@@ -243,7 +243,7 @@ export const tools = [
       "Agent Experience: how cheap and safe it is for an agent to make this change here. Changeability, Containment, Guardrails and Clarity, with concrete recommendations for raising the score.",
     title: "Agent Experience (AX)",
     description:
-      'Score Agent Experience (AX): a single 0–100 number answering "how cheap and safe is it for an agent to make this change here?", blending Changeability (token cost), Containment (blast radius), Guardrails (tests / validation / CODEOWNERS / CI), and Clarity (task groundedness). Deterministic and composed from the change_impact, token-estimate, and CODEOWNERS engines — no new analysis. Returns sub-scores, drivers, and concrete recommendations for raising AX. Uses a per-user external cache and leaves the target repository unchanged.',
+      'Score Agent Experience (AX): a single 0–100 number answering "how cheap and safe is it for an agent to make this change here?", blending Changeability (token cost), Containment (blast radius), Guardrails (tests / validation / CODEOWNERS / CI), and Clarity (task groundedness). Returns sub-scores, drivers, and concrete recommendations for raising AX.',
     annotations: { readOnlyHint: true },
     inputSchema: {
       type: "object",
@@ -286,7 +286,7 @@ export const tools = [
       "0–100 distance between the stated task and the actual diff: Coverage, Scope and Risk alignment. head scores exactly base..head; staged binds to the index tree. Emits a timestamp-free receipt anyone can recompute, which a model cannot award itself.",
     title: "Convergence Score",
     description:
-      "Score convergence: a deterministic 0–100 measure of the distance between a stated task (intent) and the actual git diff (execution), with sub-scores for Coverage (did the intent happen?), Scope (did only the intent happen?), and Risk alignment (did unrequested drift land on risk-sensitive paths?). Composed from the change_impact diff comparison and the shared risk vocabulary — no model, no new analysis. New files beside a confirmed owner and tests of confirmed files count as in scope, listed under drivers.inferredRelated. A task that predicts no owner file is reported as band inconclusive with no score, rather than as a low one. Emits a recomputable receipt (a timestamp-free hash anyone can regenerate and verify) as durable evidence. Requires a base git ref to diff against; scores the working tree's tracked changes unless head or staged selects an exact subject.",
+      "Score convergence: a deterministic 0–100 measure of the distance between a stated task (intent) and the actual git diff (execution), with sub-scores for Coverage (did the intent happen?), Scope (did only the intent happen?), and Risk alignment (did unrequested drift land on risk-sensitive paths?). No model. A task that predicts no owner file is band inconclusive, with no score. Emits a recomputable receipt (a hash anyone can regenerate). Requires a base git ref to diff against; scores the working tree's tracked changes unless head or staged selects an exact subject.",
     annotations: { readOnlyHint: false },
     inputSchema: {
       type: "object",
@@ -295,15 +295,13 @@ export const tools = [
         base: { type: "string", description: "Git ref to diff against (e.g. origin/main, HEAD~1). Required." },
         head: {
           type: "string",
-          description:
-            "Score exactly base..head (a direct tree diff, no merge base) instead of the working tree, and bind the receipt to the head commit and its tree SHA. Uncommitted and untracked files play no part. Cannot be combined with staged.",
+          description: "Score exactly base..head instead of the working tree; the receipt binds to the head commit. Cannot be combined with staged.",
         },
         path: { type: "string", description: "Repository path. Defaults to current working directory." },
         top: { type: "number", description: "Number of predicted owner files to consider. Defaults to 10." },
         staged: {
           type: "boolean",
-          description:
-            "Measure only the exact Git index tree and bind the receipt to its tree SHA. May create Git object or index-cache metadata; source files are unchanged.",
+          description: "Score only the Git index; the receipt binds to its tree.",
         },
         includeUntracked: {
           type: "boolean",
@@ -311,8 +309,7 @@ export const tools = [
             "Working-tree mode only: also score untracked, non-ignored files. Defaults to false; untracked files are otherwise listed under untracked and not scored.",
         },
         intent: {
-          description:
-            "Optional declared intent (from change_impact with declare: the record, its JSON, or a path to it). The diff is then scored against the files declared before the edit instead of a live prediction, and the receipt names the contract.",
+          description: "Declared intent from change_impact declare (record, JSON, or path): score against the declared files instead of a live prediction.",
         },
         includeMarkdown: { type: "boolean", description: "Return a compact human-readable markdown report instead of the full JSON. Defaults to false." },
       },
@@ -325,7 +322,7 @@ export const tools = [
       "The merge gate, from repository state alone: changed files, secret safety, risk paths, release discipline, validation, dependency audit, policy profile and a convergence floor. With pr, adds review decision, CODEOWNERS, branch protection and checks through your own gh login.",
     title: "Review Gate",
     description:
-      "Gate a change for merge and return a PASS / WARN / FAIL verdict. Omit pr to run the local, no-GitHub gate against a base ref (changed files, secret safety, risk-sensitive paths, release discipline, validation commands, dependency audit, policy profile). Set pr to gate an open GitHub PR via `gh` (PR state, review decision, CODEOWNERS approvals, unresolved conversations, branch protection, status checks). A check that cannot be evaluated in the chosen mode (review state locally, compliance controls that only run in CI) is reported as SKIPPED and never changes the verdict. Merges the old merge_readiness and pr_merge_readiness tools. Use review_verdict instead when you want the full impact + review + gate composite, or review_context when you want diff/comment context with no verdict.",
+      "Gate a change for merge and return a PASS / WARN / FAIL verdict. Omit pr to run the local, no-GitHub gate against a base ref (changed files, secret safety, risk-sensitive paths, release discipline, validation commands, dependency audit, policy profile). Set pr to gate an open GitHub PR via `gh` (PR state, review decision, CODEOWNERS approvals, unresolved conversations, branch protection, status checks). A check the mode cannot evaluate is SKIPPED and never changes the verdict. Use review_verdict instead when you want the full impact + review + gate composite, or review_context when you want diff/comment context with no verdict.",
     annotations: { readOnlyHint: false },
     inputSchema: {
       type: "object",
@@ -336,13 +333,11 @@ export const tools = [
         },
         staged: {
           type: "boolean",
-          description:
-            "Use the exact Git index for changed-path, risk, secret, and convergence evidence. Release discipline reads version metadata from that same exact tree; validation-command and optional analyzer checks still inspect the working tree. May create Git object or index-cache metadata; source files are unchanged. Ignored in GitHub PR mode.",
+          description: "Gate the Git index instead of the working tree. Ignored in GitHub PR mode.",
         },
         head: {
           type: "string",
-          description:
-            "Gate exactly base..head: changed-path, risk, secret, and convergence evidence come from the head commit's tree, so uncommitted and untracked files play no part. Release discipline reads version metadata from that same exact tree; validation-command and optional analyzer checks still inspect the working tree. Cannot be combined with staged. Ignored in GitHub PR mode.",
+          description: "Gate exactly base..head; uncommitted files play no part. Cannot be combined with staged. Ignored in GitHub PR mode.",
         },
         path: { type: "string", description: "Repository path. Defaults to current working directory." },
         base: { type: "string", description: "Base ref for the local gate. Defaults to origin/main, then HEAD. Ignored in PR mode." },
@@ -358,12 +353,10 @@ export const tools = [
         },
         receipt: {
           type: "string",
-          description:
-            "Optional convergence inputs hash, JSON object, or path to a JSON receipt artifact. Exact-subject v2 receipts require the full hash; legacy v1 display IDs remain accepted. A receipt bound to a head commit or the staged index verifies only in the same mode (head / staged); a JSON receipt names the mode it needs when they differ.",
+          description: "Convergence receipt: inputs hash, JSON object, or path. A head- or staged-bound receipt verifies only in that mode.",
         },
         intent: {
-          description:
-            "Optional declared intent (from change_impact with declare: the record, its JSON, or a path to it). Adds a Scope contract check that fails when a changed file was never declared, implied by a declared file, or named in an amendment.",
+          description: "Declared intent from change_impact declare (record, JSON, or path): fails the gate when a changed file was never declared.",
         },
       },
     },
@@ -400,12 +393,10 @@ export const tools = [
         minConvergence: { type: "number", description: "Optional minimum convergence score (0–100) enforced by the merge gate." },
         receipt: {
           type: "string",
-          description:
-            "Optional convergence inputs hash, JSON object, or path to a JSON receipt artifact. Exact-subject v2 receipts require the full hash; legacy v1 display IDs remain accepted.",
+          description: "Convergence receipt: inputs hash, JSON object, or path.",
         },
         intent: {
-          description:
-            "Optional declared intent (from change_impact with declare: the record, its JSON, or a path to it). Adds a Scope contract check that fails when a changed file was never declared, implied by a declared file, or named in an amendment.",
+          description: "Declared intent from change_impact declare (record, JSON, or path): fails the gate when a changed file was never declared.",
         },
       },
     },

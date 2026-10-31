@@ -6,6 +6,10 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+### Changed
+
+- **Shorter MCP tool definitions.** The tools/list response drops from 21,732 to 18,951 characters (about 700 tokens, 13%) for a client that loads every definition up front. Notes on retired tool names, a cache sentence repeated by four tools, and implementation detail in the `head`, `staged`, `receipt`, `intent` and `online` descriptions are gone. No tool, option or behaviour changed.
+
 ### Fixed
 
 - **`repo_search` searches the repository you are working in.** It searched only the repositories in `~/.solumbe/catalog.json`, so a repository that was never indexed was invisible to it and every match came from whatever else had been indexed. It now searches the repository at `path` alone (the working directory by default, found from any subdirectory), without adding it to the catalog. `all: true` adds every catalogued repository, and `paths` searches only the repositories it names. Outside a repository, including a server started from `/` or the home directory, it searches the catalog as before. Each result says which it searched in `scope`. The CLI's `solumbe search` takes `--path` and `--all` the same way.
