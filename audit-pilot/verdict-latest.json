@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "generatedAt": "2026-10-28T23:40:45.081Z",
+  "generatedAt": "2026-10-31T19:52:55.543Z",
   "schemaVersion": 3,
   "reviewEngineVersion": 1,
   "request": "review this change",
@@ -15,27 +15,27 @@
     "concepts": [],
     "topFiles": [
       {
+        "path": "src/cli.js",
+        "score": 15,
+        "riskFlags": []
+      },
+      {
+        "path": "src/lib/mcp.js",
+        "score": 15,
+        "riskFlags": []
+      },
+      {
+        "path": "tests/mcp-dispatch.test.js",
+        "score": 4.5,
+        "riskFlags": []
+      },
+      {
         "path": "CHANGELOG.md",
         "score": 0,
         "riskFlags": []
       },
       {
-        "path": "docs/index.md",
-        "score": 0,
-        "riskFlags": []
-      },
-      {
-        "path": "RELEASE.md",
-        "score": 0,
-        "riskFlags": []
-      },
-      {
-        "path": "server.json",
-        "score": 0,
-        "riskFlags": []
-      },
-      {
-        "path": "src/lib/dependency-graph.js",
+        "path": "docs/EVALS.md",
         "score": 0,
         "riskFlags": []
       }
@@ -45,12 +45,13 @@
     ]
   },
   "prReviewSummary": {
-    "changedFiles": 11,
-    "additions": 369,
-    "deletions": 11,
+    "changedFiles": 26,
+    "additions": 717,
+    "deletions": 94,
     "riskLevel": "low",
     "riskFlags": [
-      "dependency"
+      "dependency",
+      "large PR"
     ],
     "reviewTargetsCount": 0
   },
@@ -62,7 +63,7 @@
       {
         "name": "Changed files",
         "status": "PASS",
-        "summary": "11 changed files found."
+        "summary": "26 changed files found."
       },
       {
         "name": "Commit snapshot",
@@ -108,24 +109,39 @@
     "changedFiles": [
       "CHANGELOG.md",
       "RELEASE.md",
+      "docs/EVALS.md",
       "docs/assets/solumbe-how-it-works.html",
       "docs/index.md",
+      "evals/corpus.json",
+      "evals/fixtures/symbol-stacking/package.json",
+      "evals/fixtures/symbol-stacking/src/code-map/languages.js",
+      "evals/fixtures/symbol-stacking/src/index.js",
+      "evals/fixtures/symbol-stacking/src/mcp/server.js",
       "package-lock.json",
       "package.json",
+      "scripts/hooks/check-outcomes.mjs",
+      "scripts/hooks/route-outcomes.mjs",
       "server.json",
-      "src/lib/dependency-graph.js",
-      "src/lib/impact.js",
-      "tests/dependency-graph.test.js",
-      "tests/impact.test.js"
+      "src/cli.js",
+      "src/lib/catalog.js",
+      "src/lib/context-engine.js",
+      "src/lib/intent.js",
+      "src/lib/mcp.js",
+      "src/lib/tokens.js",
+      "tests/catalog.test.js",
+      "tests/check-outcomes.test.js",
+      "tests/context-engine.test.js",
+      "tests/intent.test.js",
+      "tests/mcp-dispatch.test.js"
     ],
     "subject": {
       "kind": "git-commit",
-      "baseSha": "1594d61c4f5e1cf8a83acc86798fce12eac50cef",
-      "headSha": "74ef80492883a848ce224b1cc02ee30776029657",
-      "treeSha": "b2d063c6a8337440488bba2626d117b2b3494c65"
+      "baseSha": "74ef80492883a848ce224b1cc02ee30776029657",
+      "headSha": "0d52ed7d2497fe9778ad21f9dcb9995f46b6b2cb",
+      "treeSha": "cfffd10c7e87ca2b9d54bc9f09f81f754bb5bd62"
     }
   },
   "tokenEstimate": {
-    "fullJson": 585
+    "fullJson": 704
   }
 }
