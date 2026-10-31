@@ -178,7 +178,7 @@ test("generateContextPack ranks email service methods as hotspots over booking c
 
   const result = generateContextPack("extend organisation branding to RSVP confirmation booking cancellation abandonment recovery emails", { path: root });
 
-  assert.equal(result.data.contextEngineVersion, 6);
+  assert.equal(result.data.contextEngineVersion, 7);
   assert.ok(result.data.primaryFiles.some((file) => file.path === "src/email/email.service.ts"));
   assert.ok(result.data.hotspots.some((item) => item.path === "src/email/email.service.ts" && item.symbol === "resolveEventEmailBranding"));
   assert.ok(result.data.hotspots.some((item) => item.symbol === "sendRsvpConfirmationEmail"));
@@ -265,7 +265,7 @@ test("generateContextPack keeps an explicit Handlebars message template beside i
   const root = path.resolve("evals/fixtures/campaign-email");
   const result = generateContextPack("where is the branded campaign email Handlebars template rendered?", { path: root });
 
-  assert.equal(result.data.contextEngineVersion, 6);
+  assert.equal(result.data.contextEngineVersion, 7);
   const primaryPaths = result.data.primaryFiles.slice(0, 3).map((file) => file.path);
   assert.ok(primaryPaths.includes("src/email/template/campaign-message-responsive.hbs"));
   assert.ok(primaryPaths.includes("src/audience/campaign.service.ts"));
@@ -278,7 +278,10 @@ test("generateContextPack ranks a tool registry above many look-alike symbols ma
 
   assert.equal(first.path, "src/mcp/server.js");
   assert.equal(second.path, "src/code-map/languages.js");
-  assert.ok(first.score > second.score * 2, `${first.score} vs ${second.score}`);
+  // Each extractor matches only through identifiers in its body, so the file
+  // keeps one weak match per word: 44 against 118. Counted as strong matches,
+  // even with repeats saturating, it scored 104.
+  assert.ok(second.score * 2 < first.score, `${second.score} vs ${first.score}`);
 });
 
 // Regression for a field-tracing query where "date" and "booking" recur across
