@@ -210,7 +210,8 @@ a time over the same offline context pack the retrieval eval builds:
 ```bash
 solumbe eval --reads --provider heuristic   # solumbe's own action word, no call
 solumbe eval --reads --provider jev         # TYPESAFE_API_KEY
-solumbe eval --reads --provider claude      # ANTHROPIC_API_KEY
+solumbe eval --reads --provider claude      # ANTHROPIC_API_KEY; writes its reasoning before its answers
+solumbe eval --reads --provider claude --no-reasoning   # the same read, answers only
 ```
 
 It reports intent accuracy, the share of reads that clear `CHOICE_FLOOR`, the
