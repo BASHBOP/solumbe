@@ -6,6 +6,18 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+## [4.11.0] - 2026-11-09
+
+The Claude request read writes its reasoning before its answers, and two dev-dependency bumps. No command or field was removed.
+
+### Changed
+
+- **The Claude request read writes its reasoning before its answers.** Adding _let's think step by step_ to the prompt would do nothing: the read is a forced tool call, which leaves no room for text before it and cannot be combined with extended thinking. Its tool schema now opens with a `reasoning` string instead, which strict tool use writes before `intent`; it is never applied, and the prompt and every other field are unchanged. A read that skips it is sent back once. On the 29-case `reads` suite, two runs each way with `claude-haiku-5-5`, intent accuracy did not move (28 or 29 of 29 either way), capability accuracy rose from 23–24 to 27 of 29, and other candidates demoted rose from 14–15 to 20–22 of 62 with none of the 33 expected files demoted, for about a third more cost ($0.0121 against $0.0093 for 29 reads) and about a second more per read. `solumbe eval --reads --provider claude --no-reasoning` runs the answers-only read for comparison, `SOLUMBE_CLAUDE_READ_REASONING=0` turns it off for `context --online`, and each case's reasoning is in the eval's `--json` output. Jev reads are unchanged and remain the default when a TypeSafe key is set.
+
+### Maintenance
+
+- Bumped `@types/node` from 26.6.5 to 26.6.6 and `eslint` from 10.13.0 to 10.14.0 (dev dependencies) via Dependabot (#341), and synced `develop` with `main` (#342).
+
 ## [4.10.0] - 2026-10-31
 
 `repo_search` searches the repository you are working in, the pack stops ranking look-alike symbols above the file a request names, and the MCP tool definitions are 13% shorter. A declared intent is never written through a symlink. No command or field was removed.

@@ -4,7 +4,7 @@
 
 > For teams that want any coding agent to produce evidence a human can trust before merge.
 
-**v4.10.0** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
+**v4.11.0** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
 
 Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep -->
 
@@ -20,6 +20,15 @@ Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep
 ---
 
 ## What's New
+
+!!! tip "v4.11.0 published (2026-11-09)"
+    The Claude request read writes its reasoning before its answers. No command or field was removed.
+
+    - The read's tool schema opens with a `reasoning` string, written before `intent` and never applied. On the 29-case `reads` suite with `claude-haiku-5-5`, capability accuracy rose from 23–24 to 27 of 29 and more irrelevant candidates were demoted, with no expected file demoted, for about a third more cost per read. Intent accuracy did not move.
+    - `solumbe eval --reads --provider claude --no-reasoning` runs the answers-only read for comparison; `SOLUMBE_CLAUDE_READ_REASONING=0` turns reasoning off for `context --online`. Jev reads are unchanged.
+    - Dev-dependency bumps: `@types/node` 26.6.6, `eslint` 10.14.0.
+
+    [npm v4.11.0](https://www.npmjs.com/package/@bashbop/solumbe/v/4.11.0) · [GitHub Release](https://github.com/BASHBOP/solumbe/releases/tag/v4.11.0) · [MCP Registry](https://registry.modelcontextprotocol.io/?q=io.github.BASHBOP%2Fsolumbe)
 
 !!! tip "v4.10.0 published (2026-10-31)"
     Search and ranking fixes, and shorter tool definitions. No command or field was removed.
@@ -320,7 +329,7 @@ flowchart LR
 === "Install"
 
     ```bash
-    npm install -g @bashbop/solumbe@4.10.0
+    npm install -g @bashbop/solumbe@4.11.0
     solumbe doctor
     solumbe context "review this change" --path .
     ```
@@ -328,7 +337,7 @@ flowchart LR
 === "No Global Install"
 
     ```bash
-    npx -y @bashbop/solumbe@4.10.0 doctor
+    npx -y @bashbop/solumbe@4.11.0 doctor
     ```
 
 === "Source Checkout"
