@@ -6,6 +6,14 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+## [4.10.1] - 2026-11-09
+
+Dev-dependency bumps only. The published package's code and behaviour are the same as 4.10.0, and no command or field was removed.
+
+### Maintenance
+
+- Bumped `@types/node` from 26.6.5 to 26.6.6 and `eslint` from 10.13.0 to 10.14.0 (dev dependencies) via Dependabot (#341), and synced `develop` with `main` (#342).
+
 ## [4.10.0] - 2026-10-31
 
 `repo_search` searches the repository you are working in, the pack stops ranking look-alike symbols above the file a request names, and the MCP tool definitions are 13% shorter. A declared intent is never written through a symlink. No command or field was removed.

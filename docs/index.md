@@ -4,7 +4,7 @@
 
 > For teams that want any coding agent to produce evidence a human can trust before merge.
 
-**v4.10.0** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
+**v4.10.1** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
 
 Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep -->
 
@@ -20,6 +20,11 @@ Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep
 ---
 
 ## What's New
+
+!!! tip "v4.10.1 published (2026-11-09)"
+    Dev-dependency bumps only (`@types/node` 26.6.6, `eslint` 10.14.0). Code and behaviour are the same as 4.10.0, and no command or field was removed.
+
+    [npm v4.10.1](https://www.npmjs.com/package/@bashbop/solumbe/v/4.10.1) · [GitHub Release](https://github.com/BASHBOP/solumbe/releases/tag/v4.10.1) · [MCP Registry](https://registry.modelcontextprotocol.io/?q=io.github.BASHBOP%2Fsolumbe)
 
 !!! tip "v4.10.0 published (2026-10-31)"
     Search and ranking fixes, and shorter tool definitions. No command or field was removed.
@@ -320,7 +325,7 @@ flowchart LR
 === "Install"
 
     ```bash
-    npm install -g @bashbop/solumbe@4.10.0
+    npm install -g @bashbop/solumbe@4.10.1
     solumbe doctor
     solumbe context "review this change" --path .
     ```
@@ -328,7 +333,7 @@ flowchart LR
 === "No Global Install"
 
     ```bash
-    npx -y @bashbop/solumbe@4.10.0 doctor
+    npx -y @bashbop/solumbe@4.10.1 doctor
     ```
 
 === "Source Checkout"
