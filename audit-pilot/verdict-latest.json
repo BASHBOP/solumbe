@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "generatedAt": "2026-11-08T22:14:19.992Z",
+  "generatedAt": "2026-11-09T20:58:51.708Z",
   "schemaVersion": 3,
   "reviewEngineVersion": 1,
   "request": "review this change",
@@ -15,28 +15,28 @@
     "concepts": [],
     "topFiles": [
       {
-        "path": "src/lib/review.js",
-        "score": 41,
+        "path": "src/cli.js",
+        "score": 15,
         "riskFlags": []
       },
       {
-        "path": "src/lib/pr-review.js",
-        "score": 36,
+        "path": "CHANGELOG.md",
+        "score": 0,
         "riskFlags": []
       },
       {
-        "path": "codex/skills/solumbe-review/SKILL.md",
-        "score": 32.2,
+        "path": "docs/17-calibration-thesis/README.md",
+        "score": 0,
         "riskFlags": []
       },
       {
-        "path": "src/lib/agent-tools.js",
-        "score": 23.6,
+        "path": "docs/EVALS.md",
+        "score": 0,
         "riskFlags": []
       },
       {
-        "path": "src/lib/agent-workflow.js",
-        "score": 23.6,
+        "path": "docs/index.md",
+        "score": 0,
         "riskFlags": []
       }
     ],
@@ -45,9 +45,9 @@
     ]
   },
   "prReviewSummary": {
-    "changedFiles": 1,
-    "additions": 16,
-    "deletions": 16,
+    "changedFiles": 13,
+    "additions": 238,
+    "deletions": 40,
     "riskLevel": "low",
     "riskFlags": [
       "dependency"
@@ -62,7 +62,7 @@
       {
         "name": "Changed files",
         "status": "PASS",
-        "summary": "1 changed file found."
+        "summary": "13 changed files found."
       },
       {
         "name": "Commit snapshot",
@@ -82,7 +82,7 @@
       {
         "name": "Release discipline",
         "status": "PASS",
-        "summary": "Version metadata changed but the project version is unchanged (dependency or lockfile update)."
+        "summary": "Version metadata is SemVer and changelog was updated."
       },
       {
         "name": "Validation commands",
@@ -106,16 +106,28 @@
       }
     ],
     "changedFiles": [
-      "package-lock.json"
+      "CHANGELOG.md",
+      "RELEASE.md",
+      "docs/17-calibration-thesis/README.md",
+      "docs/EVALS.md",
+      "docs/assets/solumbe-how-it-works.html",
+      "docs/index.md",
+      "package-lock.json",
+      "package.json",
+      "server.json",
+      "src/cli.js",
+      "src/lib/claude-read.js",
+      "src/lib/read-eval.js",
+      "tests/claude-read.test.js"
     ],
     "subject": {
       "kind": "git-commit",
-      "baseSha": "0d52ed7d2497fe9778ad21f9dcb9995f46b6b2cb",
-      "headSha": "db3cd3a1a69e7c38cf313ef645d416b9171c8bbc",
-      "treeSha": "2b95c2bff77b3bbadd51106fadfdb85541d9bfc3"
+      "baseSha": "db3cd3a1a69e7c38cf313ef645d416b9171c8bbc",
+      "headSha": "51e7918d7523f8b8884c8bce412db500b4f8acaf",
+      "treeSha": "56a2a163b96fc776460a8a547ac3c1c29782142f"
     }
   },
   "tokenEstimate": {
-    "fullJson": 554
+    "fullJson": 598
   }
 }
