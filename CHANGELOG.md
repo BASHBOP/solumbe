@@ -6,7 +6,7 @@ This project follows SemVer.
 
 ## [Unreleased]
 
-## [4.10.1] - 2026-11-09
+## [4.11.0] - 2026-11-09
 
 The Claude request read writes its reasoning before its answers, and two dev-dependency bumps. No command or field was removed.
 
