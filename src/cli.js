@@ -1733,11 +1733,12 @@ async function handleEval(parsed) {
 
   // --reads grades a request-read provider (--provider heuristic|jev|claude,
   // default chosen like `context --online`) on the corpus `reads` suite. It
-  // calls a model, so it is a measurement and not part of CI.
+  // calls a model, so it is a measurement and not part of CI. --no-reasoning
+  // has the Claude read answer without writing its reasoning first.
   if (parsed.flags.reads) {
     const { runReadEval } = await import("./lib/read-eval.js");
     const provider = typeof parsed.flags.provider === "string" ? parsed.flags.provider : undefined;
-    const result = await runReadEval({ corpusPath: parsed.flags.corpus, provider });
+    const result = await runReadEval({ corpusPath: parsed.flags.corpus, provider, reasoning: parsed.flags.no_reasoning === true ? false : undefined });
     noteResult(result.data);
     if (parsed.flags.json) {
       printJson(result.data);
@@ -2119,7 +2120,7 @@ function handleHelp(_parsed) {
         "  solumbe eval --accuracy [--corpus path] [--json] [--out file]   # labeled retrieval + risk corpus; non-zero exit below thresholds",
         "  solumbe eval --harness [--corpus path] [--json] [--out file]    # run inferred install/test/typecheck/build commands in isolated fixtures",
         "  solumbe eval --gate-effectiveness [--corpus path] [--json] [--out file] # assert gate verdicts and deterministic reasons in isolated Git fixtures",
-        "  solumbe eval --reads [--provider heuristic|jev|claude] [--json] [--out file] # grade a request-read provider on the corpus reads suite (calls a model)",
+        "  solumbe eval --reads [--provider heuristic|jev|claude] [--no-reasoning] [--json] [--out file] # grade a request-read provider on the corpus reads suite (calls a model; --no-reasoning: Claude answers without writing its reasoning first)",
         "  solumbe eval --history [repo] [--commits 30] [--k 5] [--max-files 12] [--ref HEAD] [--json] [--out file] # replay recent commits: subject as request, changed files as expected",
         "",
       ]

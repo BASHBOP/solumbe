@@ -18,6 +18,17 @@
 // against outcomes the way Jev's is. Whether it is calibrated is measured, not
 // assumed: `solumbe eval --reads` grades both on the same corpus
 // (docs/17-calibration-thesis).
+//
+// A forced tool call leaves no room for prose before it, and forced
+// `tool_choice` cannot be combined with extended thinking, so asking the model
+// to "think step by step" in the prompt changes nothing. The read gets the
+// room inside the answer instead: a `reasoning` string first in the schema,
+// which strict tool use writes before any answer. It is on by default because
+// `solumbe eval --reads` measured it (docs/17-calibration-thesis): the same
+// intent accuracy, the right tool 27 of 29 times against 23 or 24, and more
+// unneeded files demoted with no needed one lost, for about a third more cost
+// and a second more per read. `reasoning: false`, `--no-reasoning` or
+// SOLUMBE_CLAUDE_READ_REASONING=0 turn it off.
 
 import { askSystemOne, CAPABILITIES, INTENTS, JEV_USER_AGENT, MAX_RELEVANCE_FILES, priceJevCall, readQuestions } from "./jev.js";
 
@@ -57,21 +68,31 @@ export function priceClaudeCall(model, inputTokens, outputTokens) {
 /**
  * @typedef {import("./jev.js").ReadFile} ReadFile
  * @typedef {{ files?: ReadFile[], intent?: boolean, capability?: boolean }} ReadAsk
- * @typedef {Omit<import("./jev.js").SystemOneReply, "source"> & { source: "jev"|"claude", costUsd: number|null, attempts?: number, validationErrors?: string[] }} ReadReply
+ * @typedef {Omit<import("./jev.js").SystemOneReply, "source"> & { source: "jev"|"claude", costUsd: number|null, attempts?: number, validationErrors?: string[], reasoning?: string|null }} ReadReply
+ * @typedef {{ labels: string[], intent: boolean, capability: boolean, reasoning?: boolean }} ReadShape
  */
 
 /**
  * The one tool whose input is the read. Only the asked-for parts are in it, so
- * a read without files has no relevance array to fill.
- * @param {{ labels: string[], intent: boolean, capability: boolean }} ask
+ * a read without files has no relevance array to fill. With `reasoning`, a
+ * free-text field comes first, so it is written before the answers it informs.
+ * @param {ReadShape} ask
  */
-export function readTool({ labels, intent, capability }) {
+export function readTool({ labels, intent, capability, reasoning = false }) {
   /** @type {Record<string, unknown>} */
   const properties = {};
   const confidence = (/** @type {string} */ what) => ({
     type: "number",
     description: `How sure you are of the ${what}, from 0 to 1: 0.9 means you would expect to be right nine times in ten.`,
   });
+  if (reasoning) {
+    properties.reasoning = {
+      type: "string",
+      description:
+        "Before the answers, think the request through step by step in at most five short sentences: what it asks for, whether it asks for an edit, " +
+        "and what each answer after this one should be and why. It is not applied; only the answers after it are.",
+    };
+  }
   if (intent) {
     properties.intent = { type: "string", enum: Object.keys(INTENTS), description: `What kind of work the request asks for.\n${describe(INTENTS)}` };
     properties.intent_confidence = confidence("intent");
@@ -111,14 +132,15 @@ export function readTool({ labels, intent, capability }) {
  * Enums are checked again because a proxy or a model without strict tool use
  * may not enforce them.
  * @param {any} input
- * @param {{ labels: string[], intent: boolean, capability: boolean }} ask
+ * @param {ReadShape} ask
  * @returns {string[]}
  */
-export function validateReadInput(input, { labels, intent, capability }) {
+export function validateReadInput(input, { labels, intent, capability, reasoning = false }) {
   /** @type {string[]} */
   const errors = [];
   if (!input || typeof input !== "object") return ["the tool input must be an object"];
   const unit = (/** @type {unknown} */ value) => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
+  if (reasoning && typeof input.reasoning !== "string") errors.push("reasoning must be a string, written before the answers");
   if (intent) {
     if (!Object.hasOwn(INTENTS, input.intent)) errors.push(`intent must be one of ${Object.keys(INTENTS).join(", ")}`);
     if (!unit(input.intent_confidence)) errors.push("intent_confidence must be a number from 0 to 1");
@@ -195,7 +217,7 @@ const SYSTEM_PROMPT =
  * Ask Claude for the read of one request, in one call plus at most one retry.
  * @param {unknown} state
  * @param {ReadAsk} ask
- * @param {{ apiKey?: string, anthropicApiKey?: string, fetchImpl?: typeof fetch, timeoutMs?: number, model?: string, apiUrl?: string }} [options]
+ * @param {{ apiKey?: string, anthropicApiKey?: string, fetchImpl?: typeof fetch, timeoutMs?: number, model?: string, apiUrl?: string, reasoning?: boolean }} [options]
  * @returns {Promise<ReadReply>}
  */
 export async function askClaudeRead(state, { files = [], intent = true, capability = true } = {}, options = {}) {
@@ -205,7 +227,7 @@ export async function askClaudeRead(state, { files = [], intent = true, capabili
   const model = options.model ?? process.env.SOLUMBE_CLAUDE_READ_MODEL ?? CLAUDE_READ_MODEL;
   const asked = files.slice(0, MAX_RELEVANCE_FILES);
   const labels = [...new Set(asked.map((file) => file.label ?? file.path))];
-  const shape = { labels, intent, capability };
+  const shape = { labels, intent, capability, reasoning: readReasoning(options) };
   const tool = readTool(shape);
 
   /** @type {any[]} */
@@ -285,7 +307,23 @@ export async function askClaudeRead(state, { files = [], intent = true, capabili
     costUsd: priceClaudeCall(replyModel, inputTokens, outputTokens),
     attempts,
     validationErrors: errors,
+    ...(shape.reasoning ? { reasoning: typeof input?.reasoning === "string" ? input.reasoning : null } : {}),
   };
+}
+
+/**
+ * Whether the Claude read writes its reasoning before its answers: yes unless
+ * the option says no, or SOLUMBE_CLAUDE_READ_REASONING is 0, false, off or no.
+ * @param {{ reasoning?: boolean }} [options]
+ * @param {Record<string, string|undefined>} [env]
+ * @returns {boolean}
+ */
+export function readReasoning(options = {}, env = process.env) {
+  if (typeof options.reasoning === "boolean") return options.reasoning;
+  const value = String(env.SOLUMBE_CLAUDE_READ_REASONING ?? "")
+    .trim()
+    .toLowerCase();
+  return !["0", "false", "off", "no"].includes(value);
 }
 
 /**
@@ -313,7 +351,7 @@ export function readProvider(options = {}, env = process.env) {
  * answers and a price, so the caller reads them with interpretRead alike.
  * @param {unknown} state
  * @param {ReadAsk} ask
- * @param {{ provider?: string, apiKey?: string, anthropicApiKey?: string, fetchImpl?: typeof fetch, timeoutMs?: number, model?: string }} [options]
+ * @param {{ provider?: string, apiKey?: string, anthropicApiKey?: string, fetchImpl?: typeof fetch, timeoutMs?: number, model?: string, reasoning?: boolean }} [options]
  * @returns {Promise<ReadReply>}
  */
 export async function askRequestRead(state, ask, options = {}) {

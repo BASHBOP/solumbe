@@ -12,6 +12,7 @@ import {
   CLAUDE_READ_TOOL,
   priceClaudeCall,
   readProvider,
+  readReasoning,
   readTool,
   validateReadInput,
 } from "../src/lib/claude-read.js";
@@ -43,7 +44,8 @@ function scripted(payloads, sent = []) {
   };
 }
 
-const good = {
+/** The answers alone, as a read with --no-reasoning writes them. */
+const answersOnly = {
   intent: "review",
   intent_confidence: 0.82,
   capability: "review_context",
@@ -53,6 +55,9 @@ const good = {
     { file: "docs/b.md", relevance: 0.1 },
   ],
 };
+const thought = "It asks to check a against b, with no edit asked for, so it is a review.";
+/** A read as the default asks for it: the reasoning first, then the answers. */
+const good = { reasoning: thought, ...answersOnly };
 
 test("the read tool's schema is the answer: enums over INTENTS and CAPABILITIES, every file by name", () => {
   const tool = readTool({ labels, intent: true, capability: true });
@@ -94,6 +99,63 @@ test("validation catches what the schema cannot say: ranges, and every file exac
   assert.ok(errors.some((error) => /src\/a\.js 2 times/.test(error)));
   assert.ok(errors.some((error) => /missing docs\/b\.md/.test(error)));
   assert.ok(errors.some((error) => /not a candidate/.test(error)));
+});
+
+test("asked for reasoning, the read tool puts it first in the schema, so it is written before the answers", () => {
+  const plain = /** @type {any} */ (readTool({ labels, intent: true, capability: true }).input_schema);
+  assert.equal(Object.hasOwn(plain.properties, "reasoning"), false, "readTool adds only what its caller asks for");
+
+  const shape = { labels, intent: true, capability: true, reasoning: true };
+  const schema = /** @type {any} */ (readTool(shape).input_schema);
+  assert.equal(Object.keys(schema.properties)[0], "reasoning", "strict tool use writes properties in schema order");
+  assert.equal(schema.required[0], "reasoning");
+  assert.equal(schema.properties.reasoning.type, "string");
+
+  assert.deepEqual(validateReadInput(good, shape), []);
+  assert.ok(validateReadInput(answersOnly, shape).some((error) => /reasoning must be a string/.test(error)));
+  assert.deepEqual(validateReadInput(answersOnly, { labels, intent: true, capability: true }), [], "not asked, not required");
+});
+
+test("the Claude read reasons first by default; the option, then SOLUMBE_CLAUDE_READ_REASONING, turn it off", () => {
+  assert.equal(readReasoning({}, {}), true);
+  for (const off of ["0", "false", "OFF", " no "]) assert.equal(readReasoning({}, { SOLUMBE_CLAUDE_READ_REASONING: off }), false, off);
+  assert.equal(readReasoning({}, { SOLUMBE_CLAUDE_READ_REASONING: "1" }), true);
+  assert.equal(readReasoning({ reasoning: false }, {}), false);
+  assert.equal(readReasoning({ reasoning: true }, { SOLUMBE_CLAUDE_READ_REASONING: "0" }), true, "an explicit option beats the environment");
+});
+
+test("with or without reasoning the read sends the same prompt and applies the same answers; only the default returns the reasoning", async () => {
+  const plainSent = [];
+  const plain = await askClaudeRead(
+    { request: "check a against b" },
+    { files, capability: true },
+    { anthropicApiKey: "k", reasoning: false, fetchImpl: scripted([toolReply(answersOnly)], plainSent) },
+  );
+  assert.equal(plain.reasoning, undefined);
+  assert.equal(Object.hasOwn(plainSent[0].body.tools[0].input_schema.properties, "reasoning"), false);
+
+  const sent = [];
+  const reply = await askClaudeRead(
+    { request: "check a against b" },
+    { files, capability: true },
+    { anthropicApiKey: "k", fetchImpl: scripted([toolReply(good)], sent) },
+  );
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].body.system, plainSent[0].body.system, "only the schema changes, so the eval compares one thing");
+  assert.deepEqual(sent[0].body.tool_choice, plainSent[0].body.tool_choice);
+  assert.equal(Object.keys(sent[0].body.tools[0].input_schema.properties)[0], "reasoning");
+  assert.equal(reply.reasoning, thought);
+  assert.deepEqual(reply.answers, plain.answers, "the reasoning is not an answer");
+
+  const retried = [];
+  const second = await askClaudeRead(
+    { request: "check a against b" },
+    { files, capability: true },
+    { anthropicApiKey: "k", fetchImpl: scripted([toolReply(answersOnly), toolReply(good, { id: "toolu_2" })], retried) },
+  );
+  assert.equal(second.attempts, 2, "a read that skips the reasoning it was asked for is sent back once");
+  assert.match(retried[1].body.messages[2].content[0].content, /reasoning must be a string/);
+  assert.equal(second.reasoning, thought);
 });
 
 test("a forced tool call maps into the RequestRead shape interpretRead already reads", async () => {
@@ -269,9 +331,11 @@ test("context --online with the Claude provider applies the read and says where 
     const body = JSON.parse(init.body);
     const fileEnum = body.tools[0].input_schema.properties.relevance.items.properties.file.enum;
     assert.equal(body.tools[0].input_schema.properties.capability, undefined, "context packs do not ask the capability");
+    assert.equal(Object.keys(body.tools[0].input_schema.properties)[0], "reasoning", "context --online reasons first by default");
     return /** @type {any} */ ({
       ok: true,
-      json: async () => toolReply({ intent: "review", intent_confidence: 0.8, relevance: fileEnum.map((file) => ({ file, relevance: 0.9 })) }),
+      json: async () =>
+        toolReply({ reasoning: thought, intent: "review", intent_confidence: 0.8, relevance: fileEnum.map((file) => ({ file, relevance: 0.9 })) }),
     });
   };
   const read = await readContextPack(pack, { provider: "claude", anthropicApiKey: "k", fetchImpl });
@@ -305,6 +369,7 @@ test("the read eval grades a provider on the corpus reads suite without a networ
       ok: true,
       json: async () =>
         toolReply({
+          ...(body.tools[0].input_schema.properties.reasoning ? { reasoning: "A question about the code, so explain." } : {}),
           intent: "explain",
           intent_confidence: 0.9,
           capability: "repo_search",
@@ -315,13 +380,31 @@ test("the read eval grades a provider on the corpus reads suite without a networ
   };
   const claude = await runReadEval({ provider: "claude", anthropicApiKey: "k", fetchImpl });
   const board = claude.data.scoreboard;
-  assert.equal(calls, board.cases);
+  assert.equal(calls, board.cases, "every read was accepted first time");
   assert.equal(board.errors, 0);
   assert.equal(board.intent.acceptedRate, 1);
   assert.ok(board.intent.brier !== null);
   assert.equal(board.intent.bands.find((band) => band.band === ">= 0.9")?.n, board.read);
   assert.match(claude.markdown, /# solumbe Read Eval/);
-  assert.match(claude.markdown, /Provider: claude/);
+  assert.match(claude.markdown, /Provider: claude, reasoning field before the answers/);
+  assert.equal(claude.data.reasoning, true, "the default");
+  assert.ok(claude.data.cases.every((testCase) => testCase.reasoning === "A question about the code, so explain."));
+
+  calls = 0;
+  const plain = await runReadEval({ provider: "claude", anthropicApiKey: "k", reasoning: false, fetchImpl });
+  assert.equal(calls, plain.data.scoreboard.cases);
+  assert.equal(plain.data.scoreboard.errors, 0);
+  assert.equal(plain.data.reasoning, false);
+  assert.match(plain.markdown, /Provider: claude, answers only \(--no-reasoning\)/);
+  assert.ok(plain.data.cases.every((testCase) => !Object.hasOwn(testCase, "reasoning")));
+});
+
+test("the read eval refuses the reasoning switch for a provider without one", async () => {
+  await assert.rejects(runReadEval({ provider: "heuristic", reasoning: false }), /--no-reasoning applies to the claude provider only, not heuristic/);
+  await assert.rejects(runReadEval({ provider: "jev", reasoning: false }), /claude provider only, not jev/);
+  const heuristic = await runReadEval({ provider: "heuristic" });
+  assert.equal(heuristic.data.reasoning, false, "nothing reasons without a Claude read");
+  assert.match(heuristic.markdown, /^Provider: heuristic$/m);
 });
 
 test("aggregateReads reports no rate over no cases rather than a zero", () => {

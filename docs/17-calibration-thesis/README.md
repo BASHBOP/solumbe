@@ -534,20 +534,67 @@ For edit requests it prefers `repo_search` and `repo_map` where the labels say
 **Relevance does no harm here.** No file a case needs was scored under 0.2, and
 10 of 46 other candidates were, which is the demotion the read exists for.
 
-**The Claude column is not run yet.** The provider, its schema, retry and
-mapping are tested against a mocked API; the live run needs a working
-Anthropic key, and the one on the measuring machine was rejected (401). It is
-one command, recorded here when it has been run:
-
-```bash
-ANTHROPIC_API_KEY=... solumbe eval --reads --provider claude --out claude-reads.md
-```
+**The Claude column was not run then.** The provider, its schema, retry and
+mapping were tested against a mocked API; the key on the measuring machine was
+rejected (401). It was first run on 2026-11-09, on the suite as it stood then;
+see [the next section](#the-claude-read-and-reasoning-first-2026-11-09).
 
 Two cautions belong to the method. Jev's answers move by up to 0.05 between
 runs (docs/18), so a case near the floor can cross it; this is one run. And
 Claude's confidence is the model's own statement, not a trained probability,
 so its Brier score and bands are the number to read first: an accurate read
 whose confidences are not calibrated makes `CHOICE_FLOOR` a guess.
+
+## The Claude read, and reasoning first (2026-11-09)
+
+Adding _let's think step by step_ to the read's prompt would change nothing: a
+forced tool call leaves no room for text before it, and forced `tool_choice`
+cannot be combined with extended thinking. The room has to be inside the
+answer. So the read's tool schema can open with a `reasoning` string, which
+strict tool use writes before `intent`; it is never applied, and the prompt and
+every other field stay the same, so the two runs differ in one thing.
+
+Both were run twice on the `reads` suite, by then 29 requests, with
+`claude-haiku-5-5`, alternating the variants; Jev (`jev-1.14.0`) was run once
+on the same suite for comparison.
+
+| | Claude, answers only | Claude, reasoning first | Jev |
+| --- | ---: | ---: | ---: |
+| Intent accuracy, the read's own choice | 28, 28 / 29 | 29, 28 / 29 | 29 / 29 |
+| Cleared `CHOICE_FLOOR` | 29, 29 | 29, 29 | 27 |
+| Intent a pack would carry | 28, 28 | 29, 28 | 27 |
+| Brier score of the stated confidence | 0.061, 0.059 | 0.051, 0.061 | 0.054 |
+| Capability accuracy | 24, 23 / 29 | **27, 27** / 29 | 15 / 29 |
+| Expected files demoted (under 0.2) | 0 of 33 | 0 of 33 | 0 of 33 |
+| Other candidates demoted | 15, 14 of 62 | **22, 20** of 62 | 20 of 62 |
+| Cost for 29 reads | $0.0093 | $0.0121 | $0.0017 |
+| Mean latency | 2.5 s, 1.8 s | 3.9 s, 2.7 s | 160 ms |
+
+**Intent does not move.** Reasoning fixed _why does the checkout crash?_ in
+both runs (`debug` where answers-only said `explain`) and lost _how do I add a
+refund route?_ once (`explain` at 0.6, against the label `add`). One case is
+3.4 points here; that is noise.
+
+**The other two answers do.** Reasoning first named the expected tool 27 times
+in 29 in both runs, against 24 and 23, and it demoted 22 and 20 of 62
+candidates the work does not need, against 15 and 14, while still demoting
+none of the 33 it does. Relevance is applied (a demoted file leaves the pack);
+capability is not yet. The price is 11% more tokens, a third more cost and about
+a second more per read.
+
+So the Claude read now reasons first by default; `--no-reasoning`, or
+`SOLUMBE_CLAUDE_READ_REASONING=0` outside the eval, turns it off. Jev stays the
+default provider: it chose every intent right and demoted as many candidates as
+reasoning-first Claude, at a seventh of the cost and under a tenth of the
+latency. Two of its intents fell under the floor, and its capability answer is
+the weakest of the three. Two
+runs per variant is a small sample; rerun both before reading anything into a
+one-case difference.
+
+```bash
+ANTHROPIC_API_KEY=... solumbe eval --reads --provider claude --out claude-reads.md
+ANTHROPIC_API_KEY=... solumbe eval --reads --provider claude --no-reasoning --out claude-reads-answers-only.md
+```
 
 ## What changes because of it
 
