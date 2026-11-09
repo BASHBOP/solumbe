@@ -18,7 +18,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { askRequestRead, readProvider } from "./claude-read.js";
+import { askRequestRead, readProvider, readReasoning } from "./claude-read.js";
 import { generateContextPack } from "./context-engine.js";
 import { readState } from "./context-read.js";
 import { copyFixtureToTemp, resolveFixture } from "./eval.js";
@@ -61,17 +61,22 @@ const defaultCorpusPath = path.join(repoRoot, "evals", "corpus.json");
  * @property {{ choice: string|null, confidence: number|null, correct: boolean|null }|null} capability
  * @property {{ path: string, relevance: number|null, expected: boolean }[]} relevance
  * @property {{ tokens: number|null, costUsd: number|null, latencyMs: number|null, attempts: number|null, model: string|null }} call
+ * @property {string|null} [reasoning] what the read wrote before its answers, when asked to
  * @property {string} [error]
  */
 
 /**
- * @param {{ provider?: string, corpusPath?: string, repoRoot?: string, fetchImpl?: typeof fetch, apiKey?: string, anthropicApiKey?: string, timeoutMs?: number }} [options]
+ * The Claude read thinks the request through in a field before its answers
+ * unless `reasoning` is false; run once each way to compare.
+ * @param {{ provider?: string, corpusPath?: string, repoRoot?: string, fetchImpl?: typeof fetch, apiKey?: string, anthropicApiKey?: string, timeoutMs?: number, reasoning?: boolean }} [options]
  */
 export async function runReadEval(options = {}) {
   const corpusPath = options.corpusPath ? path.resolve(options.corpusPath) : defaultCorpusPath;
   const root = options.repoRoot ? path.resolve(options.repoRoot) : repoRoot;
   const corpus = JSON.parse(fs.readFileSync(corpusPath, "utf8"));
   const provider = options.provider === "heuristic" ? "heuristic" : readProvider(options);
+  if (options.reasoning !== undefined && provider !== "claude") throw new Error(`--no-reasoning applies to the claude provider only, not ${provider}`);
+  const reasoning = provider === "claude" && readReasoning(options);
   /** @type {ReadCase[]} */
   const reads = Array.isArray(corpus.reads) ? corpus.reads : [];
   if (reads.length === 0) throw new Error(`corpus has no reads[] suite: ${corpusPath}`);
@@ -87,6 +92,7 @@ export async function runReadEval(options = {}) {
     generatedAt: new Date().toISOString(),
     evalKind: "reads",
     provider,
+    reasoning,
     corpusPath,
     floors: { choice: CHOICE_FLOOR, demoteBelow: DEMOTE_BELOW },
     scoreboard,
@@ -130,6 +136,7 @@ async function scoreReadCase(testCase, { root, fixtureRoots, provider, options }
     const reply = await askRequestRead(state, { files: labeled, capability: true }, { ...options, provider });
     const read = interpretRead(reply.answers, files);
     scored.call = { tokens: reply.tokens, costUsd: reply.costUsd, latencyMs: reply.latencyMs, attempts: reply.attempts ?? 1, model: reply.model };
+    if (reply.reasoning !== undefined) scored.reasoning = reply.reasoning;
     const applied = read.intent?.accepted ? read.intent.choice : scored.heuristic;
     scored.intent = {
       choice: read.intent?.choice ?? null,
@@ -243,7 +250,7 @@ export function aggregateReads(cases) {
 }
 
 /**
- * @param {{ generatedAt: string, provider: string, corpusPath: string, scoreboard: ReturnType<typeof aggregateReads>, cases: ScoredReadCase[] }} data
+ * @param {{ generatedAt: string, provider: string, reasoning?: boolean, corpusPath: string, scoreboard: ReturnType<typeof aggregateReads>, cases: ScoredReadCase[] }} data
  */
 export function formatReadEvalMarkdown(data) {
   const s = data.scoreboard;
@@ -252,7 +259,7 @@ export function formatReadEvalMarkdown(data) {
     "# solumbe Read Eval",
     "",
     `Generated: ${data.generatedAt}`,
-    `Provider: ${data.provider}`,
+    `Provider: ${data.provider}${data.provider === "claude" ? (data.reasoning ? ", reasoning field before the answers" : ", answers only (--no-reasoning)") : ""}`,
     `Corpus: ${data.corpusPath}`,
     `Cases: ${s.cases} (${s.read} read, ${s.errors} failed)`,
     "",

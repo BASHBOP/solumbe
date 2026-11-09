@@ -8,7 +8,11 @@ This project follows SemVer.
 
 ## [4.10.1] - 2026-11-09
 
-Dev-dependency bumps only. The published package's code and behaviour are the same as 4.10.0, and no command or field was removed.
+The Claude request read writes its reasoning before its answers, and two dev-dependency bumps. No command or field was removed.
+
+### Changed
+
+- **The Claude request read writes its reasoning before its answers.** Adding _let's think step by step_ to the prompt would do nothing: the read is a forced tool call, which leaves no room for text before it and cannot be combined with extended thinking. Its tool schema now opens with a `reasoning` string instead, which strict tool use writes before `intent`; it is never applied, and the prompt and every other field are unchanged. A read that skips it is sent back once. On the 29-case `reads` suite, two runs each way with `claude-haiku-5-5`, intent accuracy did not move (28 or 29 of 29 either way), capability accuracy rose from 23–24 to 27 of 29, and other candidates demoted rose from 14–15 to 20–22 of 62 with none of the 33 expected files demoted, for about a third more cost ($0.0121 against $0.0093 for 29 reads) and about a second more per read. `solumbe eval --reads --provider claude --no-reasoning` runs the answers-only read for comparison, `SOLUMBE_CLAUDE_READ_REASONING=0` turns it off for `context --online`, and each case's reasoning is in the eval's `--json` output. Jev reads are unchanged and remain the default when a TypeSafe key is set.
 
 ### Maintenance
 
