@@ -6,6 +6,10 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+### Changed
+
+- **The Claude read's `reasoning` field no longer says "think step by step".** Its description now names only what to write: what the request asks for, whether it asks for an edit, and what each answer should be and why. The field's place in the schema, not the phrase, is what gives the read room to reason.
+
 ## [4.11.0] - 2026-11-09
 
 The Claude request read writes its reasoning before its answers, and two dev-dependency bumps. No command or field was removed.
