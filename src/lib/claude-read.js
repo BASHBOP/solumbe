@@ -89,7 +89,7 @@ export function readTool({ labels, intent, capability, reasoning = false }) {
     properties.reasoning = {
       type: "string",
       description:
-        "Before the answers, think the request through step by step in at most five short sentences: what it asks for, whether it asks for an edit, " +
+        "Before the answers, say in at most five short sentences what the request asks for, whether it asks for an edit, " +
         "and what each answer after this one should be and why. It is not applied; only the answers after it are.",
     };
   }
