@@ -6,6 +6,10 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+### Added
+
+- **The MCP `review_gate` says when to stop retrying.** The gate answers one call and remembers nothing, so an agent that reads a FAIL, edits and calls again has built a retry loop with no stop condition. A local FAIL now carries `attempts` (`consecutiveFails`, `cap`, `escalate`), counted per repository head within the server's session, and at the cap (`SOLUMBE_GATE_FAIL_CAP`, default 3; `0` or `off` turns it off) adds a message telling the agent to stop and take the failing checks to the user. A PASS, a WARN or a new commit ends the streak. The verdict is unchanged, nothing is written to disk, and the command line, the pre-commit hook, CI and the pull request gate are not counted. Under `SOLUMBE_CHECK_MODE=trial` a FAIL is shown in both arms, so the count reaches both.
+
 ### Changed
 
 - **The Claude read's `reasoning` field no longer says "think step by step".** Its description now names only what to write: what the request asks for, whether it asks for an edit, and what each answer should be and why. The field's place in the schema, not the phrase, is what gives the read room to reason.
