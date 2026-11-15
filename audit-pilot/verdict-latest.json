@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "generatedAt": "2026-11-09T20:58:51.708Z",
+  "generatedAt": "2026-11-15T17:38:25.645Z",
   "schemaVersion": 3,
   "reviewEngineVersion": 1,
   "request": "review this change",
@@ -20,22 +20,22 @@
         "riskFlags": []
       },
       {
+        "path": "src/lib/mcp.js",
+        "score": 15,
+        "riskFlags": []
+      },
+      {
         "path": "CHANGELOG.md",
         "score": 0,
         "riskFlags": []
       },
       {
+        "path": "docs/02-mcp-agent-workflows/README.md",
+        "score": 0,
+        "riskFlags": []
+      },
+      {
         "path": "docs/17-calibration-thesis/README.md",
-        "score": 0,
-        "riskFlags": []
-      },
-      {
-        "path": "docs/EVALS.md",
-        "score": 0,
-        "riskFlags": []
-      },
-      {
-        "path": "docs/index.md",
         "score": 0,
         "riskFlags": []
       }
@@ -45,12 +45,13 @@
     ]
   },
   "prReviewSummary": {
-    "changedFiles": 13,
-    "additions": 238,
-    "deletions": 40,
+    "changedFiles": 19,
+    "additions": 866,
+    "deletions": 14,
     "riskLevel": "low",
     "riskFlags": [
-      "dependency"
+      "dependency",
+      "large PR"
     ],
     "reviewTargetsCount": 0
   },
@@ -62,7 +63,7 @@
       {
         "name": "Changed files",
         "status": "PASS",
-        "summary": "13 changed files found."
+        "summary": "19 changed files found."
       },
       {
         "name": "Commit snapshot",
@@ -108,8 +109,9 @@
     "changedFiles": [
       "CHANGELOG.md",
       "RELEASE.md",
+      "docs/02-mcp-agent-workflows/README.md",
       "docs/17-calibration-thesis/README.md",
-      "docs/EVALS.md",
+      "docs/18-model-routing/README.md",
       "docs/assets/solumbe-how-it-works.html",
       "docs/index.md",
       "package-lock.json",
@@ -117,17 +119,22 @@
       "server.json",
       "src/cli.js",
       "src/lib/claude-read.js",
-      "src/lib/read-eval.js",
-      "tests/claude-read.test.js"
+      "src/lib/gate-attempts.js",
+      "src/lib/mcp.js",
+      "src/lib/shell-env.js",
+      "tests/converge.property.test.js",
+      "tests/gate-attempts.test.js",
+      "tests/pass-local.property.test.js",
+      "tests/shell-env.test.js"
     ],
     "subject": {
       "kind": "git-commit",
-      "baseSha": "db3cd3a1a69e7c38cf313ef645d416b9171c8bbc",
-      "headSha": "51e7918d7523f8b8884c8bce412db500b4f8acaf",
-      "treeSha": "56a2a163b96fc776460a8a547ac3c1c29782142f"
+      "baseSha": "51e7918d7523f8b8884c8bce412db500b4f8acaf",
+      "headSha": "ad7a5783468f8045eaef8846f8669266fff5384c",
+      "treeSha": "5dddf951a8dba75ec48b1df516552a77f8cc0e2b"
     }
   },
   "tokenEstimate": {
-    "fullJson": 598
+    "fullJson": 657
   }
 }
