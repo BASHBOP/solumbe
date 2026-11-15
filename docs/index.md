@@ -4,7 +4,7 @@
 
 > For teams that want any coding agent to produce evidence a human can trust before merge.
 
-**v4.11.0** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
+**v4.12.0** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
 
 Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep -->
 
@@ -20,6 +20,15 @@ Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep
 ---
 
 ## What's New
+
+!!! tip "v4.12.0 published (2026-11-15)"
+    The MCP `review_gate` says when to stop retrying, and the MCP server finds an API key exported in a shell startup file. No command or field was removed.
+
+    - A local `review_gate` FAIL now carries `attempts` (`consecutiveFails`, `cap`, `escalate`), counted per repository head within the server's session. At the cap (`SOLUMBE_GATE_FAIL_CAP`, default 3; `0` or `off` turns it off) it tells the agent to stop and take the failing checks to the user. The verdict is unchanged, and the command line, the pre-commit hook, CI and the pull request gate are not counted.
+    - At startup the MCP server asks the login shell for `TYPESAFE_API_KEY` and `ANTHROPIC_API_KEY` when they are missing, so `context_pack` with `online: true` works in desktop hosts that start the server outside a shell. It never overwrites a key the host passed; `SOLUMBE_SHELL_ENV=0` turns it off.
+    - The Claude read's `reasoning` field no longer says "think step by step", and convergence and the gate checks gain property-based tests.
+
+    [npm v4.12.0](https://www.npmjs.com/package/@bashbop/solumbe/v/4.12.0) · [GitHub Release](https://github.com/BASHBOP/solumbe/releases/tag/v4.12.0) · [MCP Registry](https://registry.modelcontextprotocol.io/?q=io.github.BASHBOP%2Fsolumbe)
 
 !!! tip "v4.11.0 published (2026-11-09)"
     The Claude request read writes its reasoning before its answers. No command or field was removed.
@@ -329,7 +338,7 @@ flowchart LR
 === "Install"
 
     ```bash
-    npm install -g @bashbop/solumbe@4.11.0
+    npm install -g @bashbop/solumbe@4.12.0
     solumbe doctor
     solumbe context "review this change" --path .
     ```
@@ -337,7 +346,7 @@ flowchart LR
 === "No Global Install"
 
     ```bash
-    npx -y @bashbop/solumbe@4.11.0 doctor
+    npx -y @bashbop/solumbe@4.12.0 doctor
     ```
 
 === "Source Checkout"
