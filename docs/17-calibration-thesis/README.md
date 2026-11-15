@@ -469,6 +469,11 @@ gate are never part of the trial, which also means an agent in the withheld arm
 can reach the result another way. Both facts pull the arms together, so the
 trial understates whatever effect there is.
 
+A local FAIL also carries `attempts`, the number of times in a row the gate has
+failed on that head in the server's session, and at `SOLUMBE_GATE_FAIL_CAP`
+(default 3) a message telling the agent to stop and ask the user. Because a
+FAIL is shown in both arms, both get it.
+
 `solumbe calibrate <repo> --trial` grades the arms on the first commit made on
 each head, joined to `repaired`. `node scripts/hooks/check-outcomes.mjs` grades
 them sooner, on the same-session proxies the route outcomes use: whether the

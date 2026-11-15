@@ -358,6 +358,16 @@ there, or each prompt is shown twice. Keep `TYPESAFE_API_KEY` in your shell
 environment or the host's secret store rather than in a config file you might
 commit.
 
+Desktop hosts (Claude Desktop, the Claude app, Cursor opened from the Dock)
+start MCP servers outside any shell, so a key exported in a shell startup file
+would never arrive. When `TYPESAFE_API_KEY` or `ANTHROPIC_API_KEY` is missing,
+`solumbe mcp` asks your login shell for it once at startup (`$SHELL -l -c`,
+which reads `.zshenv` and `.zprofile` for zsh, or `.bash_profile` / `.profile`
+for bash, but not `.zshrc` or `.bashrc`). Export the key in one of those files.
+The server logs the names it loaded to stderr, never the values. Set
+`SOLUMBE_SHELL_ENV=0` in the host's `env` to turn this off. Not available on
+Windows.
+
 ---
 
 ## MCP Tool Surface

@@ -180,7 +180,9 @@ Hosts with no map still work through `--tier-only`. Terminal output uses solumbe
 own renderer, so `--color`, `--no-color`, `--theme`, `NO_COLOR` and a piped
 stdout behave exactly as they do everywhere else in the CLI.
 
-Set `TYPESAFE_API_KEY` in your shell to use the model. Without it, or with
+Set `TYPESAFE_API_KEY` in your shell to use the model (export it in a login
+startup file such as `.zshenv` so `solumbe mcp` finds it under desktop hosts;
+see [MCP agent workflows](../02-mcp-agent-workflows/README.md)). Without it, or with
 `--offline`, the run falls back to a local heuristic and labels every surface
 `offline estimate, not calibrated`. That heuristic scores; it does not claim a
 confidence, so the offline path reports `confidence: not measured` and the

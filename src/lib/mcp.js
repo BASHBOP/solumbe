@@ -17,6 +17,7 @@ import { formatRouteMarkdown } from "./render/route.js";
 import { appendEvent, extractSignals, redactError, shareEvent } from "./telemetry.js";
 import { forwardToCanvas } from "./canvas-tap.js";
 import { applyCheckTrial } from "./check-trial.js";
+import { applyGateAttempts } from "./gate-attempts.js";
 import { contextRepoPaths, gatePolicy } from "./config.js";
 import { evaluateLocal } from "./pass-local.js";
 import { evaluatePR } from "./pass-pr.js";
@@ -666,7 +667,12 @@ async function callTool(params = {}) {
   recordToolEvent(name, args, startedAt, "ok", { result });
   // Off unless SOLUMBE_CHECK_MODE=trial. The usage log above already holds the
   // real result; in the withheld arm the agent is told only that it was recorded.
-  const shown = applyCheckTrial(LEGACY_TOOL_ALIASES[name]?.tool ?? name, args, result).result;
+  const canonical = LEGACY_TOOL_ALIASES[name]?.tool ?? name;
+  // A local gate FAIL carries how many times in a row it has failed on this
+  // change and, at the cap, an instruction to stop and ask the user. It runs
+  // before the trial so the trial logs the verdict as the gate gave it; a FAIL
+  // is shown in both arms, so the count reaches the agent in both.
+  const shown = applyCheckTrial(canonical, args, applyGateAttempts(canonical, result)).result;
   return {
     content: [
       {

@@ -1519,6 +1519,11 @@ async function promptChoice(question, choices) {
 }
 
 async function handleMcp() {
+  // Desktop hosts start the server outside any shell; fetch the read-model
+  // keys from the login shell before any tool reads process.env.
+  const { hydrateShellEnv } = await import("./lib/shell-env.js");
+  const { loaded } = hydrateShellEnv();
+  if (loaded.length) process.stderr.write(`solumbe: loaded ${loaded.join(", ")} from the login shell\n`);
   const { startMcpServer } = await import("./lib/mcp.js");
   await startMcpServer();
 }
