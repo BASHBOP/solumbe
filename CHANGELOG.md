@@ -6,6 +6,10 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+## [4.12.0] - 2026-11-15
+
+The MCP `review_gate` tells an agent when to stop retrying a failing gate, and the MCP server finds a TypeSafe or Anthropic key exported in a shell startup file. No command or field was removed.
+
 ### Added
 
 - **The MCP `review_gate` says when to stop retrying.** The gate answers one call and remembers nothing, so an agent that reads a FAIL, edits and calls again has built a retry loop with no stop condition. A local FAIL now carries `attempts` (`consecutiveFails`, `cap`, `escalate`), counted per repository head within the server's session, and at the cap (`SOLUMBE_GATE_FAIL_CAP`, default 3; `0` or `off` turns it off) adds a message telling the agent to stop and take the failing checks to the user. A PASS, a WARN or a new commit ends the streak. The verdict is unchanged, nothing is written to disk, and the command line, the pre-commit hook, CI and the pull request gate are not counted. Under `SOLUMBE_CHECK_MODE=trial` a FAIL is shown in both arms, so the count reaches both.
@@ -13,6 +17,14 @@ This project follows SemVer.
 ### Changed
 
 - **The Claude read's `reasoning` field no longer says "think step by step".** Its description now names only what to write: what the request asks for, whether it asks for an edit, and what each answer should be and why. The field's place in the schema, not the phrase, is what gives the read room to reason.
+
+### Fixed
+
+- **The MCP server loads `TYPESAFE_API_KEY` and `ANTHROPIC_API_KEY` from the login shell.** Desktop hosts start `solumbe mcp` outside any shell, so a key exported in a shell startup file never reached the server and `context_pack` with `online: true` fell back to the deterministic ranking. `solumbe install` also rewrites host entries to run node directly, which discards a wrapper script that fetched the key. At startup the server now asks the user's login shell (`$SHELL -l -c`, never interactive) for either key when it is missing. It never overwrites a key the host passed, logs names only, gives up after 5 seconds, is skipped on Windows, and `SOLUMBE_SHELL_ENV=0` turns it off (#348).
+
+### Maintenance
+
+- Added property-based tests for convergence and the gate checks, with `fast-check` as a dev dependency (#349). Eleven properties: the band follows the score, a receipt ignores file order, scope inference only admits offered non-secret files, an undeclared file always fails the scope contract and passes once amended, a tampered intent never verifies, and a credential or secret path always fails the secret check.
 
 ## [4.11.0] - 2026-11-09
 
