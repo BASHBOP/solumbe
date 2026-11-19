@@ -4,7 +4,7 @@
 // that works in a git worktree cut from origin/main, while the MCP server runs
 // from a main checkout 28 commits behind, was handed a ranking of the older
 // tree: files added upstream were missing from it, and nothing ranked them
-// (bashbop seat-map work, 2026-11-19). A ref's tree is written to a per-user
+// A ref's tree is written to a per-user
 // cache directory with git plumbing, without touching the repository's index,
 // worktrees or branch, and indexed there like any other directory.
 

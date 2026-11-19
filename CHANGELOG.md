@@ -6,7 +6,7 @@ This project follows SemVer.
 
 ## [Unreleased]
 
-Ranking and check fixes from a session that built a feature across two repositories in git worktrees (bashbop seat maps, 2026-11-19). No command or field was removed.
+Ranking and check fixes from a session that built a feature across two repositories in git worktrees. No command or field was removed.
 
 ### Added
 
@@ -16,10 +16,10 @@ Ranking and check fixes from a session that built a feature across two repositor
 
 ### Fixed
 
-- **A domain the request names keeps its primary slots.** `context_pack` capped Primary Files at two per domain. For "seat map builder rows…" it kept two `seat-maps` files and gave the next slots to payment, email and booking services that scored lower than six `seat-maps` files it left out. A domain whose every word is in the request is no longer capped.
+- **A domain the request names keeps its primary slots.** `context_pack` capped Primary Files at two per domain. For "floor plan builder rows…" it kept two `floor-plans` files and gave the next slots to payment, notification and shipment services that scored lower than the `floor-plans` files it left out. A domain whose every word is in the request is no longer capped.
 - **A file imported by many ranked files no longer outranks the owner.** `change_impact` added up to +8 per importing file with no ceiling, so DTOs, a module and shared type files gained +80 and filled the top of the list. The gain from imports is capped at 16.
 - **A validation schema is not a data-model risk.** `*.schema.ts` and `schemas/` files (Zod, Joi) were flagged `data model` by their code-map kind and by the word in their name, so a change to the validation of a Json column was reported as a data-model change and warned at the gate. The flag now needs a database schema or migration: `prisma`, `migration(s)`, `*.sql`, or a file named `schema.*`.
-- **A file name in a request is not a risk concept.** `seat-map-builder.schema` in a request made it a data-model request and lifted `prisma/schema.prisma` into the predicted owners.
+- **A file name in a request is not a risk concept.** `floor-plan-builder.schema` in a request made it a data-model request and lifted `prisma/schema.prisma` into the predicted owners.
 - **The Risk review warning says which risk.** Its summary read the same on every change; it now counts the flagged files per risk, for example `(money flow: 1)`.
 - **A missing `query` or `base` says what to pass.** The MCP error was `query is required`; it now says whether the argument was missing or blank, why the tool needs it, and what to pass.
 

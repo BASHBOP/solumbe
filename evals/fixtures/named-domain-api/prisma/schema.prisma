@@ -1,0 +1,21 @@
+model FloorPlan {
+  id      String @id
+  siteId  String
+  builder Json
+  slots   Slot[]
+}
+
+model Slot {
+  id          String    @id
+  floorPlanId String
+  rowLabel    String
+  label       String
+  blocked     Boolean   @default(false)
+  floorPlan   FloorPlan @relation(fields: [floorPlanId], references: [id])
+}
+
+model Shipment {
+  id     String @id
+  siteId String
+  status String
+}

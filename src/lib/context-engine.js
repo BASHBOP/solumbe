@@ -1336,12 +1336,11 @@ function selectPrimaryFiles(scoredFiles, limit, rules = noRequestRules, tokens =
 }
 
 /**
- * Domains the request names in full: "seat map builder" names `seat-maps`.
+ * Domains the request names in full: "floor plan builder" names `floor-plans`.
  * The per-domain cap spreads primary slots across areas a vague request might
  * mean, but a feature that lives in one named domain then kept two of its
- * files and handed the other slots to weaker matches elsewhere (seat-map work
- * on bashbop-api, 2026-11-19: paystack and email services outranked six
- * seat-maps files that scored higher).
+ * files and handed the other slots to weaker matches elsewhere: payment and
+ * notification services outranked floor-plans files that scored higher.
  * @param {ScoredFile[]} pool
  * @param {string[]} tokens
  * @returns {Set<string>}

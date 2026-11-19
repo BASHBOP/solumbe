@@ -1152,7 +1152,7 @@ function requiredString(value, name, why) {
 // Why each tool needs `query`, so a rejected call says what to pass, not
 // only that something is missing.
 const QUERY_WHY = {
-  context_pack: 'the pack ranks files against the task, so pass the task in plain words as query, e.g. "add seat labels to the seat map builder"',
+  context_pack: 'the pack ranks files against the task, so pass the task in plain words as query, e.g. "add a refund endpoint to checkout"',
   change_impact: "the ranking predicts the owners of a change, so pass the change request as query",
   agent_experience: "the score is for one task, so pass it as query",
   model_route: "the route is chosen for one task, so pass it as query",
