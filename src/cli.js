@@ -349,6 +349,7 @@ async function handleContext(parsed) {
   let result = generateContextPack(query, {
     paths: contextRepoPaths({ path: parsed.flags.path }),
     limit: parsed.flags.limit,
+    ref: typeof parsed.flags.ref === "string" && parsed.flags.ref.trim() ? parsed.flags.ref : "auto",
   });
   // Opt-in: ask a System One model to read the request. Never on by default,
   // because an ordinary solumbe command makes no network call.
@@ -438,6 +439,7 @@ async function handleImpact(parsed) {
     top: parsed.flags.top,
     diffBase: parsed.flags.diff_base,
     companions: true,
+    ref: parsed.flags.diff_base ? undefined : typeof parsed.flags.ref === "string" && parsed.flags.ref.trim() ? parsed.flags.ref : "auto",
   });
   noteResult(result.data);
 

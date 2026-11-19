@@ -11,7 +11,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { runCommand } from "./tools.js";
-import { matchRiskPaths, matchSecretPaths, classifyPath, glyphFor } from "./risk-paths.js";
+import { matchRiskPaths, matchSecretPaths, classifyPath, glyphFor, riskReviewSummary } from "./risk-paths.js";
 import { MAX_SCAN_BYTES, scanSecretContent, summarizeSecretFindings } from "./secret-scan.js";
 import { checkRelease } from "./release-check.js";
 import { aggregateVerdict, normalizeGovernance, normalizeProfile, policyCheck, STATUS } from "./policy.js";
@@ -916,7 +916,7 @@ function riskCheck(files, scope = "working-tree") {
     return {
       name: "Risk review",
       status: STATUS.warn,
-      summary: "Risk-sensitive files changed; maintainer review should be explicit.",
+      summary: riskReviewSummary(matches),
       details: [...matches.slice(0, 20), ...actions],
     };
   }

@@ -227,6 +227,7 @@ export function generateConvergence(query, options = {}) {
     : { coverage: null, scope: null, riskAlignment: null };
 
   const commit = subject?.headSha ?? subject?.parentSha ?? currentCommit(impact.repo?.root ?? repoPath);
+  const prediction = predictionConfidence({ task: normalizedQuery, changedFiles, confirmedDirect, predictedDirect, declared: Boolean(declared) });
 
   const drivers = {
     changedFiles: changedFiles.length,
@@ -253,8 +254,10 @@ export function generateConvergence(query, options = {}) {
     convergence,
     band,
     subScores,
+    ...(prediction ? { prediction } : {}),
     drivers,
     recommendations: buildRecommendations({
+      prediction,
       grounded,
       unconfirmedCandidates,
       missedChangedFiles,
@@ -297,6 +300,56 @@ export function generateConvergence(query, options = {}) {
 
   data.tokenEstimate = { fullJson: estimateTokens(data) };
   return data;
+}
+
+/**
+ * @typedef {Object} PredictionConfidence
+ * @property {"high" | "medium" | "low" | "declared"} confidence
+ * @property {number} ownersConfirmed predicted owner files the diff changed
+ * @property {number} ownersPredicted
+ * @property {number} changedNamingTask changed source files whose path carries two of the task's words (one, for a one-word task)
+ * @property {number} changedSource changed files that are neither tests nor docs
+ * @property {string} note
+ */
+
+/**
+ * How far the comparison can be trusted. The score holds the diff against the
+ * owners `change_impact` predicted for the task; when that prediction is
+ * wrong, a correct change scores as drift (in-scope seat-map PRs scored 15,
+ * 46, 52 and 55 on 2026-11-19). The diff itself says which is likelier: when
+ * the changed files carry the task's own words in their paths and the
+ * predicted owners were left alone, the ranking missed the owners. The score,
+ * its sub-scores and the receipt are unchanged; this says how to read them.
+ * Not part of the receipt.
+ * @param {{ task: string, changedFiles: string[], confirmedDirect: string[], predictedDirect: number, declared: boolean }} input
+ * @returns {PredictionConfidence | null} null when nothing was predicted
+ */
+export function predictionConfidence({ task, changedFiles, confirmedDirect, predictedDirect, declared }) {
+  if (predictedDirect === 0) return null;
+  const words = new Set(scopeTokens(task));
+  const needed = Math.min(2, words.size);
+  const source = changedFiles.filter((file) => !isTestFilePath(file) && !isDocPath(file) && !isTestDataPath(file));
+  const naming = source.filter((file) => needed > 0 && new Set(pathScopeTokens(file).filter((token) => words.has(token))).size >= needed);
+  const counts = { ownersConfirmed: confirmedDirect.length, ownersPredicted: predictedDirect, changedNamingTask: naming.length, changedSource: source.length };
+  if (declared) {
+    return { confidence: "declared", ...counts, note: "The diff is held against the intent declared before the edit, not against a live prediction." };
+  }
+  const ownerShare = confirmedDirect.length / predictedDirect;
+  if (ownerShare >= 0.5) {
+    return { confidence: "high", ...counts, note: `The diff changed ${confirmedDirect.length} of the ${predictedDirect} predicted owner file(s).` };
+  }
+  if (source.length > 0 && naming.length / source.length >= 0.5) {
+    return {
+      confidence: "low",
+      ...counts,
+      note: `The diff changed ${confirmedDirect.length} of the ${predictedDirect} predicted owner file(s), yet ${naming.length} of its ${source.length} changed source file(s) carry the task's words in their paths: the ranking likely missed the owners, so read the score as a lower bound. Declare the intent before the edit (change_impact declare) to score against named files instead.`,
+    };
+  }
+  return {
+    confidence: "medium",
+    ...counts,
+    note: `The diff changed ${confirmedDirect.length} of the ${predictedDirect} predicted owner file(s), and ${naming.length} of its ${source.length} changed source file(s) carry the task's words in their paths.`,
+  };
 }
 
 /**
@@ -1212,10 +1265,11 @@ function riskWeightFor(file) {
 }
 
 /**
- * @param {{ grounded: boolean, unconfirmedCandidates: string[], missedChangedFiles: string[], advisoryChangedFiles?: string[], riskyDrift: {file: string}[], excludedUntracked?: string[], contract?: boolean }} input
+ * @param {{ prediction?: PredictionConfidence | null, grounded: boolean, unconfirmedCandidates: string[], missedChangedFiles: string[], advisoryChangedFiles?: string[], riskyDrift: {file: string}[], excludedUntracked?: string[], contract?: boolean }} input
  * @returns {string[]}
  */
 function buildRecommendations({
+  prediction = null,
   grounded,
   unconfirmedCandidates,
   missedChangedFiles,
@@ -1241,6 +1295,7 @@ function buildRecommendations({
     recs.push(...untrackedRecommendation(excludedUntracked));
     return recs;
   }
+  if (prediction?.confidence === "low") recs.push(`Prediction confidence is low. ${prediction.note}`);
   if (riskyDrift.length) {
     recs.push(
       `Drift touches risk-sensitive paths: ${formatList(riskyDrift.map((d) => d.file))} — these changes were not anticipated by the task and need explicit review.`,
@@ -1306,6 +1361,7 @@ export function formatConvergenceMarkdown(data) {
           `- Scope:          ${data.subScores.scope} (did only the intent happen?)`,
           `- Risk alignment: ${data.subScores.riskAlignment} (did drift land somewhere dangerous?)`,
         ]),
+    ...(data.prediction ? ["", `Prediction confidence: ${data.prediction.confidence}. ${data.prediction.note}`] : []),
     "",
     "## Drivers",
     "",

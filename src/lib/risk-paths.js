@@ -52,9 +52,18 @@ export const RISK_PATTERNS = [
     pathParts: [],
   },
   {
+    // The database schema and its migrations. A validation schema
+    // (`seat-map-builder.schema.ts`, `schemas/booking.ts`: Zod, Joi, yup) is
+    // classified `schema` by the code map and has "schema" in its name, but
+    // it checks input; it changes no table. Both matched here, so a change to
+    // the validation of a Json column was flagged as a data-model change
+    // (bashbop-api seat maps, 2026-11-19). A whole-basename `schema.*`
+    // (`db/schema.ts` for Drizzle, `schema.rb`) still counts.
     flag: RISK_FLAGS.dataModel,
-    kinds: ["schema"],
-    pathParts: ["prisma", "migration", "schema", "schema.sql", ".sql"],
+    kinds: [],
+    pathParts: ["prisma", "migration", ".sql"],
+    basenamePatterns: [/^schema\.[^.]+$/],
+    segments: ["migrations"],
   },
   {
     flag: RISK_FLAGS.authSecurity,
@@ -583,6 +592,27 @@ export function isGateRiskPath(filePath) {
   return classifyPath(path).some((flag) => (weights[flag] ?? 1) > 0);
 }
 
+/**
+ * The Risk review warning's summary: which risk each flagged file carries, so
+ * a reader sees "money flow: 1" instead of the same generic line on every PR
+ * that touches the same files. Test-data and zero-weight flags are left out,
+ * as the gate leaves them out.
+ * @param {string[]} matches paths `matchRiskPaths(..., { gate: true })` kept
+ * @returns {string}
+ */
+export function riskReviewSummary(matches) {
+  const weights = /** @type {Record<string, number>} */ (RISK_SCORE_WEIGHTS);
+  /** @type {Map<string, number>} */
+  const counts = new Map();
+  for (const file of matches) {
+    for (const flag of classifyPath(file)) {
+      if ((weights[flag] ?? 1) > 0) counts.set(flag, (counts.get(flag) ?? 0) + 1);
+    }
+  }
+  const named = [...counts].map(([flag, count]) => `${flag}: ${count}`).join(", ");
+  return `Risk-sensitive files changed${named ? ` (${named})` : ""}; maintainer review should be explicit.`;
+}
+
 // Default matcher reports any path the classifier flags — used where concept
 // reporting (not gating) is wanted. Pass `{ gate: true }` to apply the
 // test/doc filtering the merge gates require.
@@ -606,7 +636,11 @@ export function matchRiskPaths(paths, options = {}) {
  * @returns {string[]}
  */
 export function conceptsFromQuery(query) {
-  const tokens = tokenizeQuery(query);
+  // A dotted file name (`seat-map-builder.schema`, `seat-checkout.service.ts`)
+  // names a file, not a concept: its "schema" said nothing about the database
+  // and lifted `prisma/schema.prisma` into a validation change. The file's
+  // own path flags still apply once it is ranked.
+  const tokens = tokenizeQuery(String(query ?? "").replace(DOTTED_FILE_NAME, " "));
   /** @type {Set<string>} */
   const flags = new Set();
   for (const [flag, words] of Object.entries(CONCEPT_SYNONYMS)) {
@@ -619,6 +653,8 @@ export function conceptsFromQuery(query) {
   }
   return [...flags];
 }
+
+const DOTTED_FILE_NAME = /[\w/-]+(?:\.[a-z][\w-]*)+/gi;
 
 // Tokenize a free-text query into lowercased whole-word tokens. Hyphenated
 // forms are kept as a single token ("sign-in") AND split ("sign", "in") so a

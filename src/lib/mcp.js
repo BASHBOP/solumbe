@@ -19,6 +19,7 @@ import { forwardToCanvas } from "./canvas-tap.js";
 import { applyCheckTrial } from "./check-trial.js";
 import { applyGateAttempts } from "./gate-attempts.js";
 import { contextRepoPaths, gatePolicy } from "./config.js";
+import { AUTO_REF } from "./ref-snapshot.js";
 import { evaluateLocal } from "./pass-local.js";
 import { evaluatePR } from "./pass-pr.js";
 import { generateReview } from "./review.js";
@@ -172,7 +173,15 @@ export const tools = [
       type: "object",
       properties: {
         query: { type: "string", description: "Task or question to gather context for." },
-        path: { type: "string", description: "Repository path. Defaults to current working directory." },
+        path: {
+          type: "string",
+          description: "Repository path. Defaults to the server's working directory; when editing in a git worktree, pass the worktree's path.",
+        },
+        ref: {
+          type: "string",
+          description:
+            "Git ref whose tree to rank instead of the files on disk (e.g. origin/main). Omitted, a clean checkout that is behind its upstream is ranked against that upstream, and the result says so; a checkout with uncommitted changes is always ranked as it is.",
+        },
         paths: {
           type: "array",
           items: { type: "string" },
@@ -208,7 +217,15 @@ export const tools = [
       type: "object",
       properties: {
         query: { type: "string", description: "Plain-English change request." },
-        path: { type: "string", description: "Repository path. Defaults to current working directory." },
+        path: {
+          type: "string",
+          description: "Repository path. Defaults to the server's working directory; when editing in a git worktree, pass the worktree's path.",
+        },
+        ref: {
+          type: "string",
+          description:
+            "Git ref whose tree to rank instead of the files on disk (e.g. origin/main). Omitted, a clean checkout that is behind its upstream is ranked against that upstream, and the result says so; a checkout with uncommitted changes is always ranked as it is.",
+        },
         top: { type: "number", description: "Number of files to return. Defaults to 10." },
         diffBase: { type: "string", description: "Optional git ref to validate predictions against (e.g. origin/main, HEAD)." },
         includeUntracked: {
@@ -292,7 +309,11 @@ export const tools = [
     inputSchema: {
       type: "object",
       properties: {
-        query: { type: "string", description: 'The stated task / intent to measure against the diff, e.g. "add Stripe refunds".' },
+        query: {
+          type: "string",
+          description:
+            'The stated task / intent to measure against the diff, e.g. "add Stripe refunds". Required unless intent is passed, whose request is then the query.',
+        },
         base: { type: "string", description: "Git ref to diff against (e.g. origin/main, HEAD~1). Required." },
         head: {
           type: "string",
@@ -314,7 +335,7 @@ export const tools = [
         },
         includeMarkdown: { type: "boolean", description: "Return a compact human-readable markdown report instead of the full JSON. Defaults to false." },
       },
-      required: ["query", "base"],
+      required: ["base"],
     },
   },
   {
@@ -772,12 +793,16 @@ async function dispatchTool(name, args) {
       }
       return withSearchRemediation(searchCatalog(args.query, { ...args, path: args.path ?? (broadServerCwd() ? undefined : ".") }));
     case "context_pack": {
-      let result = generateContextPack(requiredString(args.query, "query"), { ...args, paths: contextRepoPaths(args) });
+      let result = generateContextPack(requiredString(args.query, "query", QUERY_WHY.context_pack), {
+        ...args,
+        paths: contextRepoPaths(args),
+        ref: optionalRef(args.ref),
+      });
       if (args.online === true) result = await readContextPack(result);
       return args.includeMarkdown ? result : result.data;
     }
     case "change_impact": {
-      const query = requiredString(args.query, "query");
+      const query = requiredString(args.query, "query", QUERY_WHY.change_impact);
       if (args.amend !== undefined && args.amend !== null) {
         // An amendment adds named files to a contract that already exists, so
         // nothing is ranked again.
@@ -792,6 +817,8 @@ async function dispatchTool(name, args) {
         diffBase: args.diffBase,
         includeUntracked: args.includeUntracked,
         companions: true,
+        // A diff base means the change is in this tree: rank this tree.
+        ref: args.diffBase ? undefined : optionalRef(args.ref),
       });
       if (args.declare) {
         const intent = intentFromImpact(result.data);
@@ -801,7 +828,7 @@ async function dispatchTool(name, args) {
       return args.includeMarkdown ? result : result.data;
     }
     case "agent_experience": {
-      const data = generateAxScore(requiredString(args.query, "query"), {
+      const data = generateAxScore(requiredString(args.query, "query", QUERY_WHY.agent_experience), {
         path: args.path ?? ".",
         top: args.top,
       });
@@ -809,7 +836,7 @@ async function dispatchTool(name, args) {
     }
     case "model_route": {
       const repoPath = args.path ?? ".";
-      const query = requiredString(args.query, "query");
+      const query = requiredString(args.query, "query", QUERY_WHY.model_route);
       // An unknown host is a deterministic config miss. Reject it before the
       // impact pass, the AX score and a billed Jev round trip, not after. The
       // tier is not known yet, so validate the host map's existence with any
@@ -825,10 +852,10 @@ async function dispatchTool(name, args) {
       return args.includeMarkdown ? { data, markdown: formatRouteMarkdown(data) } : data;
     }
     case "convergence_score": {
-      const query = requiredString(args.query, "query");
+      const query = queryOrIntentRequest(args, "convergence_score");
       const data = generateConvergence(query, {
         path: args.path ?? ".",
-        base: requiredString(args.base, "base"),
+        base: requiredString(args.base, "base", "the diff is measured from a git ref, e.g. origin/main or origin/develop"),
         head: args.head,
         top: args.top,
         staged: args.staged,
@@ -1100,15 +1127,53 @@ function declaredScopeFor(repoPath, value, query) {
 }
 
 /**
+ * The ref a call names, or the automatic rule when it names none.
  * @param {unknown} value
- * @param {string} name
  * @returns {string}
  */
-function requiredString(value, name) {
+function optionalRef(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : AUTO_REF;
+}
+
+/**
+ * @param {unknown} value
+ * @param {string} name
+ * @param {string} [why] what the argument is for and what to pass
+ * @returns {string}
+ */
+function requiredString(value, name, why) {
   if (typeof value !== "string" || !value.trim()) {
-    throw new McpProtocolError(-32602, `${name} is required`);
+    const got = value === undefined ? "it was not passed" : typeof value === "string" ? "it was blank" : `it was ${value === null ? "null" : typeof value}`;
+    throw new McpProtocolError(-32602, `${name} is required (${got})${why ? `: ${why}` : ""}`);
   }
   return value;
+}
+
+// Why each tool needs `query`, so a rejected call says what to pass, not
+// only that something is missing.
+const QUERY_WHY = {
+  context_pack: 'the pack ranks files against the task, so pass the task in plain words as query, e.g. "add seat labels to the seat map builder"',
+  change_impact: "the ranking predicts the owners of a change, so pass the change request as query",
+  agent_experience: "the score is for one task, so pass it as query",
+  model_route: "the route is chosen for one task, so pass it as query",
+  convergence_score:
+    "the score measures the diff against the task it was made for, so pass that task as query; with intent passed, its request is used when query is left out",
+};
+
+/**
+ * The query a call names, or the declared intent's request when the call
+ * passes an intent and leaves query out: the intent was declared for exactly
+ * one request, so it is the only query that intent can be scored against.
+ * @param {ToolArgs} args
+ * @param {keyof typeof QUERY_WHY} tool
+ * @returns {string}
+ */
+function queryOrIntentRequest(args, tool) {
+  if ((typeof args.query !== "string" || !args.query.trim()) && args.intent !== undefined && args.intent !== null && args.intent !== "") {
+    const intent = readIntent(intentRoot(args.path ?? "."), args.intent);
+    if (typeof intent?.request === "string" && intent.request.trim()) return intent.request;
+  }
+  return requiredString(args.query, "query", QUERY_WHY[tool]);
 }
 
 /**
