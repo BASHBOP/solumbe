@@ -53,11 +53,11 @@ export const RISK_PATTERNS = [
   },
   {
     // The database schema and its migrations. A validation schema
-    // (`seat-map-builder.schema.ts`, `schemas/booking.ts`: Zod, Joi, yup) is
+    // (`floor-plan-builder.schema.ts`, `schemas/shipment.ts`: Zod, Joi, yup) is
     // classified `schema` by the code map and has "schema" in its name, but
     // it checks input; it changes no table. Both matched here, so a change to
     // the validation of a Json column was flagged as a data-model change
-    // (bashbop-api seat maps, 2026-11-19). A whole-basename `schema.*`
+    // A whole-basename `schema.*`
     // (`db/schema.ts` for Drizzle, `schema.rb`) still counts.
     flag: RISK_FLAGS.dataModel,
     kinds: [],
@@ -636,7 +636,7 @@ export function matchRiskPaths(paths, options = {}) {
  * @returns {string[]}
  */
 export function conceptsFromQuery(query) {
-  // A dotted file name (`seat-map-builder.schema`, `seat-checkout.service.ts`)
+  // A dotted file name (`floor-plan-builder.schema`, `bay-pick.service.ts`)
   // names a file, not a concept: its "schema" said nothing about the database
   // and lifted `prisma/schema.prisma` into a validation change. The file's
   // own path flags still apply once it is ranked.

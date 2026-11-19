@@ -871,8 +871,8 @@ function applyDependencyBoosts(allFiles, scored, pinned = new Map()) {
       const existing = scored.get(neighbor);
       // Each importing seed added its share with no ceiling, so a DTO, a
       // module or a shared types file imported by ten ranked files gained
-      // +80 and outranked the service that owns the change (bashbop-api
-      // seat-maps, 2026-11-19: five DTOs and prisma.module led the list).
+      // +80 and outranked the service that owns the change: five DTOs
+      // and a database module led the list for a one-service change.
       const add = Math.min(base, Math.max(0, IMPORT_BOOST_CAP - (boosted.get(neighbor) ?? 0)));
       if (existing) {
         existing.relatedFiles.push(seed.file.path);

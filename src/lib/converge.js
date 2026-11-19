@@ -315,8 +315,7 @@ export function generateConvergence(query, options = {}) {
 /**
  * How far the comparison can be trusted. The score holds the diff against the
  * owners `change_impact` predicted for the task; when that prediction is
- * wrong, a correct change scores as drift (in-scope seat-map PRs scored 15,
- * 46, 52 and 55 on 2026-11-19). The diff itself says which is likelier: when
+ * wrong, a correct change scores as drift (in-scope changes have scored 15 to 55). The diff itself says which is likelier: when
  * the changed files carry the task's own words in their paths and the
  * predicted owners were left alone, the ranking missed the owners. The score,
  * its sub-scores and the receipt are unchanged; this says how to read them.
