@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "generatedAt": "2026-11-15T17:38:25.645Z",
+  "generatedAt": "2026-11-19T16:32:50.706Z",
   "schemaVersion": 3,
   "reviewEngineVersion": 1,
   "request": "review this change",
@@ -15,28 +15,28 @@
     "concepts": [],
     "topFiles": [
       {
-        "path": "src/cli.js",
-        "score": 15,
+        "path": "src/lib/review.js",
+        "score": 41,
         "riskFlags": []
       },
       {
-        "path": "src/lib/mcp.js",
-        "score": 15,
+        "path": "src/lib/pr-review.js",
+        "score": 36,
         "riskFlags": []
       },
       {
-        "path": "CHANGELOG.md",
-        "score": 0,
+        "path": "codex/skills/solumbe-review/SKILL.md",
+        "score": 32.2,
         "riskFlags": []
       },
       {
-        "path": "docs/02-mcp-agent-workflows/README.md",
-        "score": 0,
+        "path": "src/lib/agent-tools.js",
+        "score": 23.6,
         "riskFlags": []
       },
       {
-        "path": "docs/17-calibration-thesis/README.md",
-        "score": 0,
+        "path": "src/lib/agent-workflow.js",
+        "score": 23.6,
         "riskFlags": []
       }
     ],
@@ -45,13 +45,12 @@
     ]
   },
   "prReviewSummary": {
-    "changedFiles": 19,
-    "additions": 866,
-    "deletions": 14,
+    "changedFiles": 1,
+    "additions": 28,
+    "deletions": 20,
     "riskLevel": "low",
     "riskFlags": [
-      "dependency",
-      "large PR"
+      "dependency"
     ],
     "reviewTargetsCount": 0
   },
@@ -63,7 +62,7 @@
       {
         "name": "Changed files",
         "status": "PASS",
-        "summary": "19 changed files found."
+        "summary": "1 changed file found."
       },
       {
         "name": "Commit snapshot",
@@ -83,7 +82,7 @@
       {
         "name": "Release discipline",
         "status": "PASS",
-        "summary": "Version metadata is SemVer and changelog was updated."
+        "summary": "Version metadata changed but the project version is unchanged (dependency or lockfile update)."
       },
       {
         "name": "Validation commands",
@@ -107,34 +106,16 @@
       }
     ],
     "changedFiles": [
-      "CHANGELOG.md",
-      "RELEASE.md",
-      "docs/02-mcp-agent-workflows/README.md",
-      "docs/17-calibration-thesis/README.md",
-      "docs/18-model-routing/README.md",
-      "docs/assets/solumbe-how-it-works.html",
-      "docs/index.md",
-      "package-lock.json",
-      "package.json",
-      "server.json",
-      "src/cli.js",
-      "src/lib/claude-read.js",
-      "src/lib/gate-attempts.js",
-      "src/lib/mcp.js",
-      "src/lib/shell-env.js",
-      "tests/converge.property.test.js",
-      "tests/gate-attempts.test.js",
-      "tests/pass-local.property.test.js",
-      "tests/shell-env.test.js"
+      "package-lock.json"
     ],
     "subject": {
       "kind": "git-commit",
-      "baseSha": "51e7918d7523f8b8884c8bce412db500b4f8acaf",
-      "headSha": "ad7a5783468f8045eaef8846f8669266fff5384c",
-      "treeSha": "5dddf951a8dba75ec48b1df516552a77f8cc0e2b"
+      "baseSha": "ad7a5783468f8045eaef8846f8669266fff5384c",
+      "headSha": "010249ddbaeefb2579113aa9d89f240b3f5a09d0",
+      "treeSha": "643b2cbf13680b7a93c4468de6b9c7dfbf92bb0a"
     }
   },
   "tokenEstimate": {
-    "fullJson": 657
+    "fullJson": 554
   }
 }
