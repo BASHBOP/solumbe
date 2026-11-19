@@ -98,7 +98,7 @@ export function printHelp(options = {}) {
     printText(`solumbe
 
 Usage:
-  solumbe context <query> [--path repo] [--limit n] [--online] [--out file] [--json]        # before the edit: the files, tests and commands the request needs
+  solumbe context <query> [--path repo] [--ref git-ref] [--limit n] [--online] [--out file] [--json]   # before the edit: the files, tests and commands the request needs
   solumbe declare <repo> <request> [--top n] [--out file] [--json]                          # before the edit: record the files it is expected to touch
   solumbe converge <repo> <query> --base <ref> [--head ref | --staged] [--out file] [--json]   # after the edit: how far the diff is from the request, with a receipt
   solumbe gate [repo | --path repo] [--base ref] [--head ref | --staged] [--request text] [--intent file] [--min-convergence n] [--receipt hash|file] [--out file] [--json]   # before the merge: PASS / WARN / FAIL on the exact tree
@@ -133,8 +133,8 @@ Usage:
   solumbe index <repo...> [--discover] [--catalog file] [--json]
   solumbe catalog [--catalog file] [--json]
   solumbe search <query> [--catalog file] [--limit n] [--offline] [--json]
-  solumbe context <query> [--path repo] [--limit n] [--online] [--out file] [--json]
-  solumbe impact <repo> <query> [--top n] [--diff-base ref] [--out file] [--json] [--mermaid]
+  solumbe context <query> [--path repo] [--ref git-ref] [--limit n] [--online] [--out file] [--json]
+  solumbe impact <repo> <query> [--top n] [--ref git-ref] [--diff-base ref] [--out file] [--json] [--mermaid]
   solumbe obsidian <repo> [--query text] [--out vault-dir] [--limit n] [--top n] [--json]
   solumbe ax <repo> <query> [--top n] [--out file] [--json]
   solumbe route <repo> <query> [--host id] [--tier-only] [--offline] [--top n] [--out file] [--json]   # recommend a model tier before spending on the task

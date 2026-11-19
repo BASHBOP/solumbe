@@ -11,7 +11,7 @@ import { convergenceCheck, gitRoot, gitShowContent, migrationCheck, scopeContrac
 import { externalScannerChecks } from "./external-scanners.js";
 import { aggregateVerdict, normalizeGovernance, normalizeProfile, policyCheck, STATUS } from "./policy.js";
 import { checkRelease } from "./release-check.js";
-import { matchRiskPaths } from "./risk-paths.js";
+import { matchRiskPaths, riskReviewSummary } from "./risk-paths.js";
 import { estimateTokens } from "./tokens.js";
 import { runCommand } from "./tools.js";
 
@@ -351,7 +351,7 @@ function riskCheck(files) {
     return {
       name: "Risk review",
       status: STATUS.warn,
-      summary: "Risk-sensitive files changed; maintainer review should be explicit.",
+      summary: riskReviewSummary(matches),
       details: matches.slice(0, 20),
     };
   }

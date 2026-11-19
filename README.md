@@ -59,7 +59,7 @@ $ solumbe gate . --staged --base origin/main --request "add refund handling to c
      |- Tree: 7d0b513dd256877d6bd309a6406468a9b1eaeedc
      |- Base: b776f04fcfbd02c8ce8d63e1a0c2450be58de039
   [OK]    Secret safety          No secret file paths and no credential values found in the changed content.
-  [WARN]  Risk review            Risk-sensitive files changed; maintainer review should be explicit.
+  [WARN]  Risk review            Risk-sensitive files changed (money flow: 1); maintainer review should be explicit.
      |- src/payment/checkout.service.ts
   [OK]    Convergence            Task and diff satisfy the convergence requirement.
      |- Score: 100/100 (aligned)

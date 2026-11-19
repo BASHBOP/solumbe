@@ -71,6 +71,7 @@ import { listRepoFiles } from "./repo.js";
  * @property {number} [sourceFileCount]
  * @property {Record<string, number>|object} [languages]
  * @property {string[]} [entrypoints]
+ * @property {import('./ref-snapshot.js').RefSnapshot} [snapshot] set when the map describes a git ref's tree, not the files on disk
  */
 
 /**

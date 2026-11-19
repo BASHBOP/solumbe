@@ -3,7 +3,7 @@
   "description": "Labeled evaluation corpus for solumbe retrieval, risk classification, fixture-backed harness command execution, and gate effectiveness. Gate cases initialize an isolated Git repository from a committed base, apply one committed change-set, and assert both the verdict and deterministic check reason. See docs/EVALS.md for how to add a case and how thresholds work. Reads cases label the intent (and, where it is unambiguous, the solumbe tool and the files) a request asks for; `solumbe eval --reads` grades a read provider against them and is not part of CI because it calls a model.",
   "k": 5,
   "thresholds": {
-    "comment": "Floors set to current-baseline-minus-slack so the suite is green today but a regression trips it. Baseline (2026-10-30): retrieval p@5=0.857 r@5=1.0 mrr=0.988 (44/44, plus known gaps outside the aggregate). The symbol-stacking case added that day took p@5 from 0.865; risk accuracy=1.0 (28/28). The dependency cases added that day raised p@5 from 0.838; the floors are unchanged. The precision floor moved from 0.85 to 0.82 when the Python and Go fixtures were added: their ten cases average p@5=0.767 because the Python queries return unlabeled sibling primaries, and the 25 earlier cases are unchanged at 0.861. tests/cli.test.js asserts the same floor. Aggregate metrics must be >= these floors for exit code 0. The risk floor is 0.97 so that a single failing case (27/28 = 0.964) still trips the gate; it was 0.96 at 22 cases. Re-record both baseline and floors in docs/EVALS.md after any intentional behavior change.",
+    "comment": "Floors set to current-baseline-minus-slack so the suite is green today but a regression trips it. Baseline (2026-10-30): retrieval p@5=0.857 r@5=1.0 mrr=0.988 (44/44, plus known gaps outside the aggregate). The symbol-stacking case added that day took p@5 from 0.865; risk accuracy=1.0 (28/28). The dependency cases added that day raised p@5 from 0.838; the floors are unchanged. The precision floor moved from 0.85 to 0.82 when the Python and Go fixtures were added: their ten cases average p@5=0.767 because the Python queries return unlabeled sibling primaries, and the 25 earlier cases are unchanged at 0.861. tests/cli.test.js asserts the same floor. Aggregate metrics must be >= these floors for exit code 0. The risk floor is 0.97 so that a single failing case (27/28 = 0.964) still trips the gate; it was 0.96 at 22 cases. Re-record both baseline and floors in docs/EVALS.md after any intentional behavior change. The five seat-maps-api cases added 2026-11-19 average p@5=0.67 (the fixture's seat-maps services share the request's words, and only files the request is about are labeled), taking the aggregate from 0.857 to 0.837 (49/49); risk accuracy=1.0 (32/32). The floors are unchanged.",
     "retrieval": {
       "precisionAtK": 0.82,
       "recallAtK": 0.9,
@@ -42,7 +42,8 @@
     "nav-protection-web": "evals/fixtures/nav-protection-web",
     "solumbe-hook-web": "evals/fixtures/solumbe-hook-web",
     "feature-flag-api": "evals/fixtures/feature-flag-api",
-    "symbol-stacking": "evals/fixtures/symbol-stacking"
+    "symbol-stacking": "evals/fixtures/symbol-stacking",
+    "seat-maps-api": "evals/fixtures/seat-maps-api"
   },
   "retrieval": [
     {
@@ -389,6 +390,54 @@
       "query": "trim the MCP tool definitions and names the server lists",
       "repoFixture": "symbol-stacking",
       "expectedPrimary": ["src/mcp/server.js"]
+    },
+    {
+      "name": "seat-maps-named-file",
+      "comment": "Session miss (bashbop-api seat maps, 2026-11-19): the request named `seat-checkout.service.ts` and the pack did not rank it. The index was of a checkout that predates the file (see ref-snapshot.js); on a tree that holds it, the named file must lead.",
+      "query": "implement seat-checkout.service.ts hold price check",
+      "repoFixture": "seat-maps-api",
+      "expectedPrimary": ["src/seat-maps/seat-checkout.service.ts", "src/seat-maps/seat-maps.controller.ts"],
+      "expectedAnyOf": ["src/seat-maps/dto/hold-places.dto.ts"]
+    },
+    {
+      "name": "seat-maps-dotted-file-names",
+      "comment": "Session miss (bashbop-api seat maps, 2026-11-19): `seat-map-builder.schema` and `seat-map-layout`, written without an extension, returned no seat-maps file.",
+      "query": "readStoredBuilder seat-map-builder.schema rotation seat-map-layout",
+      "repoFixture": "seat-maps-api",
+      "expectedPrimary": [
+        "src/seat-maps/seat-map-builder.schema.ts",
+        "src/seat-maps/seat-map-layout.schema.ts",
+        "src/seat-maps/seat-map-guest.service.ts",
+        "src/seat-maps/seat-map-publish.service.ts"
+      ]
+    },
+    {
+      "name": "seat-maps-named-domain-not-capped",
+      "comment": "Session miss (bashbop-api seat maps, 2026-11-19): the two-per-domain cap on Primary Files kept two seat-maps files and gave the next slots to paystack, booking and seller services that scored lower than the seat-maps files left out. A domain the request names in full (`seat map` -> `seat-maps`) is no longer capped.",
+      "query": "seat map builder rows numbering reverse start, decor shape block, seat labels",
+      "repoFixture": "seat-maps-api",
+      "expectedPrimary": [
+        "src/seat-maps/seat-map-builder.schema.ts",
+        "src/seat-maps/seat-places.ts",
+        "src/seat-maps/seat-together.ts",
+        "src/seat-maps/seat-map-guest.service.ts"
+      ],
+      "expectedAnyOf": ["src/seat-maps/seat-map-publish.service.ts", "src/seat-maps/seat-place-text.ts", "src/seat-maps/seat-map-snapshot.ts"]
+    },
+    {
+      "name": "seat-maps-lost-seat-refund",
+      "comment": "Session miss (bashbop-api seat maps, 2026-11-19): the refund-recovery request missed `seat-lost-race.service.ts`.",
+      "query": "seat map refund recovery late payment lost seat refund failed retry",
+      "repoFixture": "seat-maps-api",
+      "expectedPrimary": ["src/seat-maps/seat-lost-race.service.ts", "src/paystack/paystack.service.ts"]
+    },
+    {
+      "name": "seat-maps-comp-named-guest",
+      "comment": "Session miss (bashbop-api seat maps, 2026-11-19): the comp request ranked booking files and missed the seat-maps owners.",
+      "query": "seat map organiser comp free place named guest booking",
+      "repoFixture": "seat-maps-api",
+      "expectedPrimary": ["src/seat-maps/seat-map-comp-guest.service.ts", "src/booking/booking.service.ts", "src/booking/booking.controller.ts"],
+      "expectedAnyOf": ["src/seat-maps/seat-maps.controller.ts", "src/seat-maps/dto/comp-seats.dto.ts"]
     }
   ],
   "risk": [
@@ -605,6 +654,37 @@
       "query": "upgrade the organiser to the pro plan",
       "expectedConcepts": [],
       "notExpectedConcepts": ["dependency"]
+    },
+    {
+      "name": "path-validation-schema-not-data-model",
+      "comment": "Session miss (bashbop-api seat maps, 2026-11-19): a Zod schema that validates a Json column is not the database schema. `*.schema.ts` was classified `schema` and its name carries the word, so both rules flagged it.",
+      "mode": "path",
+      "path": "src/seat-maps/seat-map-builder.schema.ts",
+      "expectedConcepts": [],
+      "notExpectedConcepts": ["data model", "auth/security"]
+    },
+    {
+      "name": "path-prisma-schema-still-data-model",
+      "comment": "Guard for the rule above: the database schema and its migrations keep the flag.",
+      "mode": "path",
+      "path": "prisma/schema.prisma",
+      "expectedConcepts": ["data model"],
+      "notExpectedConcepts": []
+    },
+    {
+      "name": "path-drizzle-schema-still-data-model",
+      "mode": "path",
+      "path": "src/db/schema.ts",
+      "expectedConcepts": ["data model"],
+      "notExpectedConcepts": []
+    },
+    {
+      "name": "query-dotted-file-name-not-data-model",
+      "comment": "Session miss (bashbop-api seat maps, 2026-11-19): `seat-map-builder.schema` in a request names a file; its `schema` is not a data-model request and must not lift prisma/schema.prisma.",
+      "mode": "query",
+      "query": "readStoredBuilder seat-map-builder.schema rotation seat-map-layout",
+      "expectedConcepts": [],
+      "notExpectedConcepts": ["data model"]
     }
   ],
   "harnessExecution": [

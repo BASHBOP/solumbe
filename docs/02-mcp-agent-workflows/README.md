@@ -391,6 +391,17 @@ Solumbe exposes **14** MCP tools for deterministic repository context and merge 
 | `workspace_report` | Build product-level context across multiple repos                                     |
 | `repo_harness`     | Generate setup, validation, runtime, and context commands                             |
 
+### Which tree is ranked
+
+`context_pack` and `change_impact` index the directory at `path`, which defaults to the server's working directory, not the caller's. An agent that edits in a git worktree should pass that worktree's `path`.
+
+- A clean checkout that is behind its upstream is ranked against the upstream tree (`origin/main`), read from git into a cache directory. The repository's index, branch and worktrees are not touched. The pack's Conflicts section, or `repo.note` on an impact report, names the ref and commit that was ranked.
+- A checkout with uncommitted changes is ranked as it is on disk: its edits exist nowhere else.
+- `ref` (for example `ref: "origin/main"`, or `--ref origin/main` on `solumbe context`) ranks a named ref in either case.
+- `change_impact` with `diffBase` always ranks the files on disk, since the diff is there.
+
+`convergence_score` reports `prediction.confidence` beside the score. `low` means the predicted owner files were not changed, yet most changed source files carry the task's words in their paths: the ranking likely missed the owners, and the score is a lower bound. Passing the `intent` from `change_impact` with `declare: true` scores against declared files instead, and `query` may then be left out.
+
 ### Legacy tool names
 
 The older names below still work through `tools/call`, although `tools/list` does not advertise them. They date from solumbe 2.0, which folded 18 tools into 11. Each call is forwarded to its canonical tool with the arguments translated, so a host configured with the old names keeps working. They still work in 3.x, and no release has been named to remove them; use the canonical names in new configs.
