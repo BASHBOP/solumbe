@@ -45,6 +45,7 @@ const commandHandlers = {
   catalog: handleCatalog,
   search: handleSearch,
   context: handleContext,
+  session: handleSession,
   impact: handleImpact,
   obsidian: handleObsidian,
   ax: handleAx,
@@ -77,6 +78,7 @@ const commandHandlers = {
   eval: handleEval,
   "data-access": handleDataAccess,
   "agent-tools": handleAgentTools,
+  "ci-report": handleCiReport,
   config: handleConfig,
   help: handleHelp,
 };
@@ -374,6 +376,38 @@ async function handleContext(parsed) {
       createRenderer({ ...opts, emoji: emojiPreference(parsed), color: colorPreference(parsed), theme: themePreference(parsed) }),
     ),
   );
+}
+
+/** @param {CliArgs} parsed */
+async function handleSession(parsed) {
+  const { formatSessionMarkdown, runSession } = await import("./lib/session.js");
+  const request = parsed.positionals.join(" ").trim();
+  const result = runSession(request, {
+    path: typeof parsed.flags.path === "string" ? parsed.flags.path : ".",
+    base: typeof parsed.flags.base === "string" ? parsed.flags.base : undefined,
+    head: typeof parsed.flags.head === "string" ? parsed.flags.head : undefined,
+    staged: parsed.flags.staged === true,
+    top: typeof parsed.flags.top === "string" ? Number(parsed.flags.top) : undefined,
+    limit: typeof parsed.flags.limit === "string" ? Number(parsed.flags.limit) : undefined,
+    intent: typeof parsed.flags.intent === "string" ? parsed.flags.intent : undefined,
+    policy: typeof parsed.flags.policy === "string" ? parsed.flags.policy : undefined,
+    governance: typeof parsed.flags.governance === "string" ? parsed.flags.governance : undefined,
+    runValidation: parsed.flags.run_validation === true,
+  });
+
+  if (parsed.flags.json) {
+    printJson(result);
+    if (result.verdict === "FAIL") process.exitCode = 1;
+    return;
+  }
+  const markdown = formatSessionMarkdown(result);
+  if (parsed.flags.out) {
+    const artifact = writeArtifact(String(parsed.flags.out), markdown);
+    printText(`Session report written: ${artifact.path}`);
+  } else {
+    printText(markdown);
+  }
+  if (result.verdict === "FAIL") process.exitCode = 1;
 }
 
 /**
@@ -1436,6 +1470,29 @@ async function handleMatrix(parsed) {
 }
 
 /** @param {CliArgs} parsed */
+async function handleCiReport(parsed) {
+  const { evaluateCiResult, formatCiReport } = await import("./lib/ci-report.js");
+  const source = parsed.positionals[0];
+  const stdout = source && source !== "-" ? readFileSync(source, "utf8") : readFileSync(0, "utf8");
+  const stderrPath = typeof parsed.flags.stderr === "string" ? parsed.flags.stderr : undefined;
+  const stderr = stderrPath ? readFileSync(stderrPath, "utf8") : "";
+  const rawExitCode = parsed.flags.exit_code;
+  const exitCode = rawExitCode === undefined || rawExitCode === true ? 0 : Number(rawExitCode);
+  const report = evaluateCiResult(stdout, { exitCode, stderr });
+
+  if (parsed.flags.json) {
+    printJson(report);
+  } else if (parsed.flags.out) {
+    const artifact = writeArtifact(String(parsed.flags.out), formatCiReport(report));
+    printText(formatCiReport(report));
+    printText(`CI report written: ${artifact.path}`);
+  } else {
+    printText(formatCiReport(report));
+  }
+  if (!report.ok || report.verdict === "FAIL") process.exitCode = 1;
+}
+
+/** @param {CliArgs} parsed */
 async function handleInit(parsed) {
   const { formatInitSummary, initProject } = await import("./lib/init.js");
   const targetPath = parsed.positionals[0] ?? ".";
@@ -1463,6 +1520,7 @@ async function handleInit(parsed) {
     noWorkflow: parsed.flags.no_workflow,
     toolRepo: parsed.flags.tool_repo,
     toolRef: parsed.flags.tool_ref,
+    profile: parsed.flags.profile,
     gates,
     precommit,
     hooksPath,

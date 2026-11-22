@@ -43,6 +43,7 @@ const staticPrecommitScripts = new Set(["lint", "format:check"]);
  * @property {boolean} [gates] Inject a harness-driven quality job into the workflow. Defaults to true.
  * @property {boolean} [precommit] Scaffold a dependency-free pre-commit hook. Defaults to true.
  * @property {boolean} [hooksPath] Point git core.hooksPath at .githooks (requires the pre-commit hook). Defaults to false.
+ * @property {"classic" | "governed"} [profile] Add the governed session loop and strict CI reporter. Defaults to classic.
  */
 
 /**
@@ -56,6 +57,8 @@ const staticPrecommitScripts = new Set(["lint", "format:check"]);
  * @property {boolean} force
  * @property {string} toolRepo
  * @property {string} toolRef
+ * @property {"classic" | "governed"} profile
+ * @property {boolean} governedApplied
  * @property {boolean} gatesApplied Whether a harness-driven quality job was added to the workflow.
  * @property {"applied" | "disabled" | "none"} gatesStatus Why gates were or were not scaffolded.
  * @property {boolean} precommitApplied Whether a pre-commit hook was scaffolded.
@@ -82,6 +85,8 @@ export function initProject(targetPath = ".", options = {}) {
   const force = Boolean(options.force);
   const toolRepo = String(options.toolRepo ?? defaultToolRepo);
   const toolRef = String(options.toolRef ?? defaultToolRef);
+  const profile = options.profile === "governed" ? "governed" : "classic";
+  const governedApplied = profile === "governed";
   const wantGates = options.gates !== false; // default on
   const wantPrecommit = options.precommit !== false; // default on
   const wantHooksPath = Boolean(options.hooksPath); // default off — never mutate git config without consent
@@ -113,12 +118,22 @@ export function initProject(targetPath = ".", options = {}) {
   const precommitApplied = wantPrecommit;
   const precommitStatus = precommitApplied ? "applied" : wantPrecommit ? "none" : "disabled";
 
-  writeScaffoldFile(root, ".solumbe/README.md", contextReadme(toolRepo, toolRef, { gatesApplied, precommitApplied }), { force, operations });
+  writeScaffoldFile(root, ".solumbe/README.md", contextReadme(toolRepo, toolRef, { gatesApplied, precommitApplied, profile }), { force, operations });
+
+  if (governedApplied) {
+    writeScaffoldFile(root, ".solumbe/workflow.md", governedWorkflowReadme(), { force, operations });
+    writeScaffoldFile(
+      root,
+      ".solumbe/init-manifest.json",
+      `${JSON.stringify(buildInitManifest({ profile, toolRepo, toolRef, packageManagers, setup, validate, gatesApplied, precommitApplied }), null, 2)}\n`,
+      { force, operations },
+    );
+  }
 
   ensureGitignoreEntry(root, ".solumbe/", operations);
 
   if (!options.noWorkflow) {
-    writeScaffoldFile(root, workflowPath, buildWorkflow(toolRepo, toolRef, qualityJob), {
+    writeScaffoldFile(root, workflowPath, buildWorkflow(toolRepo, toolRef, qualityJob, { governed: governedApplied }), {
       force,
       operations,
     });
@@ -139,6 +154,8 @@ export function initProject(targetPath = ".", options = {}) {
     force,
     toolRepo,
     toolRef,
+    profile,
+    governedApplied,
     gatesApplied,
     gatesStatus,
     precommitApplied,
@@ -148,7 +165,7 @@ export function initProject(targetPath = ".", options = {}) {
     created: operations.filter((item) => item.action === "created").map((item) => item.path),
     updated: operations.filter((item) => item.action === "updated").map((item) => item.path),
     skipped: operations.filter((item) => item.action === "skipped").map((item) => item.path),
-    nextSteps: buildNextSteps({ gatesApplied, precommitApplied, hooksConfigured, hooksPathRequested: wantHooksPath }),
+    nextSteps: buildNextSteps({ gatesApplied, precommitApplied, hooksConfigured, hooksPathRequested: wantHooksPath, governedApplied }),
   };
 }
 
@@ -210,10 +227,10 @@ function formatPrecommitSummary(result) {
 }
 
 /**
- * @param {{ gatesApplied: boolean, precommitApplied: boolean, hooksConfigured: boolean, hooksPathRequested: boolean }} status
+ * @param {{ gatesApplied: boolean, precommitApplied: boolean, hooksConfigured: boolean, hooksPathRequested: boolean, governedApplied: boolean }} status
  * @returns {string[]}
  */
-function buildNextSteps({ gatesApplied, precommitApplied, hooksConfigured, hooksPathRequested }) {
+function buildNextSteps({ gatesApplied, precommitApplied, hooksConfigured, hooksPathRequested, governedApplied }) {
   const steps = ["Review the generated workflow before opening a PR."];
   if (gatesApplied) {
     steps.push("Confirm the CI quality steps match how you run this project locally; edit the workflow if they drift.");
@@ -226,6 +243,10 @@ function buildNextSteps({ gatesApplied, precommitApplied, hooksConfigured, hooks
   }
   if (hooksConfigured) {
     steps.push("Pre-commit hook is active via core.hooksPath; bypass a single commit with `git commit --no-verify`.");
+  }
+  if (governedApplied) {
+    steps.push('Start a task artifact with `solumbe session "<request>" --path . --base origin/main`.');
+    steps.push("The governed CI job reports PASS, WARN, FAIL, and execution errors separately; review and branch protection remain human-owned.");
   }
   steps.push("If the solumbe tool repository is private, add a SOLUMBE_REPO_TOKEN secret and enable the token line in the workflow.");
   steps.push("Open or update a pull request to verify the PR comment and artifact.");
@@ -343,7 +364,7 @@ function setHooksPath(root) {
 /**
  * @param {string} toolRepo
  * @param {string} toolRef
- * @param {{ gatesApplied: boolean, precommitApplied: boolean }} status
+ * @param {{ gatesApplied: boolean, precommitApplied: boolean, profile: "classic" | "governed" }} status
  * @returns {string}
  */
 function contextReadme(toolRepo, toolRef, status) {
@@ -358,6 +379,10 @@ function contextReadme(toolRepo, toolRef, status) {
   }
   if (status.precommitApplied) {
     assets.push(`- \`${hookPath}\`: dependency-free pre-commit hook running fast static checks (enable with \`git config core.hooksPath .githooks\`)`);
+  }
+  if (status.profile === "governed") {
+    assets.push("- `.solumbe/workflow.md`: the reusable context → impact → converge → gate session loop");
+    assets.push("- `.solumbe/init-manifest.json`: machine-readable bootstrap and detected validation commands");
   }
   return `# solumbe
 
@@ -381,15 +406,66 @@ solumbe pr . --base origin/main --out .solumbe/pr-review.md
 }
 
 /**
+ * @param {{ profile: "classic" | "governed", toolRepo: string, toolRef: string, packageManagers: string[], setup: HarnessCommand[], validate: HarnessCommand[], gatesApplied: boolean, precommitApplied: boolean }} input
+ * @returns {Record<string, unknown>}
+ */
+function buildInitManifest(input) {
+  return {
+    schema: "solumbe.init/v1",
+    profile: input.profile,
+    tool: { repository: input.toolRepo, ref: input.toolRef },
+    detected: {
+      packageManagers: input.packageManagers,
+      setup: input.setup.map((command) => command.command),
+      validation: input.validate.map((command) => command.command),
+    },
+    generated: {
+      workflow: workflowPath,
+      harnessQualityJob: input.gatesApplied,
+      precommit: input.precommitApplied,
+      sessionWorkflow: input.profile === "governed",
+    },
+    boundaries: {
+      changesBranchProtection: false,
+      mergesPullRequests: false,
+      warningsAdvisory: true,
+    },
+  };
+}
+
+function governedWorkflowReadme() {
+  return [
+    "# Governed Solumbe workflow",
+    "",
+    "This repository was initialized with the `governed` profile.",
+    "",
+    "## Per-task loop",
+    "",
+    "context → impact → converge → gate",
+    "",
+    '1. Start with `solumbe session "<request>" --path . --base origin/main`.',
+    "2. Read the generated context and declared intent before editing.",
+    "3. Amend the intent when the implementation needs a new file, with a reason.",
+    "4. Run the focused validation commands from the harness.",
+    "5. Re-run the session with `--staged` or `--head <commit>` to bind convergence and the gate to the exact tree.",
+    "6. Treat PASS/WARN/FAIL as evidence. WARN remains advisory; human review and branch protection remain authoritative.",
+    "",
+    "The generated CI workflow reports malformed output and permission/API failures as execution errors. It never converts them into PASS.",
+    "",
+  ].join("\n");
+}
+
+/**
  * Compose the workflow file: an optional harness-driven quality job followed by
  * the PR/commit review job. When no gates are detected the quality job is empty
  * and the file is identical to the review-only template.
  * @param {string} toolRepo
  * @param {string} toolRef
  * @param {string} qualityJob Rendered quality-job YAML block, or "" to omit it.
+ * @param {{ governed?: boolean }} [options]
  * @returns {string}
  */
-function buildWorkflow(toolRepo, toolRef, qualityJob) {
+function buildWorkflow(toolRepo, toolRef, qualityJob, options = {}) {
   return `name: solumbe CI
 
 on:
@@ -401,9 +477,12 @@ permissions:
   contents: read
   issues: write
   pull-requests: read
+  checks: read
+  statuses: read
+  actions: read
 
 jobs:
-${qualityJob}  review:
+${qualityJob}${options.governed ? buildGovernedGateJob(toolRepo, toolRef) : ""}  review:
     name: Generate PR review context
     runs-on: ubuntu-latest
 
@@ -479,6 +558,91 @@ ${qualityJob}  review:
         with:
           name: solumbe-pr-review
           path: .solumbe/pr-review.md
+`;
+}
+
+/**
+ * The governed job evaluates the PR through the same GitHub-aware gate used by
+ * reviewers, then lets ci-report enforce the PASS/WARN/FAIL contract. The
+ * explicit read permissions make status/check access visible in generated CI;
+ * denied or malformed responses remain execution errors.
+ * @param {string} toolRepo
+ * @param {string} toolRef
+ * @returns {string}
+ */
+function buildGovernedGateJob(toolRepo, toolRef) {
+  return `  solumbe-gate:
+    name: Solumbe governed gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout PR head
+        if: github.event_name == 'pull_request'
+        uses: ${uses("actions/checkout")}
+        with:
+          ref: \${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Checkout pushed commit
+        if: github.event_name == 'push'
+        uses: ${uses("actions/checkout")}
+        with:
+          ref: \${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Checkout solumbe
+        uses: ${uses("actions/checkout")}
+        with:
+          repository: ${toolRepo}
+          ref: ${toolRef}
+          path: .solumbe/tool
+          # If ${toolRepo} is private, create SOLUMBE_REPO_TOKEN and uncomment:
+          # token: \${{ secrets.SOLUMBE_REPO_TOKEN }}
+
+      - name: Set up Node.js
+        uses: ${uses("actions/setup-node")}
+        with:
+          node-version: 22
+
+      - name: Install solumbe dependencies
+        working-directory: .solumbe/tool
+        run: npm ci
+
+      - name: Evaluate PR gate
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: \${{ github.token }}
+        shell: bash
+        run: |
+          set +e
+          node .solumbe/tool/src/cli.js gate --pr "\${{ github.event.pull_request.number }}" --path . --json > .solumbe/gate.json 2> .solumbe/gate.stderr
+          status=$?
+          set -e
+          node .solumbe/tool/src/cli.js ci-report .solumbe/gate.json --exit-code "$status" --stderr .solumbe/gate.stderr --out .solumbe/gate-summary.md
+
+      - name: Evaluate pushed commit gate
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          BASE="\${{ github.event.before }}"
+          if ! git rev-parse --verify "$BASE^{commit}" >/dev/null 2>&1; then
+            if git rev-parse --verify "HEAD~1^{commit}" >/dev/null 2>&1; then BASE="HEAD~1"; else BASE="HEAD"; fi
+          fi
+          set +e
+          node .solumbe/tool/src/cli.js gate . --base "$BASE" --head HEAD --json > .solumbe/gate.json 2> .solumbe/gate.stderr
+          status=$?
+          set -e
+          node .solumbe/tool/src/cli.js ci-report .solumbe/gate.json --exit-code "$status" --stderr .solumbe/gate.stderr --out .solumbe/gate-summary.md
+
+      - name: Upload governed gate evidence
+        if: always()
+        uses: ${uses("actions/upload-artifact")}
+        with:
+          name: solumbe-governed-gate
+          path: .solumbe/gate*
+          include-hidden-files: true
+          if-no-files-found: warn
+
 `;
 }
 
