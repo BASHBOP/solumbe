@@ -4,7 +4,7 @@
 
 > For teams that want any coding agent to produce evidence a human can trust before merge.
 
-**v4.12.0** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
+**v4.13.0** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
 
 Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep -->
 
@@ -20,6 +20,16 @@ Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep
 ---
 
 ## What's New
+
+!!! tip "v4.13.0 published (2026-11-22)"
+    Governed task sessions, fail-closed CI gate reporting, and ranking/check fixes. No existing command or field was removed.
+
+    - `solumbe session "..."` composes context, impact, declared intent, convergence, and the local gate into one durable task artifact.
+    - `solumbe init --profile governed` scaffolds the context → impact → converge → gate workflow and a CI job that reports PASS, WARN, FAIL, or execution error separately.
+    - `solumbe ci-report` keeps malformed or unavailable gate output from becoming a false green result. The governed workflow does not merge pull requests or change branch protection.
+    - `context_pack` and `change_impact` can rank a named Git ref, convergence reports its prediction confidence, and named domains retain their primary slots.
+
+    [npm v4.13.0](https://www.npmjs.com/package/@bashbop/solumbe/v/4.13.0) · [GitHub Release](https://github.com/BASHBOP/solumbe/releases/tag/v4.13.0) · [MCP Registry](https://registry.modelcontextprotocol.io/?q=io.github.BASHBOP%2Fsolumbe)
 
 !!! tip "v4.12.0 published (2026-11-15)"
     The MCP `review_gate` says when to stop retrying, and the MCP server finds an API key exported in a shell startup file. No command or field was removed.
@@ -338,7 +348,7 @@ flowchart LR
 === "Install"
 
     ```bash
-    npm install -g @bashbop/solumbe@4.12.0
+    npm install -g @bashbop/solumbe@4.13.0
     solumbe doctor
     solumbe context "review this change" --path .
     ```
@@ -346,7 +356,7 @@ flowchart LR
 === "No Global Install"
 
     ```bash
-    npx -y @bashbop/solumbe@4.12.0 doctor
+    npx -y @bashbop/solumbe@4.13.0 doctor
     ```
 
 === "Source Checkout"

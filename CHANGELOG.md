@@ -6,13 +6,23 @@ This project follows SemVer.
 
 ## [Unreleased]
 
-Ranking and check fixes from a session that built a feature across two repositories in git worktrees. No command or field was removed.
+## [4.13.0] - 2026-11-22
+
+Adds governed task sessions and fail-closed CI reporting, alongside ranking and check fixes from a session that built a feature across two repositories in git worktrees. No existing command or field was removed.
 
 ### Added
+
+- **`solumbe session` composes the governed task loop.** It produces one artifact containing context, impact, declared intent, convergence, and the local gate, with optional validation. The session is a CLI convenience over existing stages; it adds no MCP tool and does not merge or change branch protection.
+- **`solumbe init --profile governed` scaffolds the trust workflow.** It adds `.solumbe/workflow.md`, an initialization manifest, and a governed CI job that evaluates the same gate used by reviewers.
+- **`solumbe ci-report` fails closed at the CI boundary.** It preserves PASS, WARN, and FAIL, treats malformed or denied gate output as an execution error, and never converts an unavailable check into a green result.
 
 - **`context_pack` and `change_impact` take `ref`.** The tree of a git ref (`ref: "origin/main"`, `--ref` on `solumbe context` and `solumbe impact`) is ranked instead of the files on disk. Left out, a clean checkout that is behind its upstream is ranked against that upstream, and the report names the ref and commit; a checkout with uncommitted changes is ranked as it is. The tree is read with `git read-tree` and `git checkout-index` under a private index into a cache directory, so the repository's index, branch and worktrees are untouched. The `path` descriptions now say it defaults to the server's working directory and that a worktree's path should be passed.
 - **`convergence_score` reports `prediction`.** `confidence` is `high`, `medium`, `low` or `declared`, with the counts behind it. `low` means the predicted owners were not changed while most changed source files carry the task's words in their paths, so the ranking, not the diff, is the likelier error. The score, sub-scores and receipt are unchanged.
 - **`convergence_score` accepts a call with `intent` and no `query`**, using the request the intent was declared for.
+
+### Changed
+
+- **The MCP and CLI workflow documentation records the governed profile and CI boundary.** Warnings remain advisory, while human review, branch protection, and the release decision remain authoritative.
 
 ### Fixed
 
