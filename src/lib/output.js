@@ -98,7 +98,8 @@ export function printHelp(options = {}) {
     printText(`solumbe
 
 Usage:
-  solumbe context <query> [--path repo] [--limit n] [--online] [--out file] [--json]        # before the edit: the files, tests and commands the request needs
+  solumbe context <query> [--path repo] [--ref git-ref] [--limit n] [--online] [--out file] [--json]   # before the edit: the files, tests and commands the request needs
+  solumbe session <query> [--path repo] [--base ref] [--staged | --head ref] [--out file] [--json] # context, intent, convergence and gate in one artifact
   solumbe declare <repo> <request> [--top n] [--out file] [--json]                          # before the edit: record the files it is expected to touch
   solumbe converge <repo> <query> --base <ref> [--head ref | --staged] [--out file] [--json]   # after the edit: how far the diff is from the request, with a receipt
   solumbe gate [repo | --path repo] [--base ref] [--head ref | --staged] [--request text] [--intent file] [--min-convergence n] [--receipt hash|file] [--out file] [--json]   # before the merge: PASS / WARN / FAIL on the exact tree
@@ -111,6 +112,7 @@ Set up:
   solumbe doctor                      # check the local toolchain
   solumbe mcp                         # run the MCP server over stdio
   solumbe init <path>                 # scaffold CI, a pre-commit hook and .solumbe/ in a repository
+  solumbe ci-report <gate.json> [--exit-code n] [--stderr file] [--out file] [--json]       # fail-closed CI verdict reporting
 
 More:
   solumbe help --all                  # every command: impact, amend, pr, review, map, search, calibrate, route, ax, dashboard and the rest
@@ -133,8 +135,9 @@ Usage:
   solumbe index <repo...> [--discover] [--catalog file] [--json]
   solumbe catalog [--catalog file] [--json]
   solumbe search <query> [--catalog file] [--limit n] [--offline] [--json]
-  solumbe context <query> [--path repo] [--limit n] [--online] [--out file] [--json]
-  solumbe impact <repo> <query> [--top n] [--diff-base ref] [--out file] [--json] [--mermaid]
+  solumbe context <query> [--path repo] [--ref git-ref] [--limit n] [--online] [--out file] [--json]
+  solumbe session <query> [--path repo] [--base ref] [--staged | --head ref] [--intent file] [--run-validation] [--out file] [--json]
+  solumbe impact <repo> <query> [--top n] [--ref git-ref] [--diff-base ref] [--out file] [--json] [--mermaid]
   solumbe obsidian <repo> [--query text] [--out vault-dir] [--limit n] [--top n] [--json]
   solumbe ax <repo> <query> [--top n] [--out file] [--json]
   solumbe route <repo> <query> [--host id] [--tier-only] [--offline] [--top n] [--out file] [--json]   # recommend a model tier before spending on the task
@@ -159,7 +162,8 @@ Usage:
   solumbe map <path> [--out file] [--json] [--mermaid]
   solumbe structure <path> [--pattern glob] [--out file] [--exclude file] [--json]
   solumbe deps <package> [--query text] [--limit n] [--json]
-  solumbe init <path> [--tool-repo owner/repo] [--tool-ref ref] [--force] [--no-workflow] [--no-gates] [--no-precommit] [--hooks-path] [--yes] [--json]
+  solumbe init <path> [--profile classic|governed] [--tool-repo owner/repo] [--tool-ref ref] [--force] [--no-workflow] [--no-gates] [--no-precommit] [--hooks-path] [--yes] [--json]
+  solumbe ci-report <gate.json | -> [--exit-code n] [--stderr file] [--out file] [--json]
   solumbe matrix [--json]
   solumbe mcp
   solumbe pr <path> [--number n] [--base ref] [--head ref] [--out file] [--comment] [--json]

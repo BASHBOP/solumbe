@@ -40,6 +40,32 @@ test("initProject scaffolds solumbe files without overwriting by default", () =>
   assert.equal(fs.readFileSync(generatedWorkflowPath, "utf8"), "custom workflow\n");
 });
 
+test("initProject governed profile scaffolds the reusable session loop and fail-closed CI gate", () => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "solumbe-init-governed-"));
+  fs.writeFileSync(path.join(fixture, "package.json"), JSON.stringify({ name: "governed-sample", scripts: { test: "node --test" } }, null, 2));
+
+  const result = initProject(fixture, { profile: "governed", toolRepo: "example/solumbe", toolRef: "stable" });
+
+  assert.equal(result.profile, "governed");
+  assert.equal(result.governedApplied, true);
+  assert.ok(result.created.includes(".solumbe/workflow.md"));
+  assert.ok(result.created.includes(".solumbe/init-manifest.json"));
+
+  const manifest = JSON.parse(fs.readFileSync(path.join(fixture, ".solumbe", "init-manifest.json"), "utf8"));
+  assert.equal(manifest.schema, "solumbe.init/v1");
+  assert.equal(manifest.boundaries.changesBranchProtection, false);
+  assert.equal(manifest.boundaries.mergesPullRequests, false);
+
+  const workflow = fs.readFileSync(path.join(fixture, ".github", "workflows", "solumbe-ci.yml"), "utf8");
+  assert.match(workflow, /checks: read/);
+  assert.match(workflow, /actions: read/);
+  assert.match(workflow, /name: Solumbe governed gate/);
+  assert.match(workflow, /gate --pr/);
+  assert.match(workflow, /ci-report/);
+  assert.match(workflow, /if: always\(\)/);
+  assert.match(fs.readFileSync(path.join(fixture, ".solumbe", "workflow.md"), "utf8"), /context.*impact.*converge.*gate/is);
+});
+
 test("initProject adds .solumbe/ to .gitignore (creating it when absent)", () => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "solumbe-init-gitignore-"));
   const result = initProject(fixture, { noWorkflow: true });

@@ -10,6 +10,7 @@ import { companionRepos } from "./config.js";
 import { buildDependencyGraph, transitiveDependents } from "./dependency-graph.js";
 import { dependencyFileRecord, readDependencyRequest } from "./dependency-request.js";
 import { getCachedCodeMap } from "./index-cache.js";
+import { describeSnapshot, getRankingCodeMap } from "./ref-snapshot.js";
 import { conceptsFromQuery, classifyPath, CONCEPT_SYNONYMS, RISK_FLAGS, glyphFor, isDocPath, isTestDataPath, singularizeToken } from "./risk-paths.js";
 import { isRunnableTestPath, isTestFilePath } from "./code-map/classify.js";
 import { joinedCamelCaseWords } from "./code-map/text.js";
@@ -43,6 +44,7 @@ export const DIFF_RENAME_LIMIT = 1000;
  * @property {any} [codeMap]
  * @property {boolean} [includeUntracked] count untracked files as changed against diffBase (default true)
  * @property {boolean} [companions] also rank the companion repositories in the repo's .solumberc.json (see companionLeads)
+ * @property {string} [ref] rank this git ref's tree instead of the files on disk; "auto" picks the upstream of a clean checkout behind it (see ref-snapshot.js)
  */
 
 /**
@@ -288,7 +290,9 @@ export function generateImpact(query, options = {}) {
 
   const top = clampInt(options.top, defaultTop, 1, 50);
   const repoPath = options.path ?? ".";
-  const map = options.codeMap ?? getCachedCodeMap(repoPath);
+  const map = options.codeMap ?? (options.ref ? getRankingCodeMap(repoPath, { ref: options.ref }) : getCachedCodeMap(repoPath));
+  /** @type {import("./ref-snapshot.js").RefSnapshot | undefined} */
+  const snapshot = map.repo.snapshot;
   // A dependency request owns the manifests and lockfiles. Its package names
   // and dependency words ("upgrade", "package", `shell-quote`) name no source
   // module, so only the rest of the request scores source files.
@@ -368,6 +372,7 @@ export function generateImpact(query, options = {}) {
       name: map.repo.name,
       root: map.repo.root,
       sourceFileCount: map.repo.sourceFileCount,
+      ...(snapshot ? { snapshot, note: describeSnapshot(map.repo.name, snapshot) } : {}),
     },
     concepts,
     diffEvidence: diffEvidence
@@ -835,6 +840,9 @@ function noteLocaleSiblings(ranked) {
   }
 }
 
+// The most a file gains from being imported by ranked files: two full seeds.
+const IMPORT_BOOST_CAP = 16;
+
 /**
  * @param {CodeMapFile[]} allFiles
  * @param {Map<string, ScoredEntry>} scored
@@ -847,6 +855,8 @@ function applyDependencyBoosts(allFiles, scored, pinned = new Map()) {
   const ranked = [...scored.values()].sort((a, b) => b.score - a.score);
   const seeds = [...new Set([...ranked.slice(0, 15), ...ranked.filter((entry) => pinned.has(entry.file.path))])];
   const resolve = makeImportResolver(allFiles);
+  /** @type {Map<string, number>} */
+  const boosted = new Map();
 
   for (const seed of seeds) {
     const base = pinned.has(seed.file.path) ? 8.0 : Math.min(seed.score * 0.16, 8.0);
@@ -859,12 +869,20 @@ function applyDependencyBoosts(allFiles, scored, pinned = new Map()) {
     }
     for (const neighbor of neighbors) {
       const existing = scored.get(neighbor);
+      // Each importing seed added its share with no ceiling, so a DTO, a
+      // module or a shared types file imported by ten ranked files gained
+      // +80 and outranked the service that owns the change: five DTOs
+      // and a database module led the list for a one-service change.
+      const add = Math.min(base, Math.max(0, IMPORT_BOOST_CAP - (boosted.get(neighbor) ?? 0)));
       if (existing) {
-        existing.score += base;
-        existing.reasons.push(`related through imports (+${base.toFixed(1)})`);
         existing.relatedFiles.push(seed.file.path);
         seed.relatedFiles.push(neighbor);
+        if (add <= 0) continue;
+        boosted.set(neighbor, (boosted.get(neighbor) ?? 0) + add);
+        existing.score += add;
+        existing.reasons.push(`related through imports (+${add.toFixed(1)})`);
       } else if (byPath.has(neighbor)) {
+        boosted.set(neighbor, base);
         scored.set(neighbor, {
           file: /** @type {CodeMapFile} */ (byPath.get(neighbor)),
           score: base,

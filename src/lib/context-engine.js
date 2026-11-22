@@ -4,7 +4,7 @@ import { isRunnableTestPath } from "./code-map/classify.js";
 import { joinedCamelCaseWords } from "./code-map/text.js";
 import { dependencyFileRecord, readDependencyRequest } from "./dependency-request.js";
 import { generateHarness } from "./harness.js";
-import { getCachedCodeMap } from "./index-cache.js";
+import { describeSnapshot, getRankingCodeMap } from "./ref-snapshot.js";
 import { collapseLocaleSiblings, formatLocales, isCopyRequest, resolveNamedFiles, stripFileExtensions, TRANSLATION_DEMOTION } from "./ranking-rules.js";
 import { getGitInfo } from "./repo.js";
 import { estimateTokens, estimateTokenSections } from "./tokens.js";
@@ -80,6 +80,7 @@ import { estimateTokens, estimateTokenSections } from "./tokens.js";
  * @property {boolean} [includeEvidence]
  * @property {string[]} [paths]
  * @property {string} [path]
+ * @property {string} [ref] rank this git ref's tree instead of the files on disk; "auto" picks the upstream of a clean checkout behind it (see ref-snapshot.js)
  */
 
 // 4: a file the request names leads Primary Files, a translation catalog is
@@ -197,7 +198,7 @@ export function generateContextPack(query, options = {}) {
   // The cached map's git state is whatever the tree looked like at index time;
   // a commit leaves the index fingerprint unchanged, so read the tree live.
   const cachedMaps = repoPaths.map((repoPath) => {
-    const map = getCachedCodeMap(repoPath);
+    const map = getRankingCodeMap(repoPath, { ref: options.ref });
     return { ...map, repo: { ...map.repo, git: getGitInfo(map.repo.root) } };
   });
   // A dependency request owns each repository's manifests and lockfiles. Its
@@ -251,7 +252,7 @@ export function generateContextPack(query, options = {}) {
     }
   }
   const scoredFiles = scoreMaps(maps, tokens, intent, phrases, tokenStats, rules);
-  const matchedPrimaryFiles = selectPrimaryFiles(scoredFiles, limit, rules);
+  const matchedPrimaryFiles = selectPrimaryFiles(scoredFiles, limit, rules, tokens);
   const usedFallback = matchedPrimaryFiles.length === 0;
   const primaryFiles = stripEvidence(usedFallback ? selectFallbackPrimaryFiles(maps, limit) : matchedPrimaryFiles, includeEvidence);
   const relatedFiles = stripEvidence(selectRelatedFiles(maps, graphs, scoredFiles, primaryFiles, limit), includeEvidence);
@@ -1200,9 +1201,10 @@ function scoreSymbols(symbols, tokens, tokenStats) {
  * @param {ScoredFile[]} files
  * @param {number} limit
  * @param {number} maxPerDomain
+ * @param {Set<string>} [uncapped] domains the request names, exempt from the cap
  * @returns {ScoredFile[]}
  */
-function diversifyByDomain(files, limit, maxPerDomain = 3) {
+function diversifyByDomain(files, limit, maxPerDomain = 3, uncapped = new Set()) {
   /** @type {Map<string, number>} */
   const counts = new Map();
   /** @type {ScoredFile[]} */
@@ -1211,7 +1213,7 @@ function diversifyByDomain(files, limit, maxPerDomain = 3) {
   for (const file of files) {
     const domain = file.domain || "unknown";
     const count = counts.get(domain) ?? 0;
-    if (count >= maxPerDomain) {
+    if (count >= maxPerDomain && !uncapped.has(domain)) {
       continue;
     }
     counts.set(domain, count + 1);
@@ -1319,9 +1321,10 @@ function formatHotspots(hotspots) {
  * @param {ScoredFile[]} scoredFiles
  * @param {number} limit
  * @param {RequestRules} [rules]
+ * @param {string[]} [tokens] the request's words; a domain they name in full is not capped
  * @returns {ScoredFile[]}
  */
-function selectPrimaryFiles(scoredFiles, limit, rules = noRequestRules) {
+function selectPrimaryFiles(scoredFiles, limit, rules = noRequestRules, tokens = /** @type {string[]} */ ([])) {
   const named = uniqueFiles(
     scoredFiles.filter((file) => rules.pinned.has(fileKey(file)) && !rules.pinned.get(fileKey(file))?.supporting && !isRunnableTestPath(file.path)),
   ).slice(0, limit);
@@ -1329,7 +1332,30 @@ function selectPrimaryFiles(scoredFiles, limit, rules = noRequestRules) {
   const strong = gitHookOwnedPool(files.filter((file) => file.score >= 25));
   const pool = strong.length ? strong : files.slice(0, Math.min(limit, 3));
   const remaining = limit - named.length;
-  return remaining > 0 ? [...named, ...keepEachRepo(diversifyByDomain(pool, remaining, 2), pool)] : named;
+  return remaining > 0 ? [...named, ...keepEachRepo(diversifyByDomain(pool, remaining, 2, requestedDomains(pool, tokens)), pool)] : named;
+}
+
+/**
+ * Domains the request names in full: "floor plan builder" names `floor-plans`.
+ * The per-domain cap spreads primary slots across areas a vague request might
+ * mean, but a feature that lives in one named domain then kept two of its
+ * files and handed the other slots to weaker matches elsewhere: payment and
+ * notification services outranked floor-plans files that scored higher.
+ * @param {ScoredFile[]} pool
+ * @param {string[]} tokens
+ * @returns {Set<string>}
+ */
+function requestedDomains(pool, tokens) {
+  const wanted = new Set(tokens.map(singularOf));
+  /** @type {Set<string>} */
+  const domains = new Set();
+  for (const file of pool) {
+    const domain = file.domain;
+    if (!domain || domains.has(domain)) continue;
+    const words = tokenize(domain).map(singularOf);
+    if (words.length && words.every((word) => wanted.has(word))) domains.add(domain);
+  }
+  return domains;
 }
 
 // When a git hook script is the strongest match, the change lives in the hook.
@@ -1590,8 +1616,12 @@ function inferConflicts(maps) {
     if (git?.available && !git.clean) {
       conflicts.push(`${map.repo.name} has ${git.changes} uncommitted git change(s); inspect the working tree before editing.`);
     }
-    if (git?.available && git.behind) {
-      conflicts.push(`${map.repo.name} is ${git.behind} commit(s) behind ${git.upstream} as of the last fetch; this context describes the older checkout.`);
+    if (map.repo.snapshot) {
+      conflicts.push(describeSnapshot(map.repo.name, map.repo.snapshot));
+    } else if (git?.available && git.behind) {
+      conflicts.push(
+        `${map.repo.name} is ${git.behind} commit(s) behind ${git.upstream} as of the last fetch; this context describes the older checkout. Pass ref (for example ${git.upstream}) to rank that tree, or path for the worktree being edited.`,
+      );
     }
   }
   return conflicts;
@@ -1771,6 +1801,7 @@ function summarizeRepo(map) {
     name: map.repo.name,
     package: map.repo.package,
     git: map.repo.git,
+    ...(map.repo.snapshot ? { snapshot: map.repo.snapshot } : {}),
     sourceFileCount: map.repo.sourceFileCount,
     summary: map.summary,
     domains: map.domains.slice(0, 12),

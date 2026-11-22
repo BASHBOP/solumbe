@@ -232,6 +232,8 @@ export const SURFACES = [
  * a command that leaves the CLI must leave this table too.
  */
 export const SUPPORTING_COMMANDS = {
+  session: "One-shot CLI convenience that composes the existing context, intent, convergence and gate stages; it is not a new MCP tool.",
+  "ci-report": "CI adapter that normalizes a gate's JSON and exit code; it preserves the merge verdict but is not itself a repository-analysis stage.",
   discover: "repo_index with discover: true; the card covers it",
   catalog: "repo_search with no query; the card covers it",
   declare: "change_impact with declare: true, which freezes its prediction as a scope contract; the card covers it",
