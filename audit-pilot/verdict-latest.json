@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "generatedAt": "2026-11-26T10:48:32.002Z",
+  "generatedAt": "2026-11-26T20:26:50.505Z",
   "schemaVersion": 3,
   "reviewEngineVersion": 1,
   "request": "review this change",
@@ -15,28 +15,28 @@
     "concepts": [],
     "topFiles": [
       {
-        "path": "README.md",
+        "path": "src/lib/code-map/capabilities.js",
+        "score": 2.9,
+        "riskFlags": []
+      },
+      {
+        "path": "src/lib/code-map/generate.js",
+        "score": 0,
+        "riskFlags": []
+      },
+      {
+        "path": "src/lib/impact.js",
+        "score": 0,
+        "riskFlags": []
+      },
+      {
+        "path": "tests/impact.test.js",
         "score": 0,
         "riskFlags": []
       },
       {
         "path": "src/lib/review.js",
         "score": 41,
-        "riskFlags": []
-      },
-      {
-        "path": "src/lib/pr-review.js",
-        "score": 36,
-        "riskFlags": []
-      },
-      {
-        "path": "codex/skills/solumbe-review/SKILL.md",
-        "score": 32.2,
-        "riskFlags": []
-      },
-      {
-        "path": "src/lib/risk-paths.js",
-        "score": 18,
         "riskFlags": []
       }
     ],
@@ -45,13 +45,11 @@
     ]
   },
   "prReviewSummary": {
-    "changedFiles": 3,
-    "additions": 12,
-    "deletions": 1,
+    "changedFiles": 4,
+    "additions": 27,
+    "deletions": 0,
     "riskLevel": "low",
-    "riskFlags": [
-      "no test files changed"
-    ],
+    "riskFlags": [],
     "reviewTargetsCount": 0
   },
   "pass": {
@@ -62,7 +60,7 @@
       {
         "name": "Changed files",
         "status": "PASS",
-        "summary": "3 changed files found."
+        "summary": "4 changed files found."
       },
       {
         "name": "Commit snapshot",
@@ -106,18 +104,19 @@
       }
     ],
     "changedFiles": [
-      "README.md",
-      "assets/solumbe-wordmark-dark.svg",
-      "assets/solumbe-wordmark-light.svg"
+      "src/lib/code-map/capabilities.js",
+      "src/lib/code-map/generate.js",
+      "src/lib/impact.js",
+      "tests/impact.test.js"
     ],
     "subject": {
       "kind": "git-commit",
-      "baseSha": "42c2032d87523e669893b850745b17f59876a1f5",
-      "headSha": "1c9e31dfc9b47cb4ec7fa59dc427d71b64e215e1",
-      "treeSha": "fad3ceb553d250121972ad6b4f3f3703e1ba5e17"
+      "baseSha": "1c9e31dfc9b47cb4ec7fa59dc427d71b64e215e1",
+      "headSha": "b5e91f921fa61bb60c31bf11ec23fe8d88bdeea7",
+      "treeSha": "9dbe9c630c577265436e528593479a1d74437751"
     }
   },
   "tokenEstimate": {
-    "fullJson": 552
+    "fullJson": 555
   }
 }
