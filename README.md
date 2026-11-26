@@ -1,4 +1,9 @@
-# Solumbe
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/solumbe-wordmark-dark.svg">
+    <img src="assets/solumbe-wordmark-light.svg" width="286" height="64" alt="Solumbe">
+  </picture>
+</h1>
 
 **Models generate the change. Solumbe proves whether it is safe to merge.**
 
