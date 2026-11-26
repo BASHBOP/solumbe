@@ -30,6 +30,7 @@ const capabilityProbePaths = Object.freeze([
   "package.json",
   "package-lock.json",
   "tsconfig.json",
+  ".hyperframes/video-state.json",
   // Code, one path per admitted extension.
   "src/index.ts",
   "src/App.tsx",
