@@ -54,6 +54,7 @@ function isMigrationPath(file) {
 /** @param {string} file @returns {boolean} */
 export function isSourceFilePath(file) {
   if (isGitHookPath(file)) return true;
+  if (/(^|\/)\.hyperframes\/video-state\.json$/.test(file)) return false;
   const basename = path.posix.basename(file);
   // Manifest and compiler metadata are ubiquitous but are not useful change
   // owners. Keep application JSON (translations and flag config) indexable.
