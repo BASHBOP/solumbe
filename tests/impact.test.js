@@ -37,6 +37,25 @@ function writeFixture(prefix, files) {
   return root;
 }
 
+test("persistence requests rank storage code ahead of generated video state", () => {
+  const root = writeFixture("persistence", {
+    "exports/demo/.hyperframes/video-state.json": JSON.stringify({ after: 1, canvas: {}, task: "demo" }),
+    "public/canvas.js": "export function renderCanvas() {}",
+    "src/server.js": "export function serveCanvas() {}",
+    "src/tasks/store-worker.js": 'import { DatabaseSync } from "node:sqlite";\nfunction taskRow() { return new DatabaseSync("tasks.db"); }',
+    "src/tasks/store.js": "export function openTaskStore() {}",
+  });
+  try {
+    const result = generateImpact("persist a task so it can be resumed after restarting Canvas", { path: root });
+    const paths = result.data.topFiles.map((file) => file.path);
+    assert.ok(paths.slice(0, 3).includes("src/tasks/store-worker.js"), paths.join(", "));
+    assert.equal(paths[0], "src/tasks/store.js");
+    assert.ok(!paths.includes("exports/demo/.hyperframes/video-state.json"), paths.join(", "));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("generateImpact ranks the owner controller above a generic validation service for an auth query", () => {
   const root = writeFixture("auth", {
     "package.json": JSON.stringify({ name: "auth-fixture", scripts: { test: "node --test" } }),

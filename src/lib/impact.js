@@ -308,6 +308,12 @@ export function generateImpact(query, options = {}) {
   // that language, does not.
   const termsQuery = stripFileExtensions(scoringQuery);
   const weightedQuery = weightedQueryTerms(termsQuery);
+  // Persistence requests often name the behavior while owners name the storage mechanism.
+  if (queryMentions(weightedQuery, ["persist", "persists", "persisted", "persisting", "persistence"])) {
+    for (const term of ["store", "storage", "database", "sqlite"]) {
+      weightedQuery.set(term, Math.max(weightedQuery.get(term) ?? 0, 2));
+    }
+  }
   const concepts = conceptsFromQuery(normalized);
   if (dependencyRequest && !concepts.includes(RISK_FLAGS.dependency)) concepts.push(RISK_FLAGS.dependency);
   const wantsTests = queryMentions(weightedQuery, ["test", "tests", "spec", "coverage", "qa"]);
