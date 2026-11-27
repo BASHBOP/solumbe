@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "generatedAt": "2026-11-27T06:10:15.586Z",
+  "generatedAt": "2026-11-27T06:17:28.568Z",
   "schemaVersion": 3,
   "reviewEngineVersion": 1,
   "request": "review this change",
@@ -15,28 +15,28 @@
     "concepts": [],
     "topFiles": [
       {
-        "path": "tests/mcp-dispatch.test.js",
-        "score": 4.5,
+        "path": "src/cli.js",
+        "score": 15,
         "riskFlags": []
       },
       {
-        "path": "docs/17-calibration-thesis/README.md",
+        "path": "src/lib/mcp.js",
+        "score": 15,
+        "riskFlags": []
+      },
+      {
+        "path": "src/lib/render/route.js",
+        "score": 6.5,
+        "riskFlags": []
+      },
+      {
+        "path": "codex/skills/solumbe/SKILL.md",
         "score": 0,
         "riskFlags": []
       },
       {
-        "path": "src/lib/gate-attempts.js",
+        "path": "docs/18-model-routing/README.md",
         "score": 0,
-        "riskFlags": []
-      },
-      {
-        "path": "tests/gate-attempts.test.js",
-        "score": 0,
-        "riskFlags": []
-      },
-      {
-        "path": "src/lib/review.js",
-        "score": 41,
         "riskFlags": []
       }
     ],
@@ -45,9 +45,9 @@
     ]
   },
   "prReviewSummary": {
-    "changedFiles": 4,
-    "additions": 19,
-    "deletions": 4,
+    "changedFiles": 15,
+    "additions": 240,
+    "deletions": 47,
     "riskLevel": "low",
     "riskFlags": [],
     "reviewTargetsCount": 0
@@ -60,7 +60,7 @@
       {
         "name": "Changed files",
         "status": "PASS",
-        "summary": "4 changed files found."
+        "summary": "15 changed files found."
       },
       {
         "name": "Commit snapshot",
@@ -104,19 +104,30 @@
       }
     ],
     "changedFiles": [
-      "docs/17-calibration-thesis/README.md",
-      "src/lib/gate-attempts.js",
-      "tests/gate-attempts.test.js",
-      "tests/mcp-dispatch.test.js"
+      "README.md",
+      "codex/skills/solumbe/SKILL.md",
+      "docs/18-model-routing/README.md",
+      "scripts/hooks/route-prompt.mjs",
+      "src/cli.js",
+      "src/lib/claude-read.js",
+      "src/lib/context-engine.js",
+      "src/lib/context-read.js",
+      "src/lib/mcp.js",
+      "src/lib/model-route.js",
+      "src/lib/output.js",
+      "src/lib/regret.js",
+      "src/lib/render/route.js",
+      "tests/context-read.test.js",
+      "tests/model-route.test.js"
     ],
     "subject": {
       "kind": "git-commit",
-      "baseSha": "b5e91f921fa61bb60c31bf11ec23fe8d88bdeea7",
-      "headSha": "a2fa66f24a3126a3d18fbca862823bbc27490f69",
-      "treeSha": "d179469d7b7841052bd6e112bc270bd50e09e7b2"
+      "baseSha": "a2fa66f24a3126a3d18fbca862823bbc27490f69",
+      "headSha": "56d9b9204af579ee07f5a250f8bb760c99bdc619",
+      "treeSha": "f6fd98ce9cfc7431dc68a8937e182d85022c4f71"
     }
   },
   "tokenEstimate": {
-    "fullJson": 563
+    "fullJson": 619
   }
 }
