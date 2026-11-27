@@ -6,6 +6,12 @@ This project follows SemVer.
 
 ## [Unreleased]
 
+## [4.14.0] - 2026-11-27
+
+- `solumbe context --expand` and the optional MCP `context_pack.expand` argument use Claude to suggest search terms from the request text. Expansion requires `ANTHROPIC_API_KEY` and can add one primary file while preserving the original top four. The default search remains local.
+- Model routing uses a valid hosted tier recommendation as its starting point and reports the source in `tierSource`. The weighted score supplies the fallback.
+- Local gate failures now include repair guidance before escalation. Impact analysis ranks persistence owners for storage-related requests, and code maps exclude generated video state.
+
 ## [4.13.0] - 2026-11-22
 
 Adds governed task sessions and fail-closed CI reporting, alongside ranking and check fixes from a session that built a feature across two repositories in git worktrees. No existing command or field was removed.

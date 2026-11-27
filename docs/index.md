@@ -4,7 +4,7 @@
 
 > For teams that want any coding agent to produce evidence a human can trust before merge.
 
-**v4.13.0** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
+**v4.14.0** is published to npm, GitHub Releases, and the official MCP Registry. Solumbe is a Bashbop Ltd product, MIT licensed.
 
 Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep -->
 
@@ -20,6 +20,9 @@ Formerly **Òtítọ́** (`@bashbop/otito`), renamed in 4.0.0. <!-- rebrand-keep
 ---
 
 ## What's New
+
+!!! tip "v4.14.0 published (2026-11-27)"
+    Use `solumbe context --expand` or the MCP `context_pack` tool's `expand` option to ask Claude for additional search terms. Model routing now reports the tier recommendation source, and the local gate gives agents repair guidance before escalation.
 
 !!! tip "v4.13.0 published (2026-11-22)"
     Governed task sessions, fail-closed CI gate reporting, and ranking/check fixes. No existing command or field was removed.
@@ -348,7 +351,7 @@ flowchart LR
 === "Install"
 
     ```bash
-    npm install -g @bashbop/solumbe@4.13.0
+    npm install -g @bashbop/solumbe@4.14.0
     solumbe doctor
     solumbe context "review this change" --path .
     ```
@@ -356,7 +359,7 @@ flowchart LR
 === "No Global Install"
 
     ```bash
-    npx -y @bashbop/solumbe@4.13.0 doctor
+    npx -y @bashbop/solumbe@4.14.0 doctor
     ```
 
 === "Source Checkout"
