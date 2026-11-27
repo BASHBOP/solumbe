@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "generatedAt": "2026-11-26T20:26:50.505Z",
+  "generatedAt": "2026-11-27T06:10:15.586Z",
   "schemaVersion": 3,
   "reviewEngineVersion": 1,
   "request": "review this change",
@@ -15,22 +15,22 @@
     "concepts": [],
     "topFiles": [
       {
-        "path": "src/lib/code-map/capabilities.js",
-        "score": 2.9,
+        "path": "tests/mcp-dispatch.test.js",
+        "score": 4.5,
         "riskFlags": []
       },
       {
-        "path": "src/lib/code-map/generate.js",
+        "path": "docs/17-calibration-thesis/README.md",
         "score": 0,
         "riskFlags": []
       },
       {
-        "path": "src/lib/impact.js",
+        "path": "src/lib/gate-attempts.js",
         "score": 0,
         "riskFlags": []
       },
       {
-        "path": "tests/impact.test.js",
+        "path": "tests/gate-attempts.test.js",
         "score": 0,
         "riskFlags": []
       },
@@ -46,8 +46,8 @@
   },
   "prReviewSummary": {
     "changedFiles": 4,
-    "additions": 27,
-    "deletions": 0,
+    "additions": 19,
+    "deletions": 4,
     "riskLevel": "low",
     "riskFlags": [],
     "reviewTargetsCount": 0
@@ -104,19 +104,19 @@
       }
     ],
     "changedFiles": [
-      "src/lib/code-map/capabilities.js",
-      "src/lib/code-map/generate.js",
-      "src/lib/impact.js",
-      "tests/impact.test.js"
+      "docs/17-calibration-thesis/README.md",
+      "src/lib/gate-attempts.js",
+      "tests/gate-attempts.test.js",
+      "tests/mcp-dispatch.test.js"
     ],
     "subject": {
       "kind": "git-commit",
-      "baseSha": "1c9e31dfc9b47cb4ec7fa59dc427d71b64e215e1",
-      "headSha": "b5e91f921fa61bb60c31bf11ec23fe8d88bdeea7",
-      "treeSha": "9dbe9c630c577265436e528593479a1d74437751"
+      "baseSha": "b5e91f921fa61bb60c31bf11ec23fe8d88bdeea7",
+      "headSha": "a2fa66f24a3126a3d18fbca862823bbc27490f69",
+      "treeSha": "d179469d7b7841052bd6e112bc270bd50e09e7b2"
     }
   },
   "tokenEstimate": {
-    "fullJson": 555
+    "fullJson": 563
   }
 }
