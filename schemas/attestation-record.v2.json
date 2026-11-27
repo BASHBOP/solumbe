@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bashbop.github.io/solumbe/schemas/attestation-record.v2.json",
+  "title": "Solumbe attestation record, version 2",
+  "description": "One line of a Solumbe ledger (JSON Lines): the verdict a merged commit shipped under, bound to the request, the declared scope, the exact tree and the record before it. recordHash = sha256(prevHash + canonical(record without recordHash and signature)), where canonical is JSON with object keys sorted and no whitespace. The signature, when present, is Ed25519 over the 32 bytes of recordHash.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "seq",
+    "mergeSha",
+    "baseSha",
+    "pr",
+    "author",
+    "committedAt",
+    "attestedAt",
+    "engineVersion",
+    "verdictSchemaVersion",
+    "policy",
+    "governance",
+    "verdict",
+    "confidence",
+    "changedFiles",
+    "riskLevel",
+    "riskFlags",
+    "checks",
+    "impactedFiles",
+    "request",
+    "contract",
+    "subject",
+    "changedPathsHash",
+    "convergence",
+    "band",
+    "receipt",
+    "prevHash",
+    "recordHash"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "seq": { "type": "integer", "minimum": 1, "description": "Position in the ledger, from 1." },
+    "mergeSha": { "type": "string", "description": "The merged commit this record attests." },
+    "baseSha": { "type": ["string", "null"], "description": "The commit the merge was reviewed against." },
+    "pr": { "type": ["integer", "null"], "description": "The pull request number, when the merge came from one." },
+    "author": { "type": "string" },
+    "committedAt": { "type": ["string", "null"], "description": "ISO 8601 commit time." },
+    "attestedAt": { "type": ["string", "null"], "description": "ISO 8601 time the verdict was generated." },
+    "engineVersion": { "type": ["integer", "string", "null"], "description": "Review engine version that produced the verdict." },
+    "verdictSchemaVersion": { "type": ["integer", "null"] },
+    "policy": { "type": ["string", "null"], "description": "Policy profile: standard, company or high-risk." },
+    "governance": { "type": ["string", "null"], "description": "team or solo." },
+    "verdict": { "enum": ["PASS", "WARN", "FAIL"], "description": "V: the gate's verdict." },
+    "confidence": { "type": ["number", "null"] },
+    "changedFiles": { "type": ["integer", "null"], "description": "Number of changed files." },
+    "riskLevel": { "type": ["string", "null"] },
+    "riskFlags": { "type": "array", "items": { "type": "string" } },
+    "checks": {
+      "type": "array",
+      "description": "Each gate check by name and status. Summaries and details are not recorded.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "status"],
+        "properties": { "name": { "type": "string" }, "status": { "enum": ["PASS", "WARN", "FAIL", "SKIPPED"] } }
+      }
+    },
+    "impactedFiles": { "type": "array", "items": { "type": "string" }, "description": "P, live: the files ranked for the request when the verdict was produced." },
+    "request": { "type": ["string", "null"], "description": "R: the request the change was made under. Null when none was stated." },
+    "contract": {
+      "description": "P, declared: the scope contract the change was held against. Null when no intent was supplied.",
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tip", "amendments", "undeclared"],
+          "properties": {
+            "tip": { "type": ["string", "null"], "description": "Hash of the declared intent as amended." },
+            "amendments": { "type": "integer", "minimum": 0 },
+            "undeclared": { "type": "integer", "minimum": 0, "description": "Changed files that were never declared." }
+          }
+        }
+      ]
+    },
+    "subject": {
+      "description": "T: the exact change the verdict was measured on. Null when the gate read a working tree.",
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "baseSha", "headSha", "treeSha"],
+          "properties": {
+            "kind": { "type": ["string", "null"], "description": "git-commit, git-index or github-pr." },
+            "baseSha": { "type": ["string", "null"] },
+            "headSha": { "type": ["string", "null"] },
+            "treeSha": { "type": ["string", "null"], "description": "The Git tree object of the change." }
+          }
+        }
+      ]
+    },
+    "changedPathsHash": { "type": ["string", "null"], "description": "D: sha256 of the canonical sorted list of changed paths. The diff itself is never recorded; with baseSha and treeSha it is recomputable from the repository." },
+    "convergence": { "type": ["number", "null"], "description": "Convergence score, when one was measured." },
+    "band": { "type": ["string", "null"], "description": "aligned, partial, drift or inconclusive." },
+    "receipt": { "type": ["string", "null"], "description": "Inputs hash of the convergence receipt." },
+    "prevHash": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "recordHash of the record before this one, or 64 zeros for the first." },
+    "recordHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alg", "keyId", "value"],
+      "properties": {
+        "alg": { "const": "ed25519" },
+        "keyId": { "type": "string", "pattern": "^[0-9a-f]{16}$", "description": "First 16 hex characters of the sha256 of the public key (SPKI, DER)." },
+        "value": { "type": "string", "description": "Signature over the bytes of recordHash, base64." }
+      }
+    }
+  }
+}
