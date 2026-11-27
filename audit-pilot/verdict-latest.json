@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "generatedAt": "2026-11-27T06:17:28.568Z",
+  "generatedAt": "2026-11-27T06:44:48.287Z",
   "schemaVersion": 3,
   "reviewEngineVersion": 1,
   "request": "review this change",
@@ -15,28 +15,28 @@
     "concepts": [],
     "topFiles": [
       {
-        "path": "src/cli.js",
-        "score": 15,
-        "riskFlags": []
-      },
-      {
-        "path": "src/lib/mcp.js",
-        "score": 15,
-        "riskFlags": []
-      },
-      {
-        "path": "src/lib/render/route.js",
-        "score": 6.5,
-        "riskFlags": []
-      },
-      {
-        "path": "codex/skills/solumbe/SKILL.md",
+        "path": "CHANGELOG.md",
         "score": 0,
         "riskFlags": []
       },
       {
-        "path": "docs/18-model-routing/README.md",
+        "path": "docs/index.md",
         "score": 0,
+        "riskFlags": []
+      },
+      {
+        "path": "RELEASE.md",
+        "score": 0,
+        "riskFlags": []
+      },
+      {
+        "path": "server.json",
+        "score": 0,
+        "riskFlags": []
+      },
+      {
+        "path": "src/lib/review.js",
+        "score": 41,
         "riskFlags": []
       }
     ],
@@ -45,11 +45,14 @@
     ]
   },
   "prReviewSummary": {
-    "changedFiles": 15,
-    "additions": 240,
-    "deletions": 47,
+    "changedFiles": 7,
+    "additions": 20,
+    "deletions": 11,
     "riskLevel": "low",
-    "riskFlags": [],
+    "riskFlags": [
+      "dependency",
+      "no test files changed"
+    ],
     "reviewTargetsCount": 0
   },
   "pass": {
@@ -60,7 +63,7 @@
       {
         "name": "Changed files",
         "status": "PASS",
-        "summary": "15 changed files found."
+        "summary": "7 changed files found."
       },
       {
         "name": "Commit snapshot",
@@ -80,7 +83,7 @@
       {
         "name": "Release discipline",
         "status": "PASS",
-        "summary": "No version metadata changes found."
+        "summary": "Version metadata is SemVer and changelog was updated."
       },
       {
         "name": "Validation commands",
@@ -104,30 +107,22 @@
       }
     ],
     "changedFiles": [
-      "README.md",
-      "codex/skills/solumbe/SKILL.md",
-      "docs/18-model-routing/README.md",
-      "scripts/hooks/route-prompt.mjs",
-      "src/cli.js",
-      "src/lib/claude-read.js",
-      "src/lib/context-engine.js",
-      "src/lib/context-read.js",
-      "src/lib/mcp.js",
-      "src/lib/model-route.js",
-      "src/lib/output.js",
-      "src/lib/regret.js",
-      "src/lib/render/route.js",
-      "tests/context-read.test.js",
-      "tests/model-route.test.js"
+      "CHANGELOG.md",
+      "RELEASE.md",
+      "docs/assets/solumbe-how-it-works.html",
+      "docs/index.md",
+      "package-lock.json",
+      "package.json",
+      "server.json"
     ],
     "subject": {
       "kind": "git-commit",
-      "baseSha": "a2fa66f24a3126a3d18fbca862823bbc27490f69",
-      "headSha": "56d9b9204af579ee07f5a250f8bb760c99bdc619",
-      "treeSha": "f6fd98ce9cfc7431dc68a8937e182d85022c4f71"
+      "baseSha": "56d9b9204af579ee07f5a250f8bb760c99bdc619",
+      "headSha": "b7949a81dae34f280f138df5cd060bcba24b3f95",
+      "treeSha": "bf6ee414985401c36243e8e0e3304f7efbaa5622"
     }
   },
   "tokenEstimate": {
-    "fullJson": 619
+    "fullJson": 562
   }
 }
