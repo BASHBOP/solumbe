@@ -98,7 +98,7 @@ export function printHelp(options = {}) {
     printText(`solumbe
 
 Usage:
-  solumbe context <query> [--path repo] [--ref git-ref] [--limit n] [--online] [--out file] [--json]   # before the edit: the files, tests and commands the request needs
+  solumbe context <query> [--path repo] [--ref git-ref] [--limit n] [--expand] [--online] [--out file] [--json]   # before the edit: the files, tests and commands the request needs
   solumbe session <query> [--path repo] [--base ref] [--staged | --head ref] [--out file] [--json] # context, intent, convergence and gate in one artifact
   solumbe declare <repo> <request> [--top n] [--out file] [--json]                          # before the edit: record the files it is expected to touch
   solumbe converge <repo> <query> --base <ref> [--head ref | --staged] [--out file] [--json]   # after the edit: how far the diff is from the request, with a receipt
@@ -135,7 +135,7 @@ Usage:
   solumbe index <repo...> [--discover] [--catalog file] [--json]
   solumbe catalog [--catalog file] [--json]
   solumbe search <query> [--catalog file] [--limit n] [--offline] [--json]
-  solumbe context <query> [--path repo] [--ref git-ref] [--limit n] [--online] [--out file] [--json]
+  solumbe context <query> [--path repo] [--ref git-ref] [--limit n] [--expand] [--online] [--out file] [--json]
   solumbe session <query> [--path repo] [--base ref] [--staged | --head ref] [--intent file] [--run-validation] [--out file] [--json]
   solumbe impact <repo> <query> [--top n] [--ref git-ref] [--diff-base ref] [--out file] [--json] [--mermaid]
   solumbe obsidian <repo> [--query text] [--out vault-dir] [--limit n] [--top n] [--json]

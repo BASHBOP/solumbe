@@ -121,6 +121,7 @@ Nothing hosted is required, and nothing hosted can change a verdict. [Local Core
 | Regrade a saved run, same answers  | `solumbe regret --rescore run.json`                                             |
 | Score Agent Experience             | `solumbe ax . "add a new MCP tool"`                                             |
 | Recommend a model tier             | `solumbe route . "add a new MCP tool"`                                          |
+| Expand context search with Claude  | `solumbe context "users are billed twice" --path . --expand`                    |
 | Sharpen context with a model read  | `solumbe context "add a new MCP tool" --path . --online`                        |
 | Inspect one repo                   | `solumbe repo . --json`                                                         |
 | Build a code map                   | `solumbe map . --json`                                                          |

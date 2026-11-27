@@ -77,20 +77,19 @@ This is the join that makes the pairing worth anything. Jev has never seen the
 repository; solumbe has never read the request as language. Each supplies what the
 other cannot.
 
-### Three questions, and why each one
+### Tier recommendation and comparison signals
 
 | Question | Type | What it reads |
 | --- | --- | --- |
+| `recommended_tier` | Choice | The least capable tier likely to complete the task successfully |
 | `specificity` | Score, 3 levels | How precisely the request names what must change |
 | `blast_radius` | Score, 3 levels | How far the implied edits reach |
 | `novelty` | Noul | Whether this needs new design or an existing pattern |
 
-They are deliberately atomic. We never ask "which model should I use?", that is
-a judgement with no ground truth to calibrate against, and it would hand control
-flow to the model. We ask narrow questions, take the probabilities, and combine
-them in code we can read. That is the [composite scoring](https://docs.typesafe.ai/patterns/composite-scoring)
-pattern, and it is the same division of labour solumbe already draws between
-evidence and verdict.
+The hosted choice supplies the base tier. The three narrower signals still produce
+a comparison score and a fallback when the provider omits the tier. Inspect
+`scoring.tierSource` to see which input supplied the recommendation. The
+recommendation remains advisory and has yet to be graded on task outcomes.
 
 Score `criteria` is an **ordered list**, not an object, index 0 is level 0.
 Noul answers carry no `confidence`, only Score and Choice do, so the router
@@ -101,7 +100,7 @@ its own score term, and reading confidence as a second input escalated 67% of
 requests on this repository (see the solumbe dogfood below). The offline estimator
 reports `null`: it has a shape, not a measurement.
 
-### The arithmetic
+### Weighted fallback and comparison score
 
 Deterministic, in code, every term visible:
 
@@ -218,6 +217,13 @@ in the server's environment and `offline` is not true, and it declares
 [MCP and Agent Workflows](../02-mcp-agent-workflows/README.md#realtime-canvas-and-model-routing-opt-in).
 
 ## The request read: the same call, three more questions
+
+For a second repository search, run `solumbe context "<request>" --expand` or
+set `expand: true` on MCP `context_pack`. It sends the request text to Claude
+using `ANTHROPIC_API_KEY`. With a file limit of at least five, the expanded
+search can contribute one additional primary below the first four original
+results and any explicitly named owners. A displaced original primary leads
+the related list. Use `--online` independently to rerank the resulting pack.
 
 The route questions ask how hard a request is. Three more questions ask what it
 _is_, and they ride the same call, because System One evaluates each question

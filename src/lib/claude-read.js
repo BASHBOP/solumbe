@@ -67,9 +67,9 @@ export function priceClaudeCall(model, inputTokens, outputTokens) {
 
 /**
  * @typedef {import("./jev.js").ReadFile} ReadFile
- * @typedef {{ files?: ReadFile[], intent?: boolean, capability?: boolean }} ReadAsk
- * @typedef {Omit<import("./jev.js").SystemOneReply, "source"> & { source: "jev"|"claude", costUsd: number|null, attempts?: number, validationErrors?: string[], reasoning?: string|null }} ReadReply
- * @typedef {{ labels: string[], intent: boolean, capability: boolean, reasoning?: boolean }} ReadShape
+ * @typedef {{ files?: ReadFile[], intent?: boolean, capability?: boolean, expansion?: boolean }} ReadAsk
+ * @typedef {Omit<import("./jev.js").SystemOneReply, "source"> & { source: "jev"|"claude", costUsd: number|null, attempts?: number, validationErrors?: string[], reasoning?: string|null, searchTerms?: string[] }} ReadReply
+ * @typedef {{ labels: string[], intent: boolean, capability: boolean, reasoning?: boolean, expansion?: boolean }} ReadShape
  */
 
 /**
@@ -78,7 +78,7 @@ export function priceClaudeCall(model, inputTokens, outputTokens) {
  * free-text field comes first, so it is written before the answers it informs.
  * @param {ReadShape} ask
  */
-export function readTool({ labels, intent, capability, reasoning = false }) {
+export function readTool({ labels, intent, capability, reasoning = false, expansion = false }) {
   /** @type {Record<string, unknown>} */
   const properties = {};
   const confidence = (/** @type {string} */ what) => ({
@@ -91,6 +91,14 @@ export function readTool({ labels, intent, capability, reasoning = false }) {
       description:
         "Before the answers, say in at most five short sentences what the request asks for, whether it asks for an edit, " +
         "and what each answer after this one should be and why. It is not applied; only the answers after it are.",
+    };
+  }
+  if (expansion) {
+    properties.search_terms = {
+      type: "array",
+      description:
+        "Up to three short alternative code search phrases grounded in the request. Preserve meaning, avoid guessing paths, and return an empty list if none help.",
+      items: { type: "string" },
     };
   }
   if (intent) {
@@ -135,11 +143,19 @@ export function readTool({ labels, intent, capability, reasoning = false }) {
  * @param {ReadShape} ask
  * @returns {string[]}
  */
-export function validateReadInput(input, { labels, intent, capability, reasoning = false }) {
+export function validateReadInput(input, { labels, intent, capability, reasoning = false, expansion = false }) {
   /** @type {string[]} */
   const errors = [];
   if (!input || typeof input !== "object") return ["the tool input must be an object"];
   const unit = (/** @type {unknown} */ value) => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
+  if (
+    expansion &&
+    (!Array.isArray(input.search_terms) ||
+      input.search_terms.length > 3 ||
+      input.search_terms.some((/** @type {unknown} */ term) => typeof term !== "string" || !term.trim() || term.length > 64 || /[\r\n]/.test(term)))
+  ) {
+    errors.push("search_terms must contain zero to three single-line phrases of at most 64 characters each");
+  }
   if (reasoning && typeof input.reasoning !== "string") errors.push("reasoning must be a string, written before the answers");
   if (intent) {
     if (!Object.hasOwn(INTENTS, input.intent)) errors.push(`intent must be one of ${Object.keys(INTENTS).join(", ")}`);
@@ -220,14 +236,14 @@ const SYSTEM_PROMPT =
  * @param {{ apiKey?: string, anthropicApiKey?: string, fetchImpl?: typeof fetch, timeoutMs?: number, model?: string, apiUrl?: string, reasoning?: boolean }} [options]
  * @returns {Promise<ReadReply>}
  */
-export async function askClaudeRead(state, { files = [], intent = true, capability = true } = {}, options = {}) {
+export async function askClaudeRead(state, { files = [], intent = true, capability = true, expansion = false } = {}, options = {}) {
   const apiKey = options.anthropicApiKey ?? process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set");
   const doFetch = options.fetchImpl ?? globalThis.fetch;
   const model = options.model ?? process.env.SOLUMBE_CLAUDE_READ_MODEL ?? CLAUDE_READ_MODEL;
   const asked = files.slice(0, MAX_RELEVANCE_FILES);
   const labels = [...new Set(asked.map((file) => file.label ?? file.path))];
-  const shape = { labels, intent, capability, reasoning: readReasoning(options) };
+  const shape = { labels, intent, capability, expansion, reasoning: readReasoning(options) };
   const tool = readTool(shape);
 
   /** @type {any[]} */
@@ -307,6 +323,7 @@ export async function askClaudeRead(state, { files = [], intent = true, capabili
     costUsd: priceClaudeCall(replyModel, inputTokens, outputTokens),
     attempts,
     validationErrors: errors,
+    ...(expansion && !errors.length ? { searchTerms: input.search_terms.map((/** @type {string} */ term) => term.trim()) } : {}),
     ...(shape.reasoning ? { reasoning: typeof input?.reasoning === "string" ? input.reasoning : null } : {}),
   };
 }

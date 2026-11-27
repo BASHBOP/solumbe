@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { AGENT_WORKFLOW_INSTRUCTIONS } from "./agent-workflow.js";
 import { discoverRepositories, indexRepositories, listCatalog, searchCatalog } from "./catalog.js";
 import { generateContextPack } from "./context-engine.js";
-import { readContextPack } from "./context-read.js";
+import { expandContextPack, readContextPack } from "./context-read.js";
 import { generateImpact } from "./impact.js";
 import { amendIntent, declaredScope, formatIntentMarkdown, intentFromImpact, intentRoot, readIntent, verifyIntent } from "./intent.js";
 import { generateAxScore, formatAxMarkdown } from "./ax.js";
@@ -195,6 +195,10 @@ export const tools = [
         includeMarkdown: {
           type: "boolean",
           description: "Return a compact human-readable markdown report instead of the full JSON packet. Defaults to false.",
+        },
+        expand: {
+          type: "boolean",
+          description: "Use Claude to suggest extra search terms and consider one additional primary file. Requires ANTHROPIC_API_KEY. Defaults to false.",
         },
         online: {
           type: "boolean",
@@ -793,11 +797,9 @@ async function dispatchTool(name, args) {
       }
       return withSearchRemediation(searchCatalog(args.query, { ...args, path: args.path ?? (broadServerCwd() ? undefined : ".") }));
     case "context_pack": {
-      let result = generateContextPack(requiredString(args.query, "query", QUERY_WHY.context_pack), {
-        ...args,
-        paths: contextRepoPaths(args),
-        ref: optionalRef(args.ref),
-      });
+      const options = { ...args, paths: contextRepoPaths(args), ref: optionalRef(args.ref) };
+      let result = generateContextPack(requiredString(args.query, "query", QUERY_WHY.context_pack), options);
+      if (args.expand === true) result = await expandContextPack(result, options);
       if (args.online === true) result = await readContextPack(result);
       return args.includeMarkdown ? result : result.data;
     }

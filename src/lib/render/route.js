@@ -70,20 +70,24 @@ export function formatRouteTerminal(data, renderer) {
     }
   }
   out.push(
-    `  ${dim("route")} ${bold(String(scoring.route).padStart(3))} ${dim("/ 100")}   ` +
+    `  ${dim(scoring.tierSource === "model" ? "comparison score" : "route")} ${bold(String(scoring.route).padStart(3))} ${dim("/ 100")}   ` +
       (scoring.tier === scoring.baseTier ? dim("no bump") : paint(`bumped from ${scoring.baseTier}`, "33")),
   );
   out.push(`  ${dim("advisory: a recommendation, not a model selection")}`);
   out.push("");
 
-  out.push(renderer.section("arithmetic", ""));
+  if (scoring.tierSource === "model") out.push(`  ${dim("Model recommendation")} ${scoring.baseTier}`);
+  out.push(renderer.section(scoring.tierSource === "model" ? "comparison arithmetic" : "arithmetic", ""));
   for (const step of scoring.steps) {
     const code = step.delta == null ? "36" : step.delta < 0 ? "31" : "32";
     const value = step.delta == null ? String(step.to) : `${step.delta > 0 ? "+" : "-"}${Math.abs(step.delta).toFixed(1)}`;
     const track = bar(step.delta == null ? 0 : step.from, step.to, code);
     out.push(`    ${dim(step.label.padEnd(16))}${track}  ${value.padStart(6)}`);
   }
-  out.push(`    ${bold("route score".padEnd(16))}${bar(0, scoring.route, TIER_COLOR[scoring.tier])}  ` + bold(String(scoring.route).padStart(6)));
+  out.push(
+    `    ${bold((scoring.tierSource === "model" ? "comparison score" : "route score").padEnd(16))}${bar(0, scoring.route, TIER_COLOR[scoring.tier])}  ` +
+      bold(String(scoring.route).padStart(6)),
+  );
   out.push(" ".repeat(20 + Math.round(0.45 * BAR_WIDTH)) + dim("^ 45") + " ".repeat(Math.max(1, Math.round(0.3 * BAR_WIDTH) - 4)) + dim("^ 75"));
   out.push("");
 
@@ -178,7 +182,7 @@ export function formatRouteMarkdown(data) {
     noEvidence
       ? `- **Tier**: no recommendation, solumbe matched no files (fails safe to ${scoring.tier})`
       : `- **Tier**: ${scoring.tier}${scoring.tier === scoring.baseTier ? "" : ` (bumped from ${scoring.baseTier})`}`,
-    `- **Route score**: ${scoring.route} / 100`,
+    `- **${scoring.tierSource === "model" ? "Comparison score" : "Route score"}**: ${scoring.route} / 100`,
     `- **Source**: ${data.model.source === "jev" ? data.model.model : "offline estimate, not calibrated"}`,
     "- **Advisory**: a recommendation, not a model selection",
     "",

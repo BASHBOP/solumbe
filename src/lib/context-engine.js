@@ -192,7 +192,7 @@ export function generateContextPack(query, options = {}) {
     throw new Error("context requires a non-empty query");
   }
 
-  const limit = normalizeLimit(options.limit, defaultLimit, 50);
+  const limit = contextFileLimit(options.limit);
   const includeEvidence = Boolean(options.includeEvidence);
   const repoPaths = normalizePaths(options.paths ?? [options.path ?? "."]);
   // The cached map's git state is whatever the tree looked like at index time;
@@ -334,6 +334,7 @@ export function formatContextPackMarkdown(data) {
     `Estimated JSON tokens: ${data.tokenEstimate.fullJson}`,
     `Estimated Markdown tokens: ${data.tokenEstimate.markdown ?? "pending"}`,
     "",
+    ...formatExpansion(data.queryExpansion),
     ...formatModelRead(data.modelRead),
     "## Repositories",
     "",
@@ -371,6 +372,13 @@ export function formatContextPackMarkdown(data) {
     "",
   ];
   return lines.join("\n");
+}
+
+/** @param {any} expansion */
+function formatExpansion(expansion) {
+  if (!expansion) return [];
+  const status = expansion.candidate ? `Added ${expansion.candidate.path} using ${expansion.terms.join(", ")}.` : expansion.status;
+  return [`Query expansion: ${status}`, ""];
 }
 
 /**
@@ -433,6 +441,7 @@ export function formatContextPackTerminal(data, rendererFactory) {
   );
   lines.push("");
 
+  lines.push(...formatExpansion(data.queryExpansion));
   const modelRead = formatModelRead(data.modelRead).filter((line) => line.startsWith("- "));
   if (modelRead.length) {
     lines.push(
@@ -2184,6 +2193,11 @@ function normalizePaths(paths) {
  */
 function normalizeRepoPath(value) {
   return value.replaceAll("\\", "/").replace(/^\.\//, "");
+}
+
+/** @param {unknown} value */
+export function contextFileLimit(value) {
+  return normalizeLimit(value, defaultLimit, 50);
 }
 
 /**

@@ -561,6 +561,7 @@ function exactAnswers(answers) {
     specificity: score(answers?.specificity),
     blast_radius: score(answers?.blast_radius),
     novelty: { noul: answers?.novelty?.noul ?? null },
+    ...(answers?.recommended_tier ? { recommended_tier: { choice: answers.recommended_tier.choice } } : {}),
   };
 }
 
