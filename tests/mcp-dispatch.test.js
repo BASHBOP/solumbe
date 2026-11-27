@@ -737,6 +737,7 @@ test("change_impact declares and amends an intent, and review_gate holds the cha
     call(4, "change_impact", { query: "something else", intent, amend: { files: ["src/auth/session.ts"], reason: "why" } }),
     call(5, "convergence_score", { base: "HEAD", staged: true, query: "something else", intent }),
   ]);
+  assert.match(structured(held, 1).attempts.message, /re-run review_gate/);
   const contract = structured(held, 1).checks.find((check) => check.name === "Scope contract");
   assert.equal(contract.status, "FAIL");
   assert.match(contract.summary, /^Touched `src\/auth\/session\.ts`, which was never declared\./);

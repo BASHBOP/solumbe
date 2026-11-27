@@ -472,7 +472,12 @@ trial understates whatever effect there is.
 A local FAIL also carries `attempts`, the number of times in a row the gate has
 failed on that head in the server's session, and at `SOLUMBE_GATE_FAIL_CAP`
 (default 3) a message telling the agent to stop and ask the user. Because a
-FAIL is shown in both arms, both get it.
+FAIL is shown in both arms, both get it. Before the cap, the same message
+field directs the calling agent to use the failing checks as evidence, fix
+the cause, validate, and run the gate on the corrected change before replying.
+A missing approval or permission goes straight to the user. The calling agent
+performs the repair in its existing session. Solumbe supplies the evidence
+and computes each new verdict.
 
 `solumbe calibrate <repo> --trial` grades the arms on the first commit made on
 each head, joined to `repaired`. `node scripts/hooks/check-outcomes.mjs` grades

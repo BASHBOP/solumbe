@@ -81,10 +81,17 @@ export function applyGateAttempts(tool, result, options = {}) {
       attempts.message =
         `review_gate has failed ${consecutiveFails} times in a row on this change (cap ${cap}). ` +
         "Stop retrying: report the failing checks and their reasons to the user and wait for their decision before running the gate again.";
+    } else {
+      attempts.message =
+        "Read the FAIL entries in checks and their evidence. Fix the underlying cause within the authorized scope and run the relevant validation. " +
+        "Keep the gate policy and required tests intact. If approval or access is needed, ask the user now. " +
+        "Otherwise, re-run review_gate against the corrected change with the same scope and policy before replying. " +
+        "For staged checks, stage the intended fix first. For a pinned commit, check the corrected revision and refresh any required receipt. " +
+        "Report the verified verdict and any remaining warnings.";
     }
     const annotated = { ...data, attempts };
     if (!paired) return annotated;
-    return { ...result, data: annotated, markdown: attempts.message ? `${result.markdown}\n\n${attempts.message}` : result.markdown };
+    return { ...result, data: annotated, markdown: `${result.markdown}\n\n${attempts.message}` };
   } catch {
     return result;
   }

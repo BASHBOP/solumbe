@@ -19,7 +19,9 @@ test("the cap defaults to 3, takes a whole number and turns off on 0 or off", ()
 test("consecutive local FAILs on one head are counted and escalate at the cap", () => {
   resetGateAttempts();
   const first = applyGateAttempts("review_gate", gate("FAIL"), at("aaa"));
-  assert.deepEqual(first.attempts, { consecutiveFails: 1, cap: 3, escalate: false });
+  const { message, ...count } = first.attempts;
+  assert.deepEqual(count, { consecutiveFails: 1, cap: 3, escalate: false });
+  assert.match(message, /re-run review_gate/);
   assert.equal(first.verdict, "FAIL", "the verdict is untouched");
   assert.equal(applyGateAttempts("review_gate", gate("FAIL"), at("aaa")).attempts.consecutiveFails, 2);
 
@@ -77,7 +79,7 @@ test("a markdown pair carries the count in its data and the stop message in its 
   const pair = () => ({ data: gate("FAIL"), markdown: "# Gate\n\nFAIL" });
   const first = applyGateAttempts("review_gate", pair(), at("aaa", { SOLUMBE_GATE_FAIL_CAP: "2" }));
   assert.equal(first.data.attempts.consecutiveFails, 1);
-  assert.equal(first.markdown, "# Gate\n\nFAIL");
+  assert.ok(first.markdown.endsWith(first.data.attempts.message));
   const second = applyGateAttempts("review_gate", pair(), at("aaa", { SOLUMBE_GATE_FAIL_CAP: "2" }));
   assert.match(second.markdown, /^# Gate\n\nFAIL\n\nreview_gate has failed 2 times in a row/);
 });
