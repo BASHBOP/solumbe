@@ -89,6 +89,7 @@ node src/cli.js index /path/to/workspace --discover
 node src/cli.js catalog --json
 node src/cli.js search "events controller" --json
 node src/cli.js context "add a new MCP tool" --path /path/to/repo --json
+node src/cli.js context "users are billed twice" --path /path/to/repo --expand # optional Claude expansion
 node src/cli.js map /path/to/repo --json
 node src/cli.js harness /path/to/repo --out /path/to/repo/.solumbe/harness.md
 node src/cli.js workspace /path/to/web /path/to/api --out .solumbe/workspace.md

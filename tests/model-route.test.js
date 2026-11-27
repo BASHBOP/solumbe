@@ -410,9 +410,9 @@ test("askJev sends the request and repository evidence as state", async () => {
   let sent;
   const fetchImpl = async (_url, init) => {
     sent = JSON.parse(init.body);
-    return { ok: true, json: async () => ({ answers: {} }) };
+    return { ok: true, json: async () => ({ answers: { ...answers(), recommended_tier: { choice: "premium" } } }) };
   };
-  await askJev("migrate the session cookie", signals({ riskPaths: ["auth/security"], evidence: [{ path: "a.ts" }] }), {
+  const result = await askJev("migrate the session cookie", signals({ riskPaths: ["auth/security"], evidence: [{ path: "a.ts" }] }), {
     apiKey: "k",
     fetchImpl,
   });
@@ -420,6 +420,8 @@ test("askJev sends the request and repository evidence as state", async () => {
   assert.deepEqual(sent.state.risk_flags, ["auth/security"]);
   assert.deepEqual(sent.state.likely_files, [{ path: "a.ts" }]);
   assert.equal(sent.model, "jev-latest");
+  assert.equal(sent.questions.recommended_tier.type, "choice");
+  assert.equal(result.answers.recommended_tier.choice, "premium");
 });
 
 test("askJev folds the request read into the same call and keeps it out of the score", async () => {
@@ -449,7 +451,16 @@ test("askJev folds the request read into the same call and keeps it out of the s
   });
 
   assert.equal(calls, 1, "one round trip for route and read together");
-  assert.deepEqual(Object.keys(sent.questions), ["specificity", "blast_radius", "novelty", "read_intent", "read_capability", "read_file_0", "read_file_1"]);
+  assert.deepEqual(Object.keys(sent.questions), [
+    "specificity",
+    "blast_radius",
+    "novelty",
+    "recommended_tier",
+    "read_intent",
+    "read_capability",
+    "read_file_0",
+    "read_file_1",
+  ]);
   assert.deepEqual(Object.keys(result.answers), ["specificity", "blast_radius", "novelty"], "the scorer sees route answers only");
   assert.equal(result.read.intent.choice, "change");
   assert.equal(result.read.intent.accepted, true);
@@ -637,7 +648,7 @@ test("a request with evidence is unaffected by the floor", () => {
 function usageFetch(usage) {
   return async () => ({
     ok: true,
-    json: async () => ({ model: "jev-1.13.1", usage, answers: {} }),
+    json: async () => ({ model: "jev-1.13.1", usage, answers: answers() }),
   });
 }
 
@@ -750,4 +761,17 @@ test("markdown shows each question's confidence beside its score", () => {
   const markdown = formatRouteMarkdown(data);
   assert.match(markdown, /\| specificity \| 0\.00 \(confidence 0\.90\) \|/);
   assert.match(markdown, /\| blast_radius \| 0\.00 \(confidence 0\.90\) \|/);
+});
+
+test("a hosted tier controls the recommendation before repository-risk overrides", () => {
+  const hosted = { ...answers(), recommended_tier: { choice: "cheap" } };
+  const direct = scoreDecision({ answers: hosted, signals: signals({ ax: 20 }) });
+  assert.equal(direct.tierSource, "model");
+  assert.equal(direct.baseTier, "cheap");
+  assert.equal(direct.tier, "cheap");
+  assert.equal(scoreDecision({ answers: hosted, signals: signals({ ax: 20, riskPaths: ["auth/security"] }) }).tier, "mid");
+  assert.equal(scoreDecision({ answers: hosted, signals: signals({ candidates: 0 }) }).tier, "premium");
+  const invalid = scoreDecision({ answers: { ...hosted, recommended_tier: { choice: "constructor" } }, signals: signals({ ax: 20 }) });
+  assert.equal(invalid.tierSource, "weighted-score");
+  assert.equal(invalid.tier, "premium");
 });

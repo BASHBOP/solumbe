@@ -341,11 +341,11 @@ export function shouldRoute(input) {
  * subagent only when delegating is already on the table, so a routed tier
  * cannot turn a one-line answer into a spawned agent.
  *
- * @param {{tier: string, hostModel?: string, scoring?: {route?: number, evidence?: {sufficient?: boolean}}, signals?: {ax?: number}, model?: {read?: any}}} route
+ * @param {{tier: string, hostModel?: string, scoring?: {route?: number, tierSource?: string, evidence?: {sufficient?: boolean}}, signals?: {ax?: number}, model?: {read?: any}}} route
  * @returns {string}
  */
 export function formatContext(route, arm = { arm: "advisory" }) {
-  const score = route?.scoring?.route;
+  const score = route?.scoring?.tierSource === "model" ? undefined : route?.scoring?.route;
   const ax = route?.signals?.ax;
   const detail = [score === undefined ? null : `route ${score}`, ax === undefined ? null : `AX ${ax}`].filter(Boolean).join(", ");
 

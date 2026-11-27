@@ -348,11 +348,16 @@ async function handleContext(parsed) {
   const { formatContextPackTerminal, generateContextPack } = await import("./lib/context-engine.js");
   const query = parsed.positionals.join(" ").trim();
   const { contextRepoPaths } = await import("./lib/config.js");
-  let result = generateContextPack(query, {
+  const options = {
     paths: contextRepoPaths({ path: parsed.flags.path }),
     limit: parsed.flags.limit,
     ref: typeof parsed.flags.ref === "string" && parsed.flags.ref.trim() ? parsed.flags.ref : "auto",
-  });
+  };
+  let result = generateContextPack(query, options);
+  if (parsed.flags.expand === true) {
+    const { expandContextPack } = await import("./lib/context-read.js");
+    result = await expandContextPack(result, options);
+  }
   // Opt-in: ask a System One model to read the request. Never on by default,
   // because an ordinary solumbe command makes no network call.
   if (parsed.flags.online === true) {

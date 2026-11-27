@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import { AMBIGUOUS_ACTION_QUESTION, formatContextPackTerminal, generateContextPack } from "../src/lib/context-engine.js";
-import { readContextPack } from "../src/lib/context-read.js";
+import { expandContextPack, readContextPack } from "../src/lib/context-read.js";
 import { CHOICE_FLOOR, DEMOTE_BELOW } from "../src/lib/jev.js";
 import { startMcpServer } from "../src/lib/mcp.js";
 import { createRenderer } from "../src/lib/render/fancy.js";
@@ -258,4 +258,44 @@ test("context_pack only reads online when asked, over MCP", async (t) => {
   assert.equal(online.modelRead.source, "jev");
   assert.equal(online.intent.action, "add");
   assert.equal(sent.length, 1, "exactly one call, for the online request");
+});
+
+test("query expansion adds one candidate and keeps the original primaries in the pack", async () => {
+  const root = makeFixture();
+  for (const name of ["list", "create", "history", "lookup", "archive"]) {
+    fs.writeFileSync(path.join(root, `src/events/events-${name}.ts`), `export const ${name}Events = () => [];\n`);
+  }
+  fs.writeFileSync(path.join(root, "src/billing/payment-ledger.ts"), "export const paymentLedger = () => [];\n");
+  const options = { path: root, limit: 5 };
+  const baseline = generateContextPack("events", options);
+  assert.equal(baseline.data.primaryFiles.length, 5);
+  const fetchImpl = async (_url, init) => {
+    const request = JSON.parse(init.body);
+    assert.match(request.messages[0].content, /"request": "events"/);
+    assert.doesNotMatch(request.messages[0].content, /events.controller|payment-ledger/);
+    return new globalThis.Response(
+      JSON.stringify({
+        content: [{ type: "tool_use", name: "record_request_read", input: { search_terms: ["paymentLedger"] } }],
+      }),
+    );
+  };
+  const result = await expandContextPack(baseline, options, { anthropicApiKey: "test", fetchImpl });
+  assert.equal(result.data.query, "events");
+  assert.deepEqual(result.data.primaryFiles.slice(0, 4), baseline.data.primaryFiles.slice(0, 4));
+  assert.equal(result.data.primaryFiles[4].path, "src/billing/payment-ledger.ts");
+  assert.deepEqual(result.data.relatedFiles[0], baseline.data.primaryFiles[4]);
+  assert.ok(result.data.relatedFiles.length <= options.limit);
+  assert.ok(!result.data.relatedFiles.some((file) => file.path === "src/billing/payment-ledger.ts"));
+});
+
+test("query expansion leaves rankings intact after a provider failure", async () => {
+  const options = { path: makeFixture() };
+  const baseline = generateContextPack("list events", options);
+  const result = await expandContextPack(baseline, options, {
+    anthropicApiKey: "test",
+    fetchImpl: async () => new globalThis.Response("unavailable", { status: 503 }),
+  });
+  assert.deepEqual(result.data.primaryFiles, baseline.data.primaryFiles);
+  assert.deepEqual(result.data.relatedFiles, baseline.data.relatedFiles);
+  assert.match(result.data.queryExpansion.status, /failed/);
 });

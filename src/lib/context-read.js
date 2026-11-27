@@ -16,8 +16,8 @@
 // Any failure returns the pack unchanged and says why in `modelRead`. Nothing
 // here is read by a gate.
 
-import { AMBIGUOUS_ACTION_QUESTION, rebuildContextPack } from "./context-engine.js";
-import { askRequestRead } from "./claude-read.js";
+import { AMBIGUOUS_ACTION_QUESTION, contextFileLimit, generateContextPack, rebuildContextPack } from "./context-engine.js";
+import { askClaudeRead, askRequestRead } from "./claude-read.js";
 import { DEMOTE_BELOW, interpretRead, MAX_RELEVANCE_FILES } from "./jev.js";
 
 /**
@@ -164,4 +164,64 @@ const byRank = (/** @type {any} */ a, /** @type {any} */ b) => a.rank - b.rank;
  */
 function fileKey(file) {
   return `${file?.repo?.root ?? ""}\u0000${file?.path ?? ""}`;
+}
+
+/**
+ * Ask Claude for search terms before the second lookup. The provider sees
+ * only the original request. Both searches use the same repository options.
+ * @param {ReturnType<typeof generateContextPack>} pack
+ * @param {Parameters<typeof generateContextPack>[1]} contextOptions
+ * @param {Parameters<typeof askClaudeRead>[2]} [providerOptions]
+ */
+export async function expandContextPack(pack, contextOptions, providerOptions) {
+  const data = { ...pack.data };
+  const limit = contextFileLimit(contextOptions?.limit);
+  if (limit < 5) {
+    data.queryExpansion = { status: "A file limit of at least five is required." };
+    return rebuildContextPack(data);
+  }
+  const read = await askClaudeRead(
+    { request: data.query },
+    { intent: false, capability: false, expansion: true },
+    { ...providerOptions, reasoning: false },
+  ).catch(() => null);
+  if (!read) {
+    data.queryExpansion = { status: "Claude request failed. Used the original search." };
+    return rebuildContextPack(data);
+  }
+  const terms = read.searchTerms;
+  if (!terms?.length) {
+    data.queryExpansion = { status: "Claude returned no usable search terms." };
+    return rebuildContextPack(data);
+  }
+
+  const expanded = generateContextPack([data.query, ...terms].join(" "), contextOptions).data;
+  const keys = new Set(data.primaryFiles.map(fileKey));
+  const candidate = expanded.primaryFiles.find(
+    (/** @type {any} */ file) => !keys.has(fileKey(file)) && !file.reasons.some((/** @type {string} */ reason) => reason.startsWith("fallback:")),
+  );
+  if (!candidate) {
+    data.queryExpansion = { terms, status: "The expanded search found no additional primary file." };
+    return rebuildContextPack(data);
+  }
+
+  // Give expansion one slot below the original top four and any pinned owner.
+  // Keep a displaced original primary at the front of the related section.
+  let slot = 4;
+  const primary = [...data.primaryFiles];
+  for (const [index, file] of primary.entries()) {
+    if (file.reasons.some((/** @type {string} */ reason) => /named in request|^implements .+, registered in |^dependency manifest or lockfile/.test(reason))) {
+      slot = Math.max(slot, index + 1);
+    }
+  }
+  if (slot >= limit) {
+    data.queryExpansion = { terms, status: "The primary section is full of protected results." };
+    return rebuildContextPack(data);
+  }
+  primary.splice(slot, 0, candidate);
+  const displaced = primary.splice(limit);
+  data.primaryFiles = primary;
+  data.relatedFiles = [...displaced, ...data.relatedFiles.filter((/** @type {any} */ file) => fileKey(file) !== fileKey(candidate))].slice(0, limit);
+  data.queryExpansion = { terms, candidate: { path: candidate.path, repo: candidate.repo.root } };
+  return rebuildContextPack(data);
 }

@@ -9,9 +9,9 @@
 // not the gate and must never become one: a failed, unreachable, or unkeyed
 // model call costs a tier, never a verdict. See docs/18-model-routing.
 //
-// The weights and bands below were chosen by judgement and have never been
-// graded against an outcome, which is why `route` reports a recommendation
-// rather than selecting a model. See docs/17-calibration-thesis.
+// A valid hosted tier sets the base recommendation. The weighted score is a
+// local fallback and comparison point. Neither has been graded against actual
+// task outcomes. See docs/17-calibration-thesis.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -22,7 +22,7 @@ import { generateImpact } from "./impact.js";
 import { classifyPath, isProseFile, isTestDataPath, RISK_SCORE_WEIGHTS } from "./risk-paths.js";
 import { askSystemOne, interpretRead, pickAnswers, priceJevCall, readQuestions } from "./jev.js";
 
-export const modelRouteEngineVersion = "0.1.0";
+export const modelRouteEngineVersion = "0.2.0";
 
 export const TIERS = /** @type {const} */ (["cheap", "mid", "premium"]);
 export const BAND_CHEAP = 75;
@@ -81,6 +81,16 @@ export const BUILTIN_HOSTS = {
     cheap: "claude-haiku-4-5-20251001",
     mid: "claude-sonnet-5",
     premium: "claude-opus-5-5",
+  },
+};
+
+const TIER_QUESTION = {
+  type: "choice",
+  instructions: "Recommend the least capable model tier likely to complete this coding task successfully. Consider the request and repository evidence.",
+  criteria: {
+    cheap: "A clear, localized change that follows an existing pattern.",
+    mid: "A moderately ambiguous change, or one requiring some reasoning across related files.",
+    premium: "A difficult investigation, novel design, or cross-cutting change that needs sustained reasoning.",
   },
 };
 
@@ -293,8 +303,12 @@ export async function askJev(request, signals, options = {}) {
   };
   const read = readQuestions({ files: signals.evidence ?? [] });
 
-  const reply = await askSystemOne(state, { ...QUESTIONS, ...read }, options);
-  const answers = pickAnswers(reply.answers, QUESTIONS);
+  const routingQuestions = { ...QUESTIONS, recommended_tier: TIER_QUESTION };
+  const reply = await askSystemOne(state, { ...routingQuestions, ...read }, options);
+  const answers = pickAnswers(reply.answers, routingQuestions);
+  if (typeof answers.specificity?.score !== "number" || typeof answers.blast_radius?.score !== "number" || typeof answers.novelty?.noul !== "number") {
+    throw new Error("TypeSafe reply omitted routing diagnostics");
+  }
   nameProbabilities(answers.blast_radius, BLAST_LEVELS);
   nameProbabilities(answers.specificity, SPECIFICITY_LEVELS);
 
@@ -438,8 +452,11 @@ export function scoreDecision({ answers, signals }) {
 
   const raw = running;
   const route = Math.max(0, Math.min(100, raw));
-  const baseTier = route >= BAND_CHEAP ? "cheap" : route >= BAND_MID ? "mid" : "premium";
-  let index = TIERS.indexOf(/** @type {any} */ (baseTier));
+  const heuristicTier = route >= BAND_CHEAP ? "cheap" : route >= BAND_MID ? "mid" : "premium";
+  const choice = answers.recommended_tier?.choice;
+  const modelRecommended = choice === "cheap" || choice === "mid" || choice === "premium";
+  const baseTier = modelRecommended ? choice : heuristicTier;
+  let index = TIERS.indexOf(baseTier);
 
   const severe = (signals.riskPaths ?? []).filter((flag) => (RISK_SCORE_WEIGHTS[flag] ?? 0) >= BUMP_WEIGHT);
   // Reported for display, never routed on. The weakest of the two Score answers
@@ -511,6 +528,7 @@ export function scoreDecision({ answers, signals }) {
     route: Math.round(route),
     clamped: raw < 0 || raw > 100,
     baseTier,
+    tierSource: modelRecommended ? "model" : "weighted-score",
     tier: TIERS[index],
     bumps,
     confidence,
